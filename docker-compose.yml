@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: jeju_ar_mysql
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./server
+    container_name: jeju_ar_backend
+    # Dockerfile 내부 CMD보다 compose의 command가 우선순위를 가집니다.
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./server:/app
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy  # DB 헬스체크가 통과(healthy)되어야 백엔드 스타트
+
+  web:
+    build: ./web
+    container_name: jeju_ar_web
+    volumes:
+      - ./web:/app
+      - /app/node_modules  # 로컬 node_modules가 컨테이너 내부를 덮어쓰지 않도록 보호
+      - /app/.next
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    depends_on:
+      - backend
+
+  app-frontend:
+    build: ./app
+    container_name: jeju_ar_app
+    volumes:
+      - ./app:/app
+      - /app/node_modules  # 로컬 node_modules 보호
+      - /app/.next
+    ports:
+      - "3001:3000"        # 3000번 포트 충돌 방지
+    env_file:
+      - .env
+    depends_on:
+      - backend
+
+volumes:
+  mysql_data:
