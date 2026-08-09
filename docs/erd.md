@@ -29,20 +29,33 @@ STEP_COUNT {
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 }
 
-CULTURE_MISSION {
+MISSION {
 	bigint id PK "NOT NULL"
+	varchar_50 mission_type "NOT NULL, Enum: CULTURE | COOPERATIVE | TREASURE"
 	varchar_50 mission_title "NOT NULL"
 	varchar_200 description "NOT NULL"
 	int duration_time "NOT NULL"
-	int quiz_count "NOT NULL"
-	json step_detail "NOT NULL, json: {step: int, title: string, description: string}"
 	json reward_detail "NOT NULL, json: {ar_character: string, point: int, coupon_location: string, coupon_price: int}"
-	json quiz_detail "NOT NULL, json: {quiz_index: int, img_url: string, question: string, answer: string}"
+	json step_detail "NOT NULL, json: {step: int, step_title: string, description: string}"
+	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
+	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
+}
+
+LOCATION {
+	bigint id PK "NOT NULL"
 	varchar_20 location_title "NOT NULL"
+	varchar_100 location_address "NOT NULL"
+	varchar_20 location_category "NOT NULL"
 	double mx "NOT NULL"
 	double my "NOT NULL"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
+}
+
+CULTURE_MISSION {
+	bigint mission_id PK, FK "NOT NULL"
+	int quiz_count "NOT NULL"
+	json quiz_detail "NOT NULL, json: {quiz_index: int, img_url: string, question: string, answer: string}"
 }
 
 CULTURE_MISSION_PROGRESS {
@@ -58,19 +71,9 @@ CULTURE_MISSION_PROGRESS {
 }
 
 COOPERATIVE_MISSION {
-	bigint id PK "NOT NULL"
-	varchar_50 mission_name "NOT NULL"
-	varchar_200 description "NOT NULL"
-	int duration_time "NOT NULL"
-	json reward_detail "NOT NULL, json: {ar_character: string, point: int, coupon_location: string, coupon_price: int}"
-	json step_detail "NOT NULL, json: {step: int, step_title: string, description: string}"
-	int reward_point "NOT NULL"
+	bigint mission_id PK, FK "NOT NULL"
 	int member_capacity "NOT NULL"
-	varchar_20 location_title "NOT NULL"
-	double mx "NOT NULL"
-	double my "NOT NULL"
-	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
-	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
+	bigint location_id FK "NOT NULL"
 }
 
 COOPERATIVE_MISSION_ROLE {
@@ -99,14 +102,13 @@ COOPERATIVE_MISSION_MEMBER_PROGRESS {
 }
 
 TREASURE_MISSION {
+	bigint mission_id PK, FK "NOT NULL"
+}
+
+TREASURE_MISSION_ITEM {
 	bigint id PK "NOT NULL"
-	varchar_50 mission_name "NOT NULL"
-	varchar_200 description "NULL"
-	int duration_time "NOT NULL"
-	json reward_detail "NOT NULL, json: {ar_character: string, point: int, coupon_location: string, coupon_price: int}"
-	json step_detail "NOT NULL, json: {step: int, step_title: string, description: string}"
-	json item_detail "NOT NULL, json: {item_index: int, name: string, mx: double, my:double, location_title: string, reward: string}"
-	int reward_point "NOT NULL"
+	bigint treasure_mission_id FK "NOT NULL"
+	bigint location_id FK "NOT NULL"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 }
@@ -126,8 +128,7 @@ TREASURE_MISSION_PROGRESS {
 GUESTBOOK {
 	bigint id PK "NOT NULL"
 	bigint user_id FK "NOT NULL"
-	varchar_100 address "NOT NULL"
-	varchar_100 location_title "NULL"
+	bigint location_id FK "NOT NULL"
 	date visited_at "NOT NULL"
 	json content_img_url "NULL, json: {url: string[]}"
 	varchar_500 content_writing "NULL"
@@ -136,8 +137,6 @@ GUESTBOOK {
 	varchar_20 content_color "NULL"
 	datetime saved_at "NOT NULL"
 	varchar_50 mission_title "NULL"
-	double mx "NOT NULL"
-	double my "NOT NULL"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 }
@@ -182,4 +181,12 @@ TREASURE_MISSION ||--o{ TREASURE_MISSION_PROGRESS : has
 USER ||--o{ GUESTBOOK : writes
 USER ||--o{ ACQUIRED_AR_CHARACTER : acquires
 AR_CHARACTER ||--o{ ACQUIRED_AR_CHARACTER : is_acquired
+AR_CHARACTER ||--o{ USER : represents
 USER ||--o{ TRAVEL_ENDING_CONTENT : has
+MISSION ||--|| CULTURE_MISSION : is
+MISSION ||--|| COOPERATIVE_MISSION : is
+MISSION ||--|| TREASURE_MISSION : is
+LOCATION ||--o{ COOPERATIVE_MISSION : hosts
+LOCATION ||--o{ GUESTBOOK : visited_at
+TREASURE_MISSION ||--o{ TREASURE_MISSION_ITEM : has
+LOCATION ||--o{ TREASURE_MISSION_ITEM : contains
