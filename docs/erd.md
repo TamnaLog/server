@@ -128,7 +128,7 @@ TREASURE_MISSION_PROGRESS {
 GUESTBOOK {
 	bigint id PK "NOT NULL"
 	bigint user_id FK "NOT NULL"
-	bigint location_id FK "NOT NULL"
+	bigint location_id FK "NULL"
 	date visited_at "NOT NULL"
 	json content_img_url "NULL, json: {url: string[]}"
 	varchar_500 content_writing "NULL"
