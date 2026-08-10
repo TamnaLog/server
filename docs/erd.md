@@ -110,6 +110,7 @@ TREASURE_MISSION_ITEM {
 	bigint id PK "NOT NULL"
 	bigint treasure_mission_id FK "NOT NULL"
 	bigint location_id FK "NOT NULL"
+	int item_index "NOT NULL"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 }
