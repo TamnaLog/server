@@ -8,6 +8,7 @@ USER {
 	json user_type_detail "NOT NULL, json: {user_type: string, type_description: string, hashtags: string[]}"
 	varchar_20 nickname "NULL"
 	int point "NOT NULL, DEFAULT: 0"
+	int target_step "NOT NULL, DEFAULT: 10000"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 }
