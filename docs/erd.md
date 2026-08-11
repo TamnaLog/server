@@ -7,6 +7,7 @@ USER {
 	bigint ar_character_id FK "NOT NULL"
 	json user_type_detail "NOT NULL, json: {user_type: string, type_description: string, hashtags: string[]}"
 	varchar_20 nickname "NULL"
+	int point "NOT NULL, DEFAULT: 0"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 }
