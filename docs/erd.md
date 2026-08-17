@@ -1,15 +1,39 @@
 erDiagram
 USER {
 	bigint id PK "NOT NULL"
+
 	json expectation "NULL, json: {categories: string[]}"
+	
 	varchar_50 transportation "NULL, Enum: WALK | BUS | CAR | BICYCLE"
+
 	varchar_50 travel_style "NULL, Enum: RIGHT HERE | NEAR AROUND | NEAR DESTINATION"
-	bigint ar_character_id FK "NOT NULL"
-	json user_type_detail "NOT NULL, json: {user_type: string, type_description: string, hashtags: string[]}"
+
+	bigint ar_character_id FK "NULL"
+
+	bigint user_travel_style_id FK "NULL"
+
 	varchar_20 nickname "NULL"
+
 	int point "NOT NULL, DEFAULT: 0"
+
 	int target_step "NOT NULL, DEFAULT: 10000"
+
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
+
+	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
+}
+
+USER_TRAVEL_SYTLE {
+	bigint id PK "NOT NULL"
+
+	varchar_20 user_type "NOT NULL"
+
+	varchar_200 type_description "NOT NULL"
+
+	json hastags "NOT NULL, json: string[]"
+
+	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
+
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 }
 
@@ -161,6 +185,7 @@ AR_CHARACTER {
 	varchar_200 character_description "NOT NULL"
 	varchar_200 acquire_condition "NOT NULL"
 	varchar_100 character_img_url "NOT NULL"
+	json hashtags "NOT NULL, json: {tags: string[]}"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 }
