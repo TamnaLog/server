@@ -1,4 +1,4 @@
-## 보물 찾기 시작/이어하기
+## 보물찾기 미션 시작/이어하기
 - http 메서드: POST
 - 엔드포인트: `/api/v1/treasure-missions/{missionId}/progress`
 - 도메인: treasure-mission
@@ -156,7 +156,8 @@ Status Code : 409
 ### 추가 고려 사항
 - 보물찾기 메인 장소에 대한 반경, 각 보물당 인증이 가능한 반경 같은 수치 값은 검증을 통해 정해질 예정이다.
 
----
+
+
 
 ## AR 캐릭터와 사진 저장
 - http 메서드: POST

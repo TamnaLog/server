@@ -1,9 +1,11 @@
+deleted_at 추가
+
 erDiagram
 USER {
 	bigint id PK "NOT NULL"
-	json expectation "NULL, json: {categories: string[]}"
-	varchar_50 transportation "NULL, Enum: WALK | BUS | CAR | BICYCLE"
-	varchar_50 travel_style "NULL, Enum: RIGHT HERE | NEAR AROUND | NEAR DESTINATION"
+	json expectation "NULL, json: string[]"
+	json transportation "NULL, json: string[]"
+	json travel_style "NULL, json: string[]"
 	bigint ar_character_id FK "NULL"
 	bigint user_travel_style_id FK "NULL"
 	varchar_20 nickname "NULL"
@@ -61,6 +63,7 @@ LOCATION {
 	varchar_100 location_address "NOT NULL"
 	varchar_20 location_category "NOT NULL"
 	boolean is_visited "NOT NULL, DEFAULT: false"
+	int radius "NOT NULL"
 	float mx "NOT NULL"
 	float my "NOT NULL"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
@@ -107,7 +110,7 @@ COOPERATIVE_MISSION_MEMBER_PROGRESS {
 	bigint user_id FK "NOT NULL"
 	int current_step "NOT NULL, DEFAULT: 0"
 	int current_item_count "NOT NULL, DEFAULT: 0"
-	json item_img_url "NULL, json: {url: string[]}"
+	json item_img_url "NULL, json: string[]"
 	varchar_20 mission_status "NOT NULL, Enum: INPROGRESS, COMPLETED"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
@@ -116,7 +119,7 @@ COOPERATIVE_MISSION_MEMBER_PROGRESS {
 TREASURE_MISSION {
 	bigint mission_id PK, FK "NOT NULL"
 	int item_total_count "NOT NULL"
-	json item_detail "NULL, json: {index: int, mx: float, my: float}
+	json item_detail "NULL, json: {index: int, mx: float, my: float}"
 }
 
 TREASURE_MISSION_PROGRESS {
@@ -183,3 +186,37 @@ PICTURE_WITH_CHARACTER {
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 }
+
+
+USER_TRAVEL_SYTLE ||--o{ USER : has
+AR_CHARACTER ||--o{ USER : selected_by
+
+USER ||--o| USER_SETTING : has
+USER ||--o{ STEP_COUNT : records
+USER ||--o{ LOCATION : owns
+USER ||--o{ CULTURE_MISSION_PROGRESS : progresses
+USER ||--o{ COOPERATIVE_MISSION_MEMBER_PROGRESS : participates
+USER ||--o{ TREASURE_MISSION_PROGRESS : progresses
+USER ||--o{ GUESTBOOK : writes
+USER ||--o{ ACQUIRED_AR_CHARACTER : acquires
+USER ||--o{ TRAVEL_ENDING_CONTENT : owns
+
+LOCATION ||--o{ MISSION : hosts
+LOCATION ||--o{ GUESTBOOK : contains
+
+MISSION ||--o| CULTURE_MISSION : specializes
+MISSION ||--o| COOPERATIVE_MISSION : specializes
+MISSION ||--o| TREASURE_MISSION : specializes
+MISSION ||--o{ GUESTBOOK : creates
+MISSION ||--o{ ACQUIRED_AR_CHARACTER : rewards
+
+CULTURE_MISSION ||--o{ CULTURE_MISSION_PROGRESS : tracks
+
+COOPERATIVE_MISSION ||--o{ COOPERATIVE_MISSION_ROLE : has
+COOPERATIVE_MISSION_ROLE ||--o{ COOPERATIVE_MISSION_MEMBER_PROGRESS : tracks
+
+TREASURE_MISSION ||--o{ TREASURE_MISSION_PROGRESS : tracks
+
+AR_CHARACTER ||--o{ ACQUIRED_AR_CHARACTER : acquired_as
+
+USER ||--o{ PICTURE_WITH_CHARACTER : has
