@@ -1,13 +1,13 @@
-## 사용자 온보딩 정보 생성
-- http 메서드: POST
-- 엔드포인트: `/api/v1/users`
+## 사용자 온보딩 정보 수정
+- http 메서드: PATCH
+- 엔드포인트: `/api/v1/users/me`
 - 도메인: onboarding
 
 ### API 설명
 
 사용자가 시작 화면의 온보딩을 완료하거나 **나중에 할게요**를 선택했을 때 호출한다.
 
-온보딩에서 선택한 여행 기대 항목, 주 이동 수단, 자투리 시간 여행 방식을 기준으로 `user` 테이블에 사용자 정보를 생성한다.
+로그인할 때 생성된 현재 사용자의 `user` 데이터에 온보딩에서 선택한 여행 기대 항목, 이동 수단, 자투리 시간 여행 방식을 반영한다.
 
 ---
 
@@ -27,20 +27,17 @@
 
 | 필드 | 타입 | 필수 | 설명 |
 |---|---:|:---:|---|
-| `expectation` | object | X | 여행 기대 정보. 생략하면 `null`로 저장 |
-| `expectation.categories` | string[] | X | 여행 기대 항목. `PHOTO \| LOCAL \| NATURE \| CULTURE \| CAFE \| WALKING` |
-| `transportation` | string | X | 주 이동 수단. `WALK \| BUS \| CAR \| BICYCLE` |
-| `travelStyle` | string | X | 자투리 시간 여행 방식. `RIGHT_HERE \| NEAR_AROUND \| NEAR_DESTINATION` |
+| `categories` | string[] | X | 여행 기대 항목. 선택 개수 제한 없음. `PHOTO \| LOCAL \| NATURE \| CULTURE \| CAFE \| WALKING` |
+| `transportation` | string[] | X | 이동 수단 목록. 선택 개수 제한 없음. `WALK \| BUS \| CAR \| BICYCLE` |
+| `travelStyle` | string[] | X | 자투리 시간 여행 방식 목록. 선택 개수 제한 없음. `RIGHT_HERE \| NEAR_AROUND \| NEAR_DESTINATION` |
 
 온보딩을 정상적으로 진행한 경우
 
 ```json
 {
-  "expectation": {
-    "categories": ["PHOTO", "LOCAL", "NATURE", "CAFE"]
-  },
-  "transportation": "WALK",
-  "travelStyle": "RIGHT_HERE"
+  "categories": ["PHOTO", "LOCAL", "NATURE", "CAFE"],
+  "transportation": ["WALK", "BUS", "CAR", "BICYCLE"],
+  "travelStyle": ["RIGHT_HERE", "NEAR_AROUND", "NEAR_DESTINATION"]
 }
 ```
 
@@ -53,11 +50,11 @@
 ---
 
 ### 정상 응답 데이터
-Status Code : 201
+Status Code : 200
 
 | 필드 | 타입 | 설명 |
 |---|---:|---|
-| `user` | object | 생성된 사용자 정보 |
+| `user` | object | 온보딩 정보가 반영된 사용자 정보 |
 | `user.id` | number | 사용자 id |
 | `user.arCharacter` | object | 사용자에게 배정된 AR 캐릭터 정보 |
 | `user.arCharacter.id` | number | AR 캐릭터 id |

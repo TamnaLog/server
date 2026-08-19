@@ -9,7 +9,7 @@
 
 추천 콘텐츠, 진행 중인 미션, 쌓인 방명록 수와 사용자 캐릭터 이미지를 한 번에 조회한다.
 
-- 미션과 사용자 간의 거리 및 소요 시간은 카카오맵 API를 통해 계산하므로 반환하지 않는다.
+요청한 사용자 위치를 기준으로 미션 장소까지의 거리는 미터 단위, 예상 소요 시간은 분 단위로 반환한다.
 
 ---
 
@@ -53,11 +53,15 @@ Status Code : 200
 | `missionRecommend[].location` | object \| null | 미션 장소 좌표. 장소가 없는 미션이면 `null` |
 | `missionRecommend[].location.lat` | number | 미션 장소의 위도 |
 | `missionRecommend[].location.lng` | number | 미션 장소의 경도 |
+| `missionRecommend[].distanceMeter` | number \| null | 사용자 위치에서 미션 장소까지의 거리(m). 장소가 없으면 `null` |
+| `missionRecommend[].durationMinutes` | number \| null | 사용자 위치에서 미션 장소까지의 예상 소요 시간(분). 장소가 없으면 `null` |
 | `progressMission` | object[] | 사용자가 진행 중인 미션 목록 |
 | `progressMission[].missionId` | number | 진행 중인 미션 id |
 | `progressMission[].missionType` | string | 미션 유형. `CULTURE \| TREASURE \| COOPERATIVE` |
 | `progressMission[].missionTitle` | string | 진행 중인 미션 이름 |
 | `progressMission[].locationTitle` | string \| null | 미션 장소명. 장소가 없는 미션이면 `null` |
+| `progressMission[].distanceMeter` | number \| null | 사용자 위치에서 미션 장소까지의 거리(m). 장소가 없으면 `null` |
+| `progressMission[].durationMinutes` | number \| null | 사용자 위치에서 미션 장소까지의 예상 소요 시간(분). 장소가 없으면 `null` |
 | `progressMission[].totalStep` | number | 미션의 전체 단계 수 |
 | `progressMission[].currentStep` | number | 사용자가 현재 진행 중인 단계 |
 | `guestbookCount` | number | 사용자가 추가한 방명록 개수 |
@@ -74,7 +78,9 @@ Status Code : 200
       "location": {
         "lat": 33.3663,
         "lng": 126.3577
-      }
+      },
+      "distanceMeter": 44100,
+      "durationMinutes": 58
     },
     {
       "missionId": 16,
@@ -84,14 +90,18 @@ Status Code : 200
       "location": {
         "lat": 33.4507,
         "lng": 126.5707
-      }
+      },
+      "distanceMeter": 23100,
+      "durationMinutes": 34
     },
     {
       "missionId": 36,
       "missionType": "CULTURE",
       "missionTitle": "오늘의 제주 퀴즈",
       "locationTitle": null,
-      "location": null
+      "location": null,
+      "distanceMeter": null,
+      "durationMinutes": null
     }
   ],
   "progressMission": [
@@ -100,6 +110,8 @@ Status Code : 200
       "missionType": "TREASURE",
       "missionTitle": "보물 찾기",
       "locationTitle": "오구포구",
+      "distanceMeter": 28700,
+      "durationMinutes": 41,
       "totalStep": 3,
       "currentStep": 1
     }
@@ -114,3 +126,8 @@ Status Code : 200
 ### 오류 응답 데이터
 
 없음
+
+---
+
+### 추가 고려 사항
+- 거리는 사용자와 장소와의 직선거리를 측정하고, 소요 시간 같은 경우에는 다른 서비스에서 레퍼런스를 사용해서 직선거리 비례 시간을 제공한다.

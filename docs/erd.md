@@ -137,13 +137,14 @@ GUESTBOOK {
 	date visited_at "NOT NULL"
 	json content_img_url "NULL, json: string[]"
 	varchar_500 content_writing "NULL"
-	json content_audio_url "NULL, json: {url: string[]}"
+	json content_audio_url "NULL, json: string[]"
 	varchar_20 content_weather "NULL"
 	varchar_20 content_color_code "NULL"
 	datetime saved_at "NOT NULL"
 	bigint mission_id "NULL"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
+	datetime deleted_at "NULL"	
 }
 
 ACQUIRED_AR_CHARACTER {
@@ -170,6 +171,15 @@ TRAVEL_ENDING_CONTENT {
 	bigint id PK "NOT NULL"
 	bigint user_id FK "NOT NULL"
 	varchar_100 content_img_url "NOT NULL"
+	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
+	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
+}
+
+PICTURE_WITH_CHARACTER {
+	bigint id PK "NOT NULL"
+	bigint user_id FK "NOT NULL"
+	varchar_100 picture_url "NOT NULL"
+	datetime saved_at "NOT NULL"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 }
