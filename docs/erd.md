@@ -1,3 +1,5 @@
+deleted_at 추가
+
 erDiagram
 USER {
 	bigint id PK "NOT NULL"
@@ -116,7 +118,8 @@ COOPERATIVE_MISSION_MEMBER_PROGRESS {
 TREASURE_MISSION {
 	bigint mission_id PK, FK "NOT NULL"
 	int item_total_count "NOT NULL"
-	json item_detail "NULL, json: {index: int, mx: float, my: float}
+	json item_detail "NULL, json: {index: int, mx: float, my: float}"
+	int radius "NOT NULL"
 }
 
 TREASURE_MISSION_PROGRESS {
@@ -173,3 +176,34 @@ TRAVEL_ENDING_CONTENT {
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 }
+
+USER_TRAVEL_SYTLE ||--o{ USER : has
+AR_CHARACTER ||--o{ USER : selected_by
+
+USER ||--o| USER_SETTING : has
+USER ||--o{ STEP_COUNT : records
+USER ||--o{ LOCATION : owns
+USER ||--o{ CULTURE_MISSION_PROGRESS : progresses
+USER ||--o{ COOPERATIVE_MISSION_MEMBER_PROGRESS : participates
+USER ||--o{ TREASURE_MISSION_PROGRESS : progresses
+USER ||--o{ GUESTBOOK : writes
+USER ||--o{ ACQUIRED_AR_CHARACTER : acquires
+USER ||--o{ TRAVEL_ENDING_CONTENT : owns
+
+LOCATION ||--o{ MISSION : hosts
+LOCATION ||--o{ GUESTBOOK : contains
+
+MISSION ||--o| CULTURE_MISSION : specializes
+MISSION ||--o| COOPERATIVE_MISSION : specializes
+MISSION ||--o| TREASURE_MISSION : specializes
+MISSION ||--o{ GUESTBOOK : creates
+MISSION ||--o{ ACQUIRED_AR_CHARACTER : rewards
+
+CULTURE_MISSION ||--o{ CULTURE_MISSION_PROGRESS : tracks
+
+COOPERATIVE_MISSION ||--o{ COOPERATIVE_MISSION_ROLE : has
+COOPERATIVE_MISSION_ROLE ||--o{ COOPERATIVE_MISSION_MEMBER_PROGRESS : tracks
+
+TREASURE_MISSION ||--o{ TREASURE_MISSION_PROGRESS : tracks
+
+AR_CHARACTER ||--o{ ACQUIRED_AR_CHARACTER : acquired_as
