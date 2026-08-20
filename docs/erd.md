@@ -83,6 +83,7 @@ CULTURE_MISSION_PROGRESS {
 	varchar_20 mission_status "NOT NULL, Enum: INPROGRESS, COMPLETED"
 	int current_quiz_index "NOT NULL, DEFAULT: 1"
 	int correct_number "NOT NULL, DEFAULT: 0"
+	datetime completed_at "NULL"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 }
@@ -90,6 +91,17 @@ CULTURE_MISSION_PROGRESS {
 COOPERATIVE_MISSION {
 	bigint mission_id PK, FK "NOT NULL"
 	int role_total_count "NOT NULL"
+    datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
+    datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
+}
+
+COOPERATIVE_MISSION_PROGRESS {
+    bigint id PK "NOT NULL"
+    bigint cooperative_mission_id FK "NOT NULL"
+    int current_step "NOT NULL, DEFAULT: 1"
+    varchar_20 mission_status "NOT NULL, Enum: INPROGRESS, COMPLETED"
+    varchar_100 team_token "NOT NULL, UNIQUE"
+    datetime completed_at "NULL"
     datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
     datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 }
@@ -113,7 +125,7 @@ COOPERATIVE_MISSION_PARTICIPANT {
     bigint user_id FK "NULL"
     varchar_100 guest_name "NULL"
     varchar_500 guest_token "NULL"
-    varchar_20 participant_status "NOT NULL, Enum: ACCEPTED, LEFT"
+    varchar_20 participant_status "NOT NULL, Enum: ACCEPTED, INVITED"
     datetime joined_at "NULL"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
     datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
@@ -142,7 +154,7 @@ TREASURE_MISSION_PROGRESS {
 	bigint user_id FK "NOT NULL"
 	json current_found_item_idx "NOT NULL, json: int[]"
 	varchar_20 mission_status "NOT NULL, Enum: INPROGRESS, COMPLETED"
-	json picture_with_character_url "NULL, json: string[]"
+	datetime completed_at "NULL"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 }
@@ -225,7 +237,7 @@ USER ||--o| USER_SETTING : has
 USER ||--o{ STEP_COUNT : records
 USER ||--o{ LOCATION : owns
 USER ||--o{ CULTURE_MISSION_PROGRESS : progresses
-USER ||--o{ COOPERATIVE_MISSION_MEMBER_PROGRESS : participates
+USER ||--o{ COOPERATIVE_MISSION_PARTICIPANT : joins
 USER ||--o{ TREASURE_MISSION_PROGRESS : progresses
 USER ||--o{ GUESTBOOK : writes
 USER ||--o{ ACQUIRED_AR_CHARACTER : acquires
@@ -242,8 +254,10 @@ MISSION ||--o{ ACQUIRED_AR_CHARACTER : rewards
 
 CULTURE_MISSION ||--o{ CULTURE_MISSION_PROGRESS : tracks
 
-COOPERATIVE_MISSION ||--o{ COOPERATIVE_MISSION_ROLE : has
-COOPERATIVE_MISSION_ROLE ||--o{ COOPERATIVE_MISSION_MEMBER_PROGRESS : tracks
+COOPERATIVE_MISSION ||--o{ COOPERATIVE_ROLE_CARD : has
+COOPERATIVE_MISSION ||--o{ COOPERATIVE_MISSION_PARTICIPANT : has
+COOPERATIVE_MISSION_PARTICIPANT ||--o| COOPERATIVE_ROLE_PROGRESS : assigned
+COOPERATIVE_ROLE_CARD ||--o| COOPERATIVE_ROLE_PROGRESS : tracks
 
 TREASURE_MISSION ||--o{ TREASURE_MISSION_PROGRESS : tracks
 
