@@ -1,5 +1,3 @@
-deleted_at 추가
-
 erDiagram
 USER {
 	bigint id PK "NOT NULL"
@@ -74,6 +72,8 @@ CULTURE_MISSION {
 	bigint mission_id PK, FK "NOT NULL"
 	int quiz_total_count "NOT NULL"
 	json quiz_detail "NOT NULL, json: {quiz_index: int, img_url: string | null, question: string, options: string[] | null, answer: string, hint: string}"
+	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
+    datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 }
 
 CULTURE_MISSION_PROGRESS {
@@ -89,31 +89,45 @@ CULTURE_MISSION_PROGRESS {
 
 COOPERATIVE_MISSION {
 	bigint mission_id PK, FK "NOT NULL"
-	int member_capacity "NOT NULL"
+	int role_total_count "NOT NULL"
+    datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
+    datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 }
 
-COOPERATIVE_MISSION_ROLE {
+COOPERATIVE_ROLE_CARD {
 	bigint id PK "NOT NULL"
 	bigint cooperative_mission_id FK "NOT NULL"
-	varchar_50 role_title "NOT NULL"
+	varchar_20 role_name "NOT NULL"
 	varchar_200 role_description "NOT NULL"
-	varchar_200 role_complete_comment "NOT NULL"
-	varchar_10 item_name "NOT NULL"
-	int total_item_count "NOT NULL"
-	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
-	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
+	varchar_200 location_to_find "NOT NULL"
+	varchar_200 hint "NOT NULL"
+	varchar_200 picture_guide "NOT NULL"
+    datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
+    datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 }
 
-COOPERATIVE_MISSION_MEMBER_PROGRESS {
-	bigint id PK "NOT NULL"
-	bigint cooperative_mission_role_id FK "NOT NULL"
-	bigint user_id FK "NOT NULL"
-	int current_step "NOT NULL, DEFAULT: 0"
-	int current_item_count "NOT NULL, DEFAULT: 0"
-	json item_img_url "NULL, json: string[]"
-	varchar_20 mission_status "NOT NULL, Enum: INPROGRESS, COMPLETED"
+COOPERATIVE_MISSION_PARTICIPANT {
+    bigint id PK "NOT NULL"
+    bigint cooperative_mission_id FK "NOT NULL"
+    varchar_20 participant_type "NOT NULL, Enum: USER, GUEST"
+    bigint user_id FK "NULL"
+    varchar_100 guest_name "NULL"
+    varchar_500 guest_token "NULL"
+    varchar_20 participant_status "NOT NULL, Enum: ACCEPTED, LEFT"
+    datetime joined_at "NULL"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
-	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
+    datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
+}
+
+COOPERATIVE_ROLE_PROGRESS {
+    bigint id PK "NOT NULL"
+    bigint participant_id FK "NOT NULL, UNIQUE"
+    bigint cooperative_role_card_id FK "NOT NULL, UNIQUE"
+    varchar_500 item_img_url "NULL"
+    varchar_20 progress_status "NOT NULL, Enum: INPROGRESS, COMPLETED"
+    datetime completed_at "NULL"
+	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
+    datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 }
 
 TREASURE_MISSION {
@@ -136,7 +150,7 @@ TREASURE_MISSION_PROGRESS {
 GUESTBOOK {
 	bigint id PK "NOT NULL"
 	bigint user_id FK "NOT NULL"
-	bigint location_id FK "NULL"
+	bigint location_id FK "NOT NULL"
 	date visited_at "NOT NULL"
 	json content_img_url "NULL, json: string[]"
 	varchar_500 content_writing "NULL"
@@ -145,6 +159,22 @@ GUESTBOOK {
 	varchar_20 content_color_code "NULL"
 	datetime saved_at "NOT NULL"
 	bigint mission_id "NULL"
+	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
+	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
+	datetime deleted_at "NULL"	
+}
+
+ROAD_GUESTBOOK {
+	bigint id PK "NOT NULL"
+	bigint user_id FK "NOT NULL"
+	varchar_100 location_alias "NOT NULL"
+	date visited_at "NOT NULL"
+	json content_img_url "NULL, json: string[]"
+	varchar_500 content_writing "NULL"
+	json content_audio_url "NULL, json: string[]"
+	varchar_20 content_weather "NULL"
+	varchar_20 content_color_code "NULL"
+	datetime saved_at "NOT NULL"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 	datetime deleted_at "NULL"	
