@@ -671,6 +671,8 @@ Status Code : 409
 }
 ```
 
+
+
 ## 협동 미션 역할 진행도 저장
 - http 메서드: PATCH
 - 엔드포인트: `/api/v1/cooperative-missions/{missionProgressId}/role-progress/{roleProgressId}`
