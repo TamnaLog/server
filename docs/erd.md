@@ -62,8 +62,8 @@ LOCATION {
 	varchar_20 location_category "NOT NULL"
 	boolean is_visited "NOT NULL, DEFAULT: false"
 	int radius "NOT NULL"
-	float mx "NOT NULL"
-	float my "NOT NULL"
+	double mx "NOT NULL"
+	double my "NOT NULL"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 }
@@ -179,6 +179,7 @@ GUESTBOOK {
 ROAD_GUESTBOOK {
 	bigint id PK "NOT NULL"
 	bigint user_id FK "NOT NULL"
+	bigint location_id FK "NULL"
 	varchar_100 location_alias "NOT NULL"
 	date visited_at "NOT NULL"
 	json content_img_url "NULL, json: string[]"
@@ -186,6 +187,8 @@ ROAD_GUESTBOOK {
 	json content_audio_url "NULL, json: string[]"
 	varchar_20 content_weather "NULL"
 	varchar_20 content_color_code "NULL"
+	double mx "NOT NULL"
+	double my "NOT NULL"
 	datetime saved_at "NOT NULL"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
