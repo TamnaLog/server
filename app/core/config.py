@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     app_name: str = "jamkkan-jeju-api"
     environment: str = Field(default="development")
     debug: bool = Field(default=True)
+    cors_allowed_origins: str = Field(default="http://localhost:3000")
 
     mysql_host: str = Field(default="localhost")
     mysql_port: int = Field(default=3306)
@@ -40,6 +41,14 @@ class Settings(BaseSettings):
         if not self.mysql_ssl_enabled:
             return {}
         return {"ssl": {"ca": "/etc/ssl/certs/ca-certificates.crt"}}
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [
+            origin.strip()
+            for origin in self.cors_allowed_origins.split(",")
+            if origin.strip()
+        ]
 
 
 @lru_cache
