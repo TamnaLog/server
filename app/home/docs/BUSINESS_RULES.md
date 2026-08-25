@@ -60,6 +60,16 @@ app/home/mission_recommender.py
 
 `totalStep`과 `currentStep`은 프론트에서 화면 진행 상태를 관리하기 위한 값이다.
 
+문화 미션은 퀴즈 진행도를 단계 정보로 사용한다.
+
+- `totalStep`: `CULTURE_MISSION.quiz_total_count`
+- `currentStep`: `CULTURE_MISSION_PROGRESS.current_quiz_index`
+
+보물찾기 미션과 협동 미션은 공통 미션 단계 정보를 사용한다.
+
+- `totalStep`: `MISSION.step_detail`의 항목 개수
+- `currentStep`: 각 미션 진행도 테이블의 `current_step`
+
 백엔드는 명세에 필요한 값을 반환하되, 프론트 화면 단계 정책을 추가로 판단하지 않는다.
 
 ## 6. 방명록 개수

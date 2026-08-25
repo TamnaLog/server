@@ -8,7 +8,7 @@
 -- 데이터 방침
 --   - 사용자: id=1 이 "나"(로그인 고정 사용자). id=2~6 은 협동 미션 팀원 5명.
 --   - 콘텐츠 성격의 테이블(LOCATION / MISSION / *_MISSION / AR_CHARACTER)은 채운다.
---   - 진행도(progress) 계열은 기본적으로 비워 두되, 홈 조회 예시 응답을 위해 사용자 1의 보물찾기 진행도 1건은 둔다.
+--   - 홈 조회 예시 응답을 위해 사용자 1의 문화/협동/보물찾기 진행도를 각각 1건씩 둔다.
 --   - USER_TRAVEL_STYLE 은 온보딩 응답 예시와 맞는 여행 유형 데이터를 둔다.
 --   - 방명록(GUESTBOOK / ROAD_GUESTBOOK)과 GPS 는 데이터가 있어야 하므로 채운다.
 --   - 좌표는 전부 제주도 기준. mx = 경도(longitude), my = 위도(latitude).
@@ -269,13 +269,26 @@ VALUES
 
 
 -- ---------------------------------------------------------------------
+-- CULTURE_MISSION_PROGRESS : 홈 조회 예시용 진행 중 미션 1건
+-- ---------------------------------------------------------------------
+
+INSERT INTO `CULTURE_MISSION_PROGRESS`
+    (`id`, `culture_mission_id`, `user_id`, `mission_status`,
+     `current_quiz_index`, `correct_number`, `completed_at`)
+VALUES
+    (1, 1, 1, 'IN_PROGRESS', 2, 1, NULL);
+
+
+-- ---------------------------------------------------------------------
 -- TREASURE_MISSION_PROGRESS : 홈 조회 예시용 진행 중 미션 1건
 -- ---------------------------------------------------------------------
 
+-- current_step : 1 | 2 | 3 (3 = 완료)
 INSERT INTO `TREASURE_MISSION_PROGRESS`
-    (`id`, `treasure_mission_id`, `user_id`, `current_found_item_idx`, `mission_status`, `completed_at`)
+    (`id`, `treasure_mission_id`, `user_id`, `current_found_item_idx`, `current_step`,
+     `mission_status`, `completed_at`)
 VALUES
-    (1, 8, 1, '[1, 2]', 'IN_PROGRESS', NULL);
+    (1, 8, 1, '[1, 2]', 2, 'IN_PROGRESS', NULL);
 
 
 -- ---------------------------------------------------------------------
@@ -465,18 +478,3 @@ VALUES
      '노을 지는 거 끝까지 보고 왔다. 여행 마지막 밤이라 더 오래 앉아 있었다.',
      NULL, 'SUNNY',  '#FFC9C9', 126.3771, 33.4615, '2026-08-22T19:40:00', NULL);
 
-
--- ---------------------------------------------------------------------
--- 비워 두는 테이블 (사용자 진행 상태 - API 호출로 생성됨)
---   STEP_COUNT
---   VISITED_LOCATION
---   CULTURE_MISSION_PROGRESS
---   COOPERATIVE_MISSION_PROGRESS
---   COOPERATIVE_ROLE_CARD
---   COOPERATIVE_MISSION_PARTICIPANT
---   COOPERATIVE_ROLE_PROGRESS
---   TREASURE_MISSION_PROGRESS 는 홈 조회 예시용 IN_PROGRESS 1건만 둔다.
---   ACQUIRED_AR_CHARACTER
---   TRAVEL_ENDING_CONTENT
---   PICTURE_WITH_CHARACTER
--- ---------------------------------------------------------------------

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.cooperative_mission.router import router as cooperative_mission_router
 from app.core.config import Settings, get_settings
 from app.core.database import get_db, ping_database
-from app.core.errors import register_exception_handlers
+from app.core.errors import register_exception_handlers, use_common_error_responses
 from app.culture_mission.router import router as culture_mission_router
 from app.guestbook.router import router as guestbook_router
 from app.home.router import router as home_router
@@ -52,6 +52,9 @@ def create_app() -> FastAPI:
 
     for domain_router in ROUTERS:
         app.include_router(domain_router)
+
+    # 라우터 등록 후에 호출해야 모든 API 문서에 공통 에러 응답이 반영된다.
+    use_common_error_responses(app)
 
     @app.get("/")
     def root() -> dict[str, str]:

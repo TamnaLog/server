@@ -307,6 +307,7 @@ CREATE TABLE `TREASURE_MISSION_PROGRESS` (
     `treasure_mission_id`    BIGINT      NOT NULL,
     `user_id`                BIGINT      NOT NULL,
     `current_found_item_idx` JSON        NOT NULL                COMMENT 'int[]',
+    `current_step`           INT         NOT NULL DEFAULT 1      COMMENT '진행 단계. 1 | 2 | 3 (3 = 완료)',
     `mission_status`         VARCHAR(20) NOT NULL                COMMENT 'IN_PROGRESS | COMPLETED',
     `completed_at`           DATETIME    NULL,
     `created_at`             DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,

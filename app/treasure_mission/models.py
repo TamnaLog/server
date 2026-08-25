@@ -6,14 +6,39 @@ docs/erd.md 기준으로 이 도메인이 담당하는 테이블:
 - AR_CHARACTER
 - ACQUIRED_AR_CHARACTER
 - PICTURE_WITH_CHARACTER
+
+AR_CHARACTER 는 온보딩/홈/마이페이지가 함께 쓰므로 여기서 한 번만 정의하고
+다른 도메인은 import해서 사용한다.
 """
 
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import JSON, BigInteger, DateTime, String, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.mission.models import Mission, MissionStatus
+
+
+__all__ = [
+    "AcquiredArCharacter",
+    "ArCharacter",
+    "Mission",
+    "MissionStatus",
+    "PictureWithCharacter",
+    "TreasureMission",
+    "TreasureMissionProgress",
+]
 
 
 class ArCharacter(Base):
@@ -35,5 +60,93 @@ class ArCharacter(Base):
     )
 
 
-# TODO: TREASURE_MISSION / TREASURE_MISSION_PROGRESS /
-#       ACQUIRED_AR_CHARACTER / PICTURE_WITH_CHARACTER 모델 정의
+class TreasureMission(Base):
+    """TREASURE_MISSION - 보물 찾기 미션. `mission_id` 가 MISSION 과 1:1로 이어진다."""
+
+    __tablename__ = "TREASURE_MISSION"
+
+    mission_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("MISSION.id", ondelete="CASCADE"), primary_key=True
+    )
+    item_total_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    # [{index, mx, my, radius}]
+    item_detail: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class TreasureMissionProgress(Base):
+    """TREASURE_MISSION_PROGRESS - 보물 찾기 진행도."""
+
+    __tablename__ = "TREASURE_MISSION_PROGRESS"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    treasure_mission_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("TREASURE_MISSION.mission_id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("USER.id", ondelete="CASCADE"), nullable=False
+    )
+    # 찾은 보물 index 목록 (int[])
+    current_found_item_idx: Mapped[list[int]] = mapped_column(JSON, nullable=False)
+    # 진행 단계. 1 | 2 | 3 (3 = 완료)
+    current_step: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
+    mission_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class AcquiredArCharacter(Base):
+    """ACQUIRED_AR_CHARACTER - 사용자가 미션 보상으로 획득한 AR 캐릭터."""
+
+    __tablename__ = "ACQUIRED_AR_CHARACTER"
+    __table_args__ = (UniqueConstraint("user_id", "ar_character_id"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    ar_character_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("AR_CHARACTER.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("USER.id", ondelete="CASCADE"), nullable=False
+    )
+    acquired_mission_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("MISSION.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    ar_character: Mapped[ArCharacter] = relationship(lazy="joined")
+
+
+class PictureWithCharacter(Base):
+    """PICTURE_WITH_CHARACTER - 사용자가 AR 캐릭터와 찍은 사진."""
+
+    __tablename__ = "PICTURE_WITH_CHARACTER"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("USER.id", ondelete="CASCADE"), nullable=False
+    )
+    picture_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    saved_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
