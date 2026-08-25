@@ -5,6 +5,7 @@ USER {
 	json transportation "NULL, json: string[]"
 	json travel_style "NULL, json: string[]"
 	bigint user_travel_style_id FK "NULL"
+	bigint ar_character_id FK "NULL"
 	varchar_20 nickname "NULL"
 	int point "NOT NULL, DEFAULT: 0"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
@@ -291,3 +292,4 @@ COOPERATIVE_ROLE_CARD ||--o| COOPERATIVE_ROLE_PROGRESS : tracks
 TREASURE_MISSION ||--o{ TREASURE_MISSION_PROGRESS : tracks
 
 AR_CHARACTER ||--o{ ACQUIRED_AR_CHARACTER : acquired_as
+AR_CHARACTER o|--o{ USER : assigned_to

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.cooperative_mission.router import router as cooperative_mission_router
 from app.core.config import Settings, get_settings
 from app.core.database import get_db, ping_database
+from app.core.errors import register_exception_handlers
 from app.culture_mission.router import router as culture_mission_router
 from app.guestbook.router import router as guestbook_router
 from app.home.router import router as home_router
@@ -33,9 +34,11 @@ ROUTERS = (
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    # debug=True 이면 500 응답이 traceback 으로 나가서 공통 에러 형식이 깨진다.
+    # traceback 은 서버 로그로 출력되므로 응답 형식은 환경과 무관하게 통일한다.
     app = FastAPI(
         title=settings.app_name,
-        debug=settings.debug,
+        debug=False,
     )
     app.add_middleware(
         CORSMiddleware,
@@ -44,6 +47,8 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    register_exception_handlers(app)
 
     for domain_router in ROUTERS:
         app.include_router(domain_router)
