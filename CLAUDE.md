@@ -34,7 +34,7 @@
 - 도메인별 패키지 구조: `app/<domain>/{router,service,schemas,models}.py`
 - 도메인 문서: `app/<domain>/docs/API_SPEC.md`, `app/<domain>/docs/BUSINESS_RULES.md`
 - 공통 코드: `app/core/` (`config.py`, `database.py`, `deps.py`, `errors.py`)
-- 테스트: 루트 `conftest.py` + `app/<domain>/tests/`
+- 테스트: 루트 `conftest.py` + `app/<domain>/tests/` (공통 규칙 테스트는 `app/core/tests/`)
 - 라우터는 `app/main.py`의 `ROUTERS`에 등록한다.
 
 ## 3. Reference Documents
@@ -47,12 +47,15 @@
 - 구현은 항상 명세 문서를 기준으로 한다. 명세에 없는 기능은 임의로 추가하지 않는다.
 - 명세가 확정되지 않은 임시 로직은 `TODO` 주석으로 교체 지점을 남긴다.
 - 주석과 docstring은 한국어로 작성한다.
-- 공통 처리 정책, API 응답 규칙, DB 사용 방식, 테스트 방식 등 프로젝트 기준이 바뀌면 관련 코드와 문서를 함께 확인하고 필요한 변경 사항을 반영한다.
+- 공통 처리 정책, API 응답 규칙, DB 사용 방식, 테스트 방식 등 프로젝트 기준이 바뀌면 관련 코드와 문서를 함께 확인하고 필요한 변경 사항을 반영한다. 또한 반드시 이런 경우 공유한다.
 
 ## 5. Architecture Rules
 - 계층 역할: router = 요청/응답 + 의존성, service = 비즈니스 로직, models = ORM, schemas = 검증/직렬화.
 - router에는 비즈니스 로직을 두지 않고 service 함수만 호출한다.
 - 배정/매칭처럼 교체 가능성이 큰 규칙은 별도 모듈로 분리한다. (예: `app/onboarding/onboarding_matcher.py`)
+- ERD의 모든 테이블은 ORM 모델로 이미 정의되어 있다. API 구현 중에 모델을 새로 만들지 말고 소유 도메인에서 import해서 쓴다.
+  - 모든 도메인 models 모듈은 `app/core/models.py`에서 한 번에 import한다. 새 모델 모듈을 추가하면 여기에도 추가한다.
+  - `app/core/tests/test_models_registry.py`가 `scripts/sql/01-schema.sql`과 테이블/컬럼이 일치하는지 검증한다.
 - 여러 도메인이 공유하는 테이블 모델은 소유 도메인에서 한 번만 정의하고 다른 도메인은 import한다.
   - `USER`, `USER_TRAVEL_STYLE` → `app/user/models.py`
   - `AR_CHARACTER` → `app/treasure_mission/models.py`
@@ -66,7 +69,7 @@
 - 현재 사용자 id가 필요하면 `Annotated[int, Depends(get_current_user_id)]`(`app/core/deps.py`)를 사용한다.
 
 ## 7. Database & Business Logic Rules
-- 스키마 변경이 필요하면 `docs/erd.md`와 `scripts/sql/01-schema.sql`을 함께 수정한다.
+- 스키마 변경이 필요하면 `docs/erd.md`와 `scripts/sql/01-schema.sql`을 함께 수정한다. 이 경우에는 해당 수정 내용을 공유한다.
 - 조회/저장은 SQLAlchemy 2.0 스타일(`select()`, `db.get()`)을 사용한다.
 - 커밋은 service 계층에서 한 번만 수행한다.
 
@@ -78,11 +81,16 @@
 - 404 등 명세에 정의된 도메인 에러는 `AppError`/`NotFoundError`를 발생시키고 명세의 `code`를 그대로 쓴다.
   - 원인 설명이 필요하면 `detail` 인자로 남긴다. 응답에는 나가지 않고 서버 로그 확인용이다.
 - 예상치 못한 예외는 그대로 발생시키면 500 `INTERNAL_SERVER_ERROR`로 응답된다. (traceback은 서버 로그로 출력)
+- Swagger 문서의 에러 응답도 `app/core/errors.py`의 `use_common_error_responses()`가 공통으로 맞춘다.
+  - FastAPI 기본 422 응답과 관련 스키마는 문서에서 제거한다.
+  - 요청 값(query/path/body)이 있는 API에는 400, 모든 API에는 500을 자동으로 문서에 넣는다.
+  - 따라서 라우터에 400/500을 `responses`로 직접 적지 않는다. 404 등 도메인 에러만 적는다.
 
 ## 9. Testing Rules
 - pytest + `TestClient` + SQLite 인메모리로 API 단위로 테스트한다. (`pip install -r requirements-dev.txt`, 실행: `pytest`)
 - 공통 픽스처는 루트 `conftest.py`(`client`, `db_session`)에 있고, `get_db` 의존성만 교체해 라우터/서비스/모델을 그대로 태운다.
 - 테스트 파일은 도메인 폴더 안에 둔다: `app/<domain>/tests/test_<api>.py`
+  - 특정 도메인이 아니라 프로젝트 공통 규칙을 검증하는 테스트는 `app/core/tests/`에 둔다.
 - API 하나당 최소 다음 케이스를 검증한다.
   1. 명세의 정상 케이스: status code + 응답 필드 + DB 저장 결과
   2. 명세의 분기 케이스(예: 빈 body, null 응답)
@@ -101,3 +109,4 @@
 3. models → schemas → service → router 순서로 구현
 4. 명세의 정상/예외 케이스 동작 확인
 5. 문서(ERD/DDL/CLAUDE.md) 변경 사항 반영
+6. 논의가 필요한 상황이 존재하면 공유

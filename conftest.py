@@ -12,9 +12,9 @@ from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.core import models as all_models  # noqa: F401  (전체 테이블 메타데이터 등록)
 from app.core.database import Base, get_db
 from app.main import app
-from app.user import models as user_models  # noqa: F401  (테이블 메타데이터 등록)
 
 
 @pytest.fixture

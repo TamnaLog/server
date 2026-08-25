@@ -172,6 +172,7 @@ TREASURE_MISSION_PROGRESS {
 	bigint treasure_mission_id FK "NOT NULL"
 	bigint user_id FK "NOT NULL"
 	json current_found_item_idx "NOT NULL, json: int[]"
+	int current_step "NOT NULL, DEFAULT: 1"
 	varchar_20 mission_status "NOT NULL, Enum: IN_PROGRESS, COMPLETED"
 	datetime completed_at "NULL"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
