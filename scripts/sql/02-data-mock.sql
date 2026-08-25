@@ -66,14 +66,14 @@ VALUES
 -- ---------------------------------------------------------------------
 
 INSERT INTO `USER`
-    (`id`, `expectation`, `transportation`, `travel_style`, `user_travel_style_id`, `nickname`, `point`)
+    (`id`, `expectation`, `transportation`, `travel_style`, `user_travel_style_id`, `ar_character_id`, `nickname`, `point`)
 VALUES
-    (1, '["PHOTO", "LOCAL", "NATURE"]', '["WALK", "BUS"]',  '["RIGHT_HERE", "NEAR_AROUND"]',       1, '몽글몽글파도', 1200),
-    (2, '["CAFE", "WALKING"]',          '["CAR"]',          '["NEAR_DESTINATION"]',                2, '한라봉주스',   300),
-    (3, '["NATURE", "CULTURE"]',        '["WALK"]',         '["RIGHT_HERE"]',                      3, '오름러버',     450),
-    (4, '["PHOTO", "CAFE"]',            '["BICYCLE"]',      '["NEAR_AROUND"]',                     1, '바다필름',     0),
-    (5, '["LOCAL", "CULTURE"]',         '["BUS", "WALK"]',  '["NEAR_AROUND", "NEAR_DESTINATION"]',  2, '돌담산책',    780),
-    (6, '["WALKING", "NATURE"]',        '["CAR", "WALK"]',  '["RIGHT_HERE"]',                      3, '귤빛노을',     150);
+    (1, '["PHOTO", "LOCAL", "NATURE"]', '["WALK", "BUS"]',  '["RIGHT_HERE", "NEAR_AROUND"]',       1, NULL, '몽글몽글파도', 1200),
+    (2, '["CAFE", "WALKING"]',          '["CAR"]',          '["NEAR_DESTINATION"]',                2, NULL, '한라봉주스',   300),
+    (3, '["NATURE", "CULTURE"]',        '["WALK"]',         '["RIGHT_HERE"]',                      3, NULL, '오름러버',     450),
+    (4, '["PHOTO", "CAFE"]',            '["BICYCLE"]',      '["NEAR_AROUND"]',                     1, NULL, '바다필름',     0),
+    (5, '["LOCAL", "CULTURE"]',         '["BUS", "WALK"]',  '["NEAR_AROUND", "NEAR_DESTINATION"]',  2, NULL, '돌담산책',    780),
+    (6, '["WALKING", "NATURE"]',        '["CAR", "WALK"]',  '["RIGHT_HERE"]',                      3, NULL, '귤빛노을',     150);
 
 
 -- ---------------------------------------------------------------------
@@ -330,6 +330,17 @@ VALUES
      '온보딩에서 나중에 할게요를 선택하면 만날 수 있어요.',
      'https://cdn.jamkkan-jeju.dev/ar/dolmungii.png',
      '["#기본캐릭터", "#돌멍이", "#제주친구"]');
+
+UPDATE `USER`
+SET `ar_character_id` = CASE `id`
+    WHEN 1 THEN 1
+    WHEN 2 THEN 2
+    WHEN 3 THEN 3
+    WHEN 4 THEN 1
+    WHEN 5 THEN 2
+    WHEN 6 THEN 3
+END
+WHERE `id` IN (1, 2, 3, 4, 5, 6);
 
 
 -- ---------------------------------------------------------------------

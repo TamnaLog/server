@@ -30,144 +30,74 @@
 - 기본 API prefix는 `/api/v1`이다.
 - API 요청/응답 필드명은 각 도메인의 `API_SPEC.md`를 기준으로 한다.
 
+## 2. Project Structure
+- 도메인별 패키지 구조: `app/<domain>/{router,service,schemas,models}.py`
+- 도메인 문서: `app/<domain>/docs/API_SPEC.md`, `app/<domain>/docs/BUSINESS_RULES.md`
+- 공통 코드: `app/core/` (`config.py`, `database.py`, `deps.py`, `errors.py`)
+- 테스트: 루트 `conftest.py` + `app/<domain>/tests/`
+- 라우터는 `app/main.py`의 `ROUTERS`에 등록한다.
 
-
-## 2. Reference Documents
-
-구현 전에 반드시 관련 문서를 먼저 확인한다.
-
-우선순위는 다음과 같다.
-
-1. 해당 도메인의 `app/{domain}/docs/API_SPEC.md`
-2. 해당 도메인의 `app/{domain}/docs/BUSINESS_RULES.md`
-3. DB 구조가 필요한 경우 `docs/erd.md`
-4. 실제 테이블/컬럼 확인이 필요한 경우 `scripts/sql/01-schema.sql`
-5. 목업 데이터 확인이 필요한 경우 `scripts/sql/02-data-mock.sql`
-6. API 문서 형식 확인이 필요한 경우 `docs/api_example.md`
-
-Claude는 Notion을 직접 참고하지 않는다. API 구현 기준은 각 도메인에 존재하는 `API_SPEC.md`와 `BUSINESS_RULES.md`이다.
-
-`API_SPEC.md`와 구현이 충돌하면 구현을 임의로 바꾸지 말고, 먼저 명세를 기준으로 판단한다. 명세 자체가 이상하면 사용자에게 확인하거나, 수정 사유를 명확히 남긴다.
-
-
+## 3. Reference Documents
+- API 명세: `app/<domain>/docs/API_SPEC.md` (노션 명세를 같은 형식으로 옮긴 파일)
+- 비즈니스 룰: `app/<domain>/docs/BUSINESS_RULES.md`
+- ERD: `docs/erd.md`, DDL: `scripts/sql/01-schema.sql`, 목업 데이터: `scripts/sql/02-data-mock.sql`
+- 구현 전 해당 도메인의 두 문서를 먼저 읽고, 명세와 다르게 구현해야 하면 이유를 남긴다.
 
 ## 4. Development Principles
-
-- 명세에 없는 기능을 임의로 추가하지 않는다.
-- 명세에 있는 요청 필드명, 응답 필드명, 상태 코드, 에러 코드를 그대로 사용한다.
-- 추측으로 필드명을 바꾸지 않는다.
-- 기존 코드 스타일과 도메인 구조를 우선한다.
-- 한 번에 큰 리팩터링을 하지 말고, 요청받은 API 구현에 필요한 범위만 수정한다.
-- 한국어 문자열은 UTF-8로 그대로 유지한다.
-- SQL, Markdown, Python 파일은 UTF-8 without BOM 기준으로 작성한다.
-- 날짜/시간 응답은 offset 없는 ISO 8601 문자열로 반환한다.
-- 배열 응답은 데이터가 없으면 빈 배열 `[]`로 반환한다.
-- 명세에서 `null`이라고 정한 값은 빈 객체 `{}`나 빈 문자열 `""`로 대체하지 않는다.
+- 구현은 항상 명세 문서를 기준으로 한다. 명세에 없는 기능은 임의로 추가하지 않는다.
+- 명세가 확정되지 않은 임시 로직은 `TODO` 주석으로 교체 지점을 남긴다.
+- 주석과 docstring은 한국어로 작성한다.
+- 공통 처리 정책, API 응답 규칙, DB 사용 방식, 테스트 방식 등 프로젝트 기준이 바뀌면 관련 코드와 문서를 함께 확인하고 필요한 변경 사항을 반영한다.
 
 ## 5. Architecture Rules
-
-- FastAPI의 라우터, 서비스, 스키마, 모델 분리 구조를 유지한다.
-- `router.py`는 요청 파라미터 수집, 의존성 주입, service 호출, 응답 반환만 담당한다.
-- 비즈니스 로직은 `service.py`에 둔다.
-- 요청/응답 모델은 `schemas.py`에 둔다.
-- SQLAlchemy 모델은 `models.py`에 둔다.
-- 공통 설정, DB 세션, 공통 의존성은 `app/core` 구조를 따른다.
-- DB 컬럼명이 snake_case이고 API 응답 필드명이 camelCase이면, service 또는 schema 계층에서 명세 기준 camelCase로 변환한다.
-- 도메인 간 참조가 필요하더라도 순환 import가 생기지 않도록 주의한다.
+- 계층 역할: router = 요청/응답 + 의존성, service = 비즈니스 로직, models = ORM, schemas = 검증/직렬화.
+- router에는 비즈니스 로직을 두지 않고 service 함수만 호출한다.
+- 배정/매칭처럼 교체 가능성이 큰 규칙은 별도 모듈로 분리한다. (예: `app/onboarding/onboarding_matcher.py`)
+- 여러 도메인이 공유하는 테이블 모델은 소유 도메인에서 한 번만 정의하고 다른 도메인은 import한다.
+  - `USER`, `USER_TRAVEL_STYLE` → `app/user/models.py`
+  - `AR_CHARACTER` → `app/treasure_mission/models.py`
 
 ## 6. API Implementation Rules
-
-- API 구현 전 해당 도메인의 `API_SPEC.md`를 먼저 읽는다.
-- 비즈니스 조건이 있으면 같은 도메인의 `BUSINESS_RULES.md`를 함께 읽는다.
-- HTTP 메서드와 endpoint는 `API_SPEC.md`에 적힌 값을 그대로 사용한다.
-- 요청 Query, Path, Body는 명세의 필수 여부와 타입을 따른다.
-- 응답 Body는 명세의 JSON 구조와 필드명을 그대로 따른다.
-- `204 No Content` 응답은 Body를 반환하지 않는다.
-- Pydantic schema의 필드명은 API 명세 기준으로 작성한다.
-- DB 저장값과 응답값의 이름이 다르면 service에서 명확히 매핑한다.
-- 구현 후 Swagger에서 보이는 요청/응답 모델이 명세와 어긋나지 않는지 확인한다.
+- 요청/응답 필드명은 camelCase, 내부 코드/DB 컬럼은 snake_case를 사용한다.
+  - 응답 스키마는 `app/onboarding/schemas.py`의 `CamelModel`처럼 `alias_generator=to_camel` + `populate_by_name=True`를 사용한다.
+- 허용값이 정해진 필드는 `str, Enum`으로 정의해 검증을 스키마에 맡긴다.
+- router에는 `response_model`과 명세의 `status_code`를 명시한다.
+- 의존성은 `Annotated[Session, Depends(get_db)]` 형태로 선언한다.
+- 현재 사용자 id가 필요하면 `Annotated[int, Depends(get_current_user_id)]`(`app/core/deps.py`)를 사용한다.
 
 ## 7. Database & Business Logic Rules
-
-- DB 구조는 `docs/erd.md`를 기준으로 판단한다.
-- 실제 SQL 컬럼 정의가 필요하면 `scripts/sql/01-schema.sql`을 확인한다.
-- 목업 데이터는 `scripts/sql/02-data-mock.sql`을 확인한다.
-- JSON 배열 컬럼은 배열 의미의 값이면 가능하면 `[]`를 사용한다.
-- `NULL`과 빈 배열 `[]`의 의미를 구분해서 사용한다.
-- API 응답 예시와 실제 목업 데이터는 서로 맞아야 한다.
-- 명세 응답을 만들기 위한 데이터가 부족하면 `scripts/sql/02-data-mock.sql`을 수정할 수 있다.
-- 테이블 구조 변경이 필요하면 `scripts/sql/01-schema.sql`과 `docs/erd.md`를 함께 수정해야 하는지 확인한다.
-
-SQL을 수정한 경우에는 최종 응답에 반드시 아래 내용을 작성한다.
-
-- 어떤 SQL 파일을 수정했는지
-- 어떤 테이블/컬럼/데이터를 수정했는지
-- 왜 수정했는지
-- 기존 DB 볼륨에는 자동 반영되지 않는다는 점
-
-SQL 수정 후 기존 로컬 DB에 반영하려면 볼륨을 삭제하고 다시 기동해야 한다.
-
-```powershell
-docker compose -f docker-compose.dev.yml down -v
-docker compose -f docker-compose.dev.yml up --build
-```
-
-초기화 SQL은 MySQL 최초 기동 시 아래 순서로 실행된다.
-
-```text
-scripts/sql/01-schema.sql
-scripts/sql/02-data-mock.sql
-```
+- 스키마 변경이 필요하면 `docs/erd.md`와 `scripts/sql/01-schema.sql`을 함께 수정한다.
+- 조회/저장은 SQLAlchemy 2.0 스타일(`select()`, `db.get()`)을 사용한다.
+- 커밋은 service 계층에서 한 번만 수행한다.
 
 ## 8. Error Handling Rules
-
-- 에러 코드는 반드시 API 명세에 적힌 세부 코드만 사용한다.
-- 명세에 없는 세부 에러 코드를 임의로 만들지 않는다.
-- 400 에러는 `INVALID_REQUEST` 코드 하나로 통일해서 전송한다.
-- 500 에러는 `INTERNAL_SERVER_ERROR` 코드 하나로 통일해서 전송한다.
-- 400과 500 에러 응답은 각 API 명세에 따로 명시하지 않는다.
-- 404, 409 등 비즈니스 상황별 에러는 `API_SPEC.md`에 적힌 코드가 있을 때만 해당 코드를 사용한다.
-- 동일한 상황에 대해 도메인마다 다른 에러 코드가 필요하면 해당 도메인의 `API_SPEC.md`를 따른다.
+- 모든 에러 응답 형식은 `{ "code": ... }` 이다. (`app/core/errors.py`) 응답에 `message`는 넣지 않는다.
+- 400 에러는 `INVALID_REQUEST`, 500 에러는 `INTERNAL_SERVER_ERROR` 코드 하나로 통일한다.
+  - 두 에러는 공통 핸들러가 처리하므로 각 API에서 따로 정의하지 않는다.
+  - 요청 검증 실패(FastAPI 기본 422)도 공통 핸들러가 400 `INVALID_REQUEST`로 변환한다.
+- 404 등 명세에 정의된 도메인 에러는 `AppError`/`NotFoundError`를 발생시키고 명세의 `code`를 그대로 쓴다.
+  - 원인 설명이 필요하면 `detail` 인자로 남긴다. 응답에는 나가지 않고 서버 로그 확인용이다.
+- 예상치 못한 예외는 그대로 발생시키면 500 `INTERNAL_SERVER_ERROR`로 응답된다. (traceback은 서버 로그로 출력)
 
 ## 9. Testing Rules
-
-- 테스트는 기본적으로 API 단위로 작성한다.
-- API 1개당 테스트 1개만 작성하는 것이 아니라, 정상 케이스와 중요한 실패 케이스를 나누어 작성한다.
-- 조회 API는 status code, 응답 필드명, 응답 구조, null/빈 배열 처리, 정렬/페이지네이션 조건을 확인한다.
-- 저장/수정/삭제 API는 status code와 DB 반영 여부를 함께 확인한다.
-- 저장/수정 API가 `204 No Content`를 반환하는 경우 응답 Body가 없는지 확인한다.
-- Service 테스트는 비즈니스 로직 검증에 사용한다.
-- API 테스트는 `TestClient` 등을 사용해 실제 HTTP 요청/응답 흐름을 검증한다.
-- 구현 후 최소한 import 오류가 없는지 확인한다.
-- 가능하면 해당 API를 직접 호출해서 응답 구조를 확인한다.
-- DB 조회가 필요한 API는 목업 데이터 기준으로 정상 응답이 나오는지 확인한다.
-- 에러 케이스가 명세에 있으면 최소한 주요 에러 조건을 확인한다.
-- 에러 응답 테스트에서는 `API_SPEC.md`에 명시된 세부 에러 코드만 검증한다.
-- 테스트 또는 수동 검증을 실행하지 못했다면 최종 응답에 실행하지 못했다고 명시한다.
-- SQL 목업 데이터를 수정한 경우, 기존 DB 볼륨을 유지한 상태에서는 수정 데이터가 자동 반영되지 않는다는 점을 검증 결과에 포함한다.
+- pytest + `TestClient` + SQLite 인메모리로 API 단위로 테스트한다. (`pip install -r requirements-dev.txt`, 실행: `pytest`)
+- 공통 픽스처는 루트 `conftest.py`(`client`, `db_session`)에 있고, `get_db` 의존성만 교체해 라우터/서비스/모델을 그대로 태운다.
+- 테스트 파일은 도메인 폴더 안에 둔다: `app/<domain>/tests/test_<api>.py`
+- API 하나당 최소 다음 케이스를 검증한다.
+  1. 명세의 정상 케이스: status code + 응답 필드 + DB 저장 결과
+  2. 명세의 분기 케이스(예: 빈 body, null 응답)
+  3. 잘못된 요청 → 400 `INVALID_REQUEST`
+  4. 명세에 정의된 도메인 에러(404 등)
+- 테스트 함수명은 한국어로 검증 내용을 그대로 쓴다. (예: `test_나중에_할게요를_선택하면_...`)
+- 랜덤 로직은 값 자체가 아니라 "DB에 존재하는 값 중 하나인지"로 검증한다.
+- `db.get()`처럼 `X | None`을 반환하는 조회 결과는 속성 접근 전에 `assert result is not None`을 먼저 쓴다.
+  (타입 체커가 None 가능성으로 경고하는 것을 막고, 조회 실패 시 원인도 명확해진다.)
+- 테스트를 작성하거나 수정한 경우, 해당 도메인의 `docs/TEST_GUIDE.md`에 테스트 대상, 테스트 의도, 주요 검증 항목, 실행 방법을 작성한다.
+- `TEST_GUIDE.md`는 테스트 코드를 그대로 설명하는 문서가 아니라, 해당 도메인 API에서 무엇을 검증하는지 사람이 빠르게 이해할 수 있게 정리한다.
 
 ## 10. Implementation Workflow & Definition of Done
-
-구현은 아래 순서로 진행한다.
-
-1. 해당 도메인의 `API_SPEC.md` 확인
-2. 해당 도메인의 `BUSINESS_RULES.md` 확인
-3. 필요한 경우 `docs/erd.md`, `01-schema.sql`, `02-data-mock.sql` 확인
-4. 요청/응답 schema 작성
-5. 필요한 SQLAlchemy model 작성 또는 수정
-6. service 로직 구현
-7. router 연결
-8. 명세와 응답 필드명/구조 비교
-9. 가능한 검증 실행
-10. 수정 내용과 검증 결과 보고
-
-완료 기준은 아래와 같다.
-
-- endpoint가 명세와 일치한다.
-- 요청 Query, Path, Body가 명세와 일치한다.
-- 정상 응답 구조가 명세와 일치한다.
-- 에러 코드는 명세에 있는 코드만 사용한다.
-- DB 조회/저장 로직이 ERD와 SQL 스키마에 맞다.
-- 필요한 목업 데이터가 존재한다.
-- SQL을 수정했다면 수정 위치, 수정 내용, 수정 이유, DB 륨 재생성 필요 여부를 보고했다.
-- 실행한 검증과 실행하지 못한 검증을 명확히 보고했다.
+1. 도메인의 `API_SPEC.md` / `BUSINESS_RULES.md` 확인
+2. ERD/DDL과 필요한 컬럼 대조
+3. models → schemas → service → router 순서로 구현
+4. 명세의 정상/예외 케이스 동작 확인
+5. 문서(ERD/DDL/CLAUDE.md) 변경 사항 반영

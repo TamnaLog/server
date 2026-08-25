@@ -129,7 +129,6 @@ Status Code : 404
 
 ```json
 {
-  "code": "TRADE_NOT_FOUND",
-  "message": "거래 정보를 찾을 수 없습니다."
+  "code": "TRADE_NOT_FOUND"
 }
 ```

@@ -57,12 +57,14 @@ CREATE TABLE `USER` (
     `transportation`       JSON        NULL                 COMMENT 'string[] 이동수단',
     `travel_style`         JSON        NULL                 COMMENT 'string[] 자투리 시간 여행 방식',
     `user_travel_style_id` BIGINT      NULL                 COMMENT '진단된 여행 유형',
+    `ar_character_id`      BIGINT      NULL                 COMMENT '배정된 AR 캐릭터',
     `nickname`             VARCHAR(20) NULL,
     `point`                INT         NOT NULL DEFAULT 0,
     `created_at`           DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`           DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `idx_user__travel_style` (`user_travel_style_id`),
+    KEY `idx_user__ar_character` (`ar_character_id`),
     CONSTRAINT `fk_user__travel_style`
         FOREIGN KEY (`user_travel_style_id`) REFERENCES `USER_TRAVEL_STYLE` (`id`)
         ON DELETE SET NULL
@@ -392,6 +394,12 @@ CREATE TABLE `AR_CHARACTER` (
     `updated_at`            DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = 'AR 캐릭터 마스터';
+
+-- USER.ar_character_id FK 는 AR_CHARACTER 생성 이후에 추가한다.
+ALTER TABLE `USER`
+    ADD CONSTRAINT `fk_user__ar_character`
+        FOREIGN KEY (`ar_character_id`) REFERENCES `AR_CHARACTER` (`id`)
+        ON DELETE SET NULL;
 
 CREATE TABLE `ACQUIRED_AR_CHARACTER` (
     `id`                  BIGINT   NOT NULL AUTO_INCREMENT,
