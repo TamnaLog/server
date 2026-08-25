@@ -8,7 +8,7 @@
 -- 데이터 방침
 --   - 사용자: id=1 이 "나"(로그인 고정 사용자). id=2~6 은 협동 미션 팀원 5명.
 --   - 콘텐츠 성격의 테이블(LOCATION / MISSION / *_MISSION / AR_CHARACTER)은 채운다.
---   - 진행도(progress) 계열은 비워 둔다.
+--   - 진행도(progress) 계열은 기본적으로 비워 두되, 홈 조회 예시 응답을 위해 사용자 1의 보물찾기 진행도 1건은 둔다.
 --   - USER_TRAVEL_STYLE 은 온보딩 응답 예시와 맞는 여행 유형 데이터를 둔다.
 --   - 방명록(GUESTBOOK / ROAD_GUESTBOOK)과 GPS 는 데이터가 있어야 하므로 채운다.
 --   - 좌표는 전부 제주도 기준. mx = 경도(longitude), my = 위도(latitude).
@@ -105,11 +105,11 @@ INSERT INTO `LOCATION`
 VALUES
     (1,  126508, '성산일출봉',     '제주특별자치도 서귀포시 성산읍 일출로 284-12',   '자연',     300, 126.9410, 33.4580),
     (2,  126465, '만장굴',         '제주특별자치도 제주시 구좌읍 만장굴길 182',      '자연',     250, 126.7714, 33.5285),
-    (3,  126273, '협재해수욕장',   '제주특별자치도 제주시 한림읍 한림로 329-10',     '해변',     400, 126.2396, 33.3940),
-    (4,  126445, '천지연폭포',     '제주특별자치도 서귀포시 남성중로 2-15',          '자연',     200, 126.5540, 33.2465),
+    (3,  126273, '종화네 과수원',  '제주특별자치도 제주시 조천읍 감귤밭길 12',       '농장',     400, 126.5707, 33.4507),
+    (4,  126445, '오구포구',       '제주특별자치도 서귀포시 오구포구길 15',          '포구',     200, 126.5540, 33.2465),
     (5,  126280, '우도',           '제주특별자치도 제주시 우도면 우도해안길',        '섬',       800, 126.9540, 33.5060),
     (6,  2493296, '카멜리아힐',    '제주특별자치도 서귀포시 안덕면 병악로 166',      '테마파크', 350, 126.3690, 33.2900),
-    (7,  126454, '한라산 어리목',  '제주특별자치도 제주시 해안동 1100로 2070-61',    '등산로',   500, 126.4930, 33.3860),
+    (7,  126454, '새별 오름',      '제주특별자치도 제주시 애월읍 봉성리 산59-8',     '오름',     500, 126.3577, 33.3663),
     (8,  126437, '쇠소깍',         '제주특별자치도 서귀포시 하효동 쇠소깍로 104',    '계곡',     250, 126.6270, 33.2540),
     (9,  126295, '제주동문시장',   '제주특별자치도 제주시 관덕로14길 20',            '전통시장', 200, 126.5270, 33.5120),
     (10, 2686931, '한담해안산책로','제주특별자치도 제주시 애월읍 애월리 2530',       '산책로',   300, 126.3760, 33.4620);
@@ -142,32 +142,32 @@ VALUES
      '{"ar_character_id": 3, "point": 150, "coupon_location": "우도 땅콩아이스크림", "coupon_price": 3000}',
      '[{"step": 1, "step_title": "장소 도착", "description": "우도 하우목동항에서 위치를 인증하세요."}, {"step": 2, "step_title": "퀴즈 풀기", "description": "해녀 문화 퀴즈 5문제를 풀어보세요."}, {"step": 3, "step_title": "방명록 남기기", "description": "우도에서의 하루를 방명록에 남겨보세요."}]'),
 
-    (4, 'CULTURE', '동문시장 제주 먹거리 탐구',
-     '제주동문시장의 향토 먹거리와 시장 문화를 알아보는 미션입니다.',
-     9,
+    (4, 'CULTURE', '오늘의 제주 퀴즈',
+     '장소와 상관없이 오늘의 제주 이야기를 퀴즈로 풀어보는 미션입니다.',
+     NULL,
      '{"ar_character_id": 4, "point": 100, "coupon_location": "동문시장 오메기떡", "coupon_price": 3000}',
      '[{"step": 1, "step_title": "장소 도착", "description": "동문시장 8번 게이트에서 위치를 인증하세요."}, {"step": 2, "step_title": "퀴즈 풀기", "description": "제주 향토 음식 퀴즈 5문제를 풀어보세요."}, {"step": 3, "step_title": "방명록 남기기", "description": "먹거리 사진과 함께 방명록을 남겨보세요."}]'),
 
-    (5, 'COOPERATIVE', '협재 바다 역할 미션',
-     '팀원이 각자 역할 카드를 받아 협재해수욕장에서 인증 사진을 모으는 협동 미션입니다.',
+    (5, 'COOPERATIVE', '함께 키우는 귤나무',
+     '팀원이 각자 역할 카드를 받아 감귤나무를 함께 키우는 협동 미션입니다.',
      3,
      '{"ar_character_id": 5, "point": 200, "coupon_location": "협재 바다뷰 카페", "coupon_price": 4000}',
-     '[{"step": 1, "step_title": "방 만들기", "description": "방장이 방을 만들고 초대 URL을 공유합니다."}, {"step": 2, "step_title": "역할 배정", "description": "참여자가 역할 카드를 하나씩 고릅니다."}, {"step": 3, "step_title": "인증 사진", "description": "각자 역할에 맞는 사진을 찍어 올립니다."}, {"step": 4, "step_title": "미션 완료", "description": "모든 역할이 완료되면 보상이 지급됩니다."}]'),
+     '[{"step": 1, "step_title": "초대", "description": "방장이 방을 만들고 초대 URL을 공유합니다."}, {"step": 2, "step_title": "역할 분배", "description": "방장이 역할 카드를 나눠줍니다."}, {"step": 3, "step_title": "사진 인증", "description": "각자 역할에 맞는 사진을 찍어 인증합니다."}]'),
 
     (6, 'COOPERATIVE', '카멜리아힐 컬러 헌팅',
      '팀원이 서로 다른 색을 맡아 카멜리아힐에서 사진으로 색을 모으는 협동 미션입니다.',
      6,
      '{"ar_character_id": 6, "point": 200, "coupon_location": "카멜리아힐 가든카페", "coupon_price": 4000}',
-     '[{"step": 1, "step_title": "방 만들기", "description": "방장이 방을 만들고 초대 URL을 공유합니다."}, {"step": 2, "step_title": "역할 배정", "description": "참여자가 담당할 색 카드를 고릅니다."}, {"step": 3, "step_title": "인증 사진", "description": "맡은 색이 담긴 사진을 찍어 올립니다."}, {"step": 4, "step_title": "미션 완료", "description": "모든 색이 모이면 보상이 지급됩니다."}]'),
+     '[{"step": 1, "step_title": "초대", "description": "방장이 방을 만들고 초대 URL을 공유합니다."}, {"step": 2, "step_title": "역할 분배", "description": "방장이 색 역할 카드를 나눠줍니다."}, {"step": 3, "step_title": "사진 인증", "description": "맡은 색이 담긴 사진을 찍어 인증합니다."}]'),
 
     (7, 'COOPERATIVE', '한담해안 노을 릴레이',
      '한담해안산책로를 구간별로 나눠 걸으며 팀원이 노을 사진을 이어 찍는 협동 미션입니다.',
      10,
      '{"ar_character_id": 7, "point": 250, "coupon_location": "애월 한담 베이커리", "coupon_price": 5000}',
-     '[{"step": 1, "step_title": "방 만들기", "description": "방장이 방을 만들고 초대 URL을 공유합니다."}, {"step": 2, "step_title": "구간 배정", "description": "참여자가 담당 구간 카드를 고릅니다."}, {"step": 3, "step_title": "노을 사진", "description": "담당 구간에서 노을 사진을 찍어 올립니다."}, {"step": 4, "step_title": "미션 완료", "description": "모든 구간이 채워지면 보상이 지급됩니다."}]'),
+     '[{"step": 1, "step_title": "초대", "description": "방장이 방을 만들고 초대 URL을 공유합니다."}, {"step": 2, "step_title": "역할 분배", "description": "방장이 구간 역할 카드를 나눠줍니다."}, {"step": 3, "step_title": "사진 인증", "description": "담당 구간에서 노을 사진을 찍어 인증합니다."}]'),
 
-    (8, 'TREASURE', '천지연 숨은 보물 찾기',
-     '천지연폭포 산책로에 숨어 있는 AR 보물을 찾아 모으는 미션입니다.',
+    (8, 'TREASURE', '보물 찾기',
+     '오구포구 주변에 숨어 있는 AR 보물을 찾아 모으는 미션입니다.',
      4,
      '{"ar_character_id": 8, "point": 150, "coupon_location": "서귀포 올레시장 분식", "coupon_price": 3000}',
      '[{"step": 1, "step_title": "장소 도착", "description": "천지연폭포 입구에서 위치를 인증하세요."}, {"step": 2, "step_title": "보물 찾기", "description": "산책로에 숨은 보물 5개를 찾아보세요."}, {"step": 3, "step_title": "AR 사진", "description": "찾은 캐릭터와 사진을 찍어 저장하세요."}]'),
@@ -178,8 +178,8 @@ VALUES
      '{"ar_character_id": 9, "point": 150, "coupon_location": "하효 감귤빵집", "coupon_price": 3000}',
      '[{"step": 1, "step_title": "장소 도착", "description": "쇠소깍 주차장에서 위치를 인증하세요."}, {"step": 2, "step_title": "보물 찾기", "description": "계곡 주변에 숨은 보물 4개를 찾아보세요."}, {"step": 3, "step_title": "AR 사진", "description": "찾은 캐릭터와 사진을 찍어 저장하세요."}]'),
 
-    (10, 'TREASURE', '어리목 숲길 보물 찾기',
-     '한라산 어리목 탐방로 초입에서 AR 보물을 찾아 모으는 미션입니다.',
+    (10, 'TREASURE', '보물 찾기',
+     '새별 오름 주변에 숨어 있는 AR 보물을 찾아 모으는 미션입니다.',
      7,
      '{"ar_character_id": 10, "point": 200, "coupon_location": "1100고지 휴게소", "coupon_price": 4000}',
      '[{"step": 1, "step_title": "장소 도착", "description": "어리목 탐방안내소에서 위치를 인증하세요."}, {"step": 2, "step_title": "보물 찾기", "description": "숲길에 숨은 보물 6개를 찾아보세요."}, {"step": 3, "step_title": "AR 사진", "description": "찾은 캐릭터와 사진을 찍어 저장하세요."}]');
@@ -266,6 +266,16 @@ VALUES
         {"index": 5, "mx": 126.4947, "my": 33.3847, "radius": 30},
         {"index": 6, "mx": 126.4912, "my": 33.3871, "radius": 30}
     ]');
+
+
+-- ---------------------------------------------------------------------
+-- TREASURE_MISSION_PROGRESS : 홈 조회 예시용 진행 중 미션 1건
+-- ---------------------------------------------------------------------
+
+INSERT INTO `TREASURE_MISSION_PROGRESS`
+    (`id`, `treasure_mission_id`, `user_id`, `current_found_item_idx`, `mission_status`, `completed_at`)
+VALUES
+    (1, 8, 1, '[1, 2]', 'IN_PROGRESS', NULL);
 
 
 -- ---------------------------------------------------------------------
@@ -465,7 +475,7 @@ VALUES
 --   COOPERATIVE_ROLE_CARD
 --   COOPERATIVE_MISSION_PARTICIPANT
 --   COOPERATIVE_ROLE_PROGRESS
---   TREASURE_MISSION_PROGRESS
+--   TREASURE_MISSION_PROGRESS 는 홈 조회 예시용 IN_PROGRESS 1건만 둔다.
 --   ACQUIRED_AR_CHARACTER
 --   TRAVEL_ENDING_CONTENT
 --   PICTURE_WITH_CHARACTER
