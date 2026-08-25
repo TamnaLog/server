@@ -24,6 +24,9 @@ services:
       - "3306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
+      # 최초 기동(= mysql-data 볼륨이 비어 있을 때)에만 파일명 순서대로 자동 실행된다.
+      # 01-schema.sql -> 02-data-mock.sql
+      - ./scripts/sql:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot_password"]
       interval: 10s
