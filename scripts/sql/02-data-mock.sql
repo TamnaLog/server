@@ -116,112 +116,60 @@ VALUES
 
 
 -- ---------------------------------------------------------------------
--- MISSION : 10개 (CULTURE 4 / COOPERATIVE 3 / TREASURE 3)
--- reward_detail : {ar_character_id, point, coupon_location, coupon_price}
+-- MISSION : 미션 유형별 공통 데이터 3개 (CULTURE / COOPERATIVE / TREASURE)
 -- step_detail   : [{step, step_title, description}]
 -- ---------------------------------------------------------------------
 
 INSERT INTO `MISSION`
-    (`id`, `mission_type`, `mission_title`, `description`, `location_id`, `reward_detail`, `step_detail`)
+    (`id`, `mission_type`, `mission_title`, `description`, `step_detail`)
 VALUES
-    (1, 'CULTURE', '성산일출봉 화산 이야기',
-     '성산일출봉의 형성 과정과 주변 마을 이야기를 퀴즈로 풀어보는 미션입니다.',
-     1,
-     '{"ar_character_id": 1, "point": 100, "coupon_location": "성산 해맞이 카페", "coupon_price": 2000}',
-     '[{"step": 1, "step_title": "장소 도착", "description": "성산일출봉 매표소 앞에서 위치를 인증하세요."}, {"step": 2, "step_title": "퀴즈 풀기", "description": "화산 지형 퀴즈 5문제를 풀어보세요."}, {"step": 3, "step_title": "방명록 남기기", "description": "오늘의 기록을 방명록에 남기면 미션이 끝납니다."}]'),
+    (1, 'CULTURE', '제주 문화 퀴즈',
+     '제주의 퀴즈를 맞춰보세요.',
+     '[{"step": 1, "step_title": "퀴즈 시작하기", "description": "제주 방언, 엔터, 역사에 대한 퀴즈를 풀어보세요."}, {"step": 2, "step_title": "3문제 풀기", "description": "각 문제마다 보기 중 정답을 선택하세요."}, {"step": 3, "step_title": "정답 확인", "description": "정답과 해설을 확인하고 미션 보상을 받아보세요."}]'),
 
-    (2, 'CULTURE', '만장굴 용암동굴 탐험',
-     '세계자연유산 만장굴의 용암 동굴 지형을 배우는 문화 퀴즈 미션입니다.',
-     2,
-     '{"ar_character_id": 2, "point": 100, "coupon_location": "구좌 당근카페", "coupon_price": 2000}',
-     '[{"step": 1, "step_title": "장소 도착", "description": "만장굴 입구에서 위치를 인증하세요."}, {"step": 2, "step_title": "퀴즈 풀기", "description": "용암 동굴 퀴즈 5문제를 풀어보세요."}, {"step": 3, "step_title": "방명록 남기기", "description": "동굴에서 느낀 점을 방명록에 남겨보세요."}]'),
+    (2, 'COOPERATIVE', '함께 키우는 귤나무',
+     '일행과 역할을 나눠 귤나무를 완성해보세요!',
+     '[{"step": 1, "step_title": "일행 초대하기", "description": "함께할 일행을 초대해요."}, {"step": 2, "step_title": "역할 배분받기", "description": "참여한 각자에게 고유한 성장 역할을 배분받아요."}, {"step": 3, "step_title": "재료 찾으러 가기", "description": "근처 장소로 이동해 배분받은 재료를 촬영해요."}, {"step": 4, "step_title": "보상받기", "description": "귤나무를 완성하고 미션 보상을 받아요."}]'),
 
-    (3, 'CULTURE', '우도 해녀 문화 배우기',
-     '우도 해녀의 삶과 물질 문화를 알아보는 문화 미션입니다.',
-     5,
-     '{"ar_character_id": 3, "point": 150, "coupon_location": "우도 땅콩아이스크림", "coupon_price": 3000}',
-     '[{"step": 1, "step_title": "장소 도착", "description": "우도 하우목동항에서 위치를 인증하세요."}, {"step": 2, "step_title": "퀴즈 풀기", "description": "해녀 문화 퀴즈 5문제를 풀어보세요."}, {"step": 3, "step_title": "방명록 남기기", "description": "우도에서의 하루를 방명록에 남겨보세요."}]'),
-
-    (4, 'CULTURE', '오늘의 제주 퀴즈',
-     '장소와 상관없이 오늘의 제주 이야기를 퀴즈로 풀어보는 미션입니다.',
-     NULL,
-     '{"ar_character_id": 4, "point": 100, "coupon_location": "동문시장 오메기떡", "coupon_price": 3000}',
-     '[{"step": 1, "step_title": "장소 도착", "description": "동문시장 8번 게이트에서 위치를 인증하세요."}, {"step": 2, "step_title": "퀴즈 풀기", "description": "제주 향토 음식 퀴즈 5문제를 풀어보세요."}, {"step": 3, "step_title": "방명록 남기기", "description": "먹거리 사진과 함께 방명록을 남겨보세요."}]'),
-
-    (5, 'COOPERATIVE', '함께 키우는 귤나무',
-     '팀원이 각자 역할 카드를 받아 감귤나무를 함께 키우는 협동 미션입니다.',
-     3,
-     '{"ar_character_id": 5, "point": 200, "coupon_location": "협재 바다뷰 카페", "coupon_price": 4000}',
-     '[{"step": 1, "step_title": "초대", "description": "방장이 방을 만들고 초대 URL을 공유합니다."}, {"step": 2, "step_title": "역할 분배", "description": "방장이 역할 카드를 나눠줍니다."}, {"step": 3, "step_title": "사진 인증", "description": "각자 역할에 맞는 사진을 찍어 인증합니다."}]'),
-
-    (6, 'COOPERATIVE', '카멜리아힐 컬러 헌팅',
-     '팀원이 서로 다른 색을 맡아 카멜리아힐에서 사진으로 색을 모으는 협동 미션입니다.',
-     6,
-     '{"ar_character_id": 6, "point": 200, "coupon_location": "카멜리아힐 가든카페", "coupon_price": 4000}',
-     '[{"step": 1, "step_title": "초대", "description": "방장이 방을 만들고 초대 URL을 공유합니다."}, {"step": 2, "step_title": "역할 분배", "description": "방장이 색 역할 카드를 나눠줍니다."}, {"step": 3, "step_title": "사진 인증", "description": "맡은 색이 담긴 사진을 찍어 인증합니다."}]'),
-
-    (7, 'COOPERATIVE', '한담해안 노을 릴레이',
-     '한담해안산책로를 구간별로 나눠 걸으며 팀원이 노을 사진을 이어 찍는 협동 미션입니다.',
-     10,
-     '{"ar_character_id": 7, "point": 250, "coupon_location": "애월 한담 베이커리", "coupon_price": 5000}',
-     '[{"step": 1, "step_title": "초대", "description": "방장이 방을 만들고 초대 URL을 공유합니다."}, {"step": 2, "step_title": "역할 분배", "description": "방장이 구간 역할 카드를 나눠줍니다."}, {"step": 3, "step_title": "사진 인증", "description": "담당 구간에서 노을 사진을 찍어 인증합니다."}]'),
-
-    (8, 'TREASURE', '보물 찾기',
-     '오구포구 주변에 숨어 있는 AR 보물을 찾아 모으는 미션입니다.',
-     4,
-     '{"ar_character_id": 8, "point": 150, "coupon_location": "서귀포 올레시장 분식", "coupon_price": 3000}',
-     '[{"step": 1, "step_title": "장소 도착", "description": "천지연폭포 입구에서 위치를 인증하세요."}, {"step": 2, "step_title": "보물 찾기", "description": "산책로에 숨은 보물 5개를 찾아보세요."}, {"step": 3, "step_title": "AR 사진", "description": "찾은 캐릭터와 사진을 찍어 저장하세요."}]'),
-
-    (9, 'TREASURE', '쇠소깍 물빛 보물 찾기',
-     '쇠소깍 계곡 주변에 흩어진 AR 보물을 찾아 모으는 미션입니다.',
-     8,
-     '{"ar_character_id": 9, "point": 150, "coupon_location": "하효 감귤빵집", "coupon_price": 3000}',
-     '[{"step": 1, "step_title": "장소 도착", "description": "쇠소깍 주차장에서 위치를 인증하세요."}, {"step": 2, "step_title": "보물 찾기", "description": "계곡 주변에 숨은 보물 4개를 찾아보세요."}, {"step": 3, "step_title": "AR 사진", "description": "찾은 캐릭터와 사진을 찍어 저장하세요."}]'),
-
-    (10, 'TREASURE', '보물 찾기',
-     '새별 오름 주변에 숨어 있는 AR 보물을 찾아 모으는 미션입니다.',
-     7,
-     '{"ar_character_id": 10, "point": 200, "coupon_location": "1100고지 휴게소", "coupon_price": 4000}',
-     '[{"step": 1, "step_title": "장소 도착", "description": "어리목 탐방안내소에서 위치를 인증하세요."}, {"step": 2, "step_title": "보물 찾기", "description": "숲길에 숨은 보물 6개를 찾아보세요."}, {"step": 3, "step_title": "AR 사진", "description": "찾은 캐릭터와 사진을 찍어 저장하세요."}]');
+    (3, 'TREASURE', '보물 찾기',
+     '주변에 숨겨진 AR 보물을 찾아보세요.',
+     '[{"step": 1, "step_title": "출발지 확인", "description": "보물찾기를 시작할 출발지와 주변 환경을 확인해요."}, {"step": 2, "step_title": "보물 위치 찾기", "description": "지도와 AR 화면을 따라 숨겨진 보물의 위치를 찾아요."}, {"step": 3, "step_title": "보상 받기", "description": "모든 보물을 찾고 미션 보상을 받아요."}]');
 
 
 -- ---------------------------------------------------------------------
 -- CULTURE_MISSION : 퀴즈 상세
 -- ---------------------------------------------------------------------
 
-INSERT INTO `CULTURE_MISSION` (`mission_id`, `quiz_total_count`, `quiz_detail`)
+INSERT INTO `CULTURE_MISSION`
+    (`id`, `mission_id`, `quiz_total_count`, `quiz_detail`, `reward_detail`)
 VALUES
-    (1, 5, '[
-        {"quiz_index": 1, "img_url": null, "question": "성산일출봉은 어떤 분출로 만들어진 지형일까요?", "options": ["수성화산 분출", "용암 분출", "빙하 침식", "산호 융기"], "answer": "수성화산 분출", "hint": "바닷물과 마그마가 만났어요.", "explanation": "성산일출봉은 얕은 바다에서 일어난 수성화산 분출로 만들어진 응회구입니다."},
-        {"quiz_index": 2, "img_url": null, "question": "성산일출봉이 유네스코에 등재된 해는?", "options": ["2005년", "2007년", "2010년", "2012년"], "answer": "2007년", "hint": "제주 화산섬과 용암동굴이 함께 등재됐어요.", "explanation": "2007년 제주 화산섬과 용암동굴의 일부로 세계자연유산에 등재되었습니다."},
-        {"quiz_index": 3, "img_url": null, "question": "성산일출봉의 높이는 약 몇 미터일까요?", "options": ["82m", "182m", "282m", "382m"], "answer": "182m", "hint": "200m가 되지 않아요.", "explanation": "성산일출봉의 높이는 약 182m입니다."},
-        {"quiz_index": 4, "img_url": null, "question": "성산일출봉 정상에 있는 넓은 지형을 무엇이라 부를까요?", "options": ["분화구", "칼데라", "주상절리", "곶자왈"], "answer": "분화구", "hint": "화산이 폭발한 자리에 남아요.", "explanation": "정상에는 지름 약 600m의 커다란 분화구가 남아 있습니다."},
-        {"quiz_index": 5, "img_url": null, "question": "성산일출봉 앞바다에서 물질하던 사람들을 뭐라고 부를까요?", "options": ["해녀", "어부", "뱃사공", "잠수부"], "answer": "해녀", "hint": "제주를 대표하는 여성 잠수인이에요.", "explanation": "성산 지역은 해녀 물질이 활발했던 곳으로 해녀 물질 시연도 열립니다."}
-    ]'),
+    (1, 1, 3, '[
+        {"quiz_index": 1, "img_url": "https://cdn.jamkkan-jeju.dev/quizzes/jeju-dialect-1.jpg", "question": "제주어로 할아버지는 무엇일까요?", "options": ["하르방", "하라범", "하르봉", "하르범"], "answer": "하르방", "hint": "제주의 돌하르방을 떠올려 보세요.", "explanation": "제주어에서 할아버지를 뜻하는 대표적인 표현은 하르방입니다."},
+        {"quiz_index": 2, "img_url": "https://cdn.jamkkan-jeju.dev/quizzes/jeju-drama.jpg", "question": "제주를 배경으로 여러 인물의 삶을 옴니버스 형식으로 담아낸 노희경 작가의 드라마는 무엇일까요?", "options": ["우리들의 블루스", "우도의 봄", "갯마을 차차차", "도깨비"], "answer": "우리들의 블루스", "hint": "제목에 제주 바다를 연상시키는 색상이 들어가요.", "explanation": "우리들의 블루스는 제주를 배경으로 여러 인물의 삶을 옴니버스 형식으로 그린 드라마입니다."},
+        {"quiz_index": 3, "img_url": null, "question": "하영은 제주 방언으로 어떤 뜻일까요?", "options": ["많이", "천천히", "조용히", "따뜻하게"], "answer": "많이", "hint": "수량이 넉넉하다는 의미로 사용해요.", "explanation": "하영은 제주 방언으로 많이라는 뜻입니다."}
+    ]',
+    '{"ar_character_id": 1, "point": 100, "coupon_location": "제주 기념품숍", "coupon_price": 1000}'),
 
-    (2, 5, '[
+    (2, 1, 3, '[
         {"quiz_index": 1, "img_url": null, "question": "만장굴은 어떤 종류의 동굴일까요?", "options": ["용암동굴", "석회동굴", "해식동굴", "빙하동굴"], "answer": "용암동굴", "hint": "흐르던 용암이 만든 길이에요.", "explanation": "만장굴은 흐르던 용암이 굳으면서 속이 비어 만들어진 용암동굴입니다."},
         {"quiz_index": 2, "img_url": null, "question": "만장굴의 총 길이는 약 몇 킬로미터일까요?", "options": ["약 2km", "약 5km", "약 7.4km", "약 12km"], "answer": "약 7.4km", "hint": "10km는 넘지 않아요.", "explanation": "만장굴의 총 길이는 약 7.4km이며 일부 구간만 공개되어 있습니다."},
-        {"quiz_index": 3, "img_url": null, "question": "만장굴 공개 구간 끝에 있는 유명한 구조물은?", "options": ["용암석주", "종유석", "석순", "주상절리"], "answer": "용암석주", "hint": "높이 7.6m로 세계 최대급이에요.", "explanation": "공개 구간 끝에는 높이 약 7.6m의 용암석주가 있습니다."},
-        {"quiz_index": 4, "img_url": null, "question": "만장굴 안의 연중 온도는 대략 어느 정도일까요?", "options": ["섭씨 1~5도", "섭씨 11~21도", "섭씨 25~30도", "섭씨 30도 이상"], "answer": "섭씨 11~21도", "hint": "여름에 시원하고 겨울에 덜 추워요.", "explanation": "만장굴 내부는 연중 11~21도를 유지해 여름에 특히 시원합니다."},
-        {"quiz_index": 5, "img_url": null, "question": "만장굴이 속한 용암동굴계의 이름은?", "options": ["거문오름 용암동굴계", "한라산 동굴계", "성산 동굴계", "산방산 동굴계"], "answer": "거문오름 용암동굴계", "hint": "오름 이름이 붙어 있어요.", "explanation": "만장굴은 거문오름 용암동굴계에 속하며 세계자연유산으로 지정되었습니다."}
-    ]'),
+        {"quiz_index": 3, "img_url": null, "question": "만장굴 공개 구간 끝에 있는 유명한 구조물은?", "options": ["용암석주", "종유석", "석순", "주상절리"], "answer": "용암석주", "hint": "높이 7.6m로 세계 최대급이에요.", "explanation": "공개 구간 끝에는 높이 약 7.6m의 용암석주가 있습니다."}
+    ]',
+    '{"ar_character_id": 2, "point": 100, "coupon_location": "구좌 당근카페", "coupon_price": 2000}'),
 
-    (3, 5, '[
+    (3, 1, 3, '[
         {"quiz_index": 1, "img_url": null, "question": "해녀가 물질할 때 사용하는 부표를 무엇이라 부를까요?", "options": ["테왁", "빗창", "망사리", "물허벅"], "answer": "테왁", "hint": "물 위에 떠 있는 둥근 도구예요.", "explanation": "테왁은 해녀가 물 위에서 몸을 의지하는 부표로, 아래에 망사리를 답니다."},
         {"quiz_index": 2, "img_url": null, "question": "해녀가 숨을 참았다 내쉴 때 내는 소리를 무엇이라 할까요?", "options": ["숨비소리", "물비소리", "바당소리", "허벅소리"], "answer": "숨비소리", "hint": "휘파람 같은 소리예요.", "explanation": "물 밖으로 나오며 참았던 숨을 내쉬는 소리를 숨비소리라고 합니다."},
-        {"quiz_index": 3, "img_url": null, "question": "제주 해녀문화가 유네스코 인류무형문화유산이 된 해는?", "options": ["2012년", "2014년", "2016년", "2018년"], "answer": "2016년", "hint": "2010년대 후반이에요.", "explanation": "제주 해녀문화는 2016년 유네스코 인류무형문화유산으로 등재되었습니다."},
-        {"quiz_index": 4, "img_url": null, "question": "해녀들이 물질 전후에 몸을 녹이던 공간을 무엇이라 부를까요?", "options": ["불턱", "물턱", "돌턱", "바당집"], "answer": "불턱", "hint": "불을 피우던 곳이에요.", "explanation": "불턱은 해녀들이 불을 피워 몸을 녹이고 물질을 준비하던 돌담 공간입니다."},
-        {"quiz_index": 5, "img_url": null, "question": "해녀의 등급 중 가장 깊이 잠수하는 등급은?", "options": ["상군", "중군", "하군", "초군"], "answer": "상군", "hint": "가장 높은 등급이에요.", "explanation": "해녀는 상군, 중군, 하군으로 나뉘며 상군이 가장 깊은 곳에서 물질합니다."}
-    ]'),
+        {"quiz_index": 3, "img_url": null, "question": "제주 해녀문화가 유네스코 인류무형문화유산이 된 해는?", "options": ["2012년", "2014년", "2016년", "2018년"], "answer": "2016년", "hint": "2010년대 후반이에요.", "explanation": "제주 해녀문화는 2016년 유네스코 인류무형문화유산으로 등재되었습니다."}
+    ]',
+    '{"ar_character_id": 3, "point": 150, "coupon_location": "우도 땅콩아이스크림", "coupon_price": 3000}'),
 
-    (4, 5, '[
+    (4, 1, 3, '[
         {"quiz_index": 1, "img_url": null, "question": "제주 전통 떡으로 팥고물을 묻힌 것은?", "options": ["오메기떡", "빙떡", "상외떡", "돌래떡"], "answer": "오메기떡", "hint": "동문시장 대표 간식이에요.", "explanation": "오메기떡은 차조로 만든 제주 전통 떡으로 팥고물을 입혀 먹습니다."},
         {"quiz_index": 2, "img_url": null, "question": "메밀 전병에 무채를 넣어 말아 먹는 제주 음식은?", "options": ["빙떡", "몸국", "고기국수", "갈치조림"], "answer": "빙떡", "hint": "얇게 부친 메밀 전병이에요.", "explanation": "빙떡은 메밀 전병에 삶은 무채를 넣어 돌돌 말아 먹는 제주 향토 음식입니다."},
-        {"quiz_index": 3, "img_url": null, "question": "돼지 육수에 모자반을 넣어 끓인 제주 국은?", "options": ["몸국", "접짝뼈국", "각재기국", "성게국"], "answer": "몸국", "hint": "모자반을 제주말로 몸이라 해요.", "explanation": "몸국은 돼지 육수에 모자반을 넣고 끓인 제주 잔치 음식입니다."},
-        {"quiz_index": 4, "img_url": null, "question": "제주동문시장이 문을 연 시기는 대략 언제일까요?", "options": ["1900년대 초", "1945년 광복 직후", "1970년대", "1990년대"], "answer": "1945년 광복 직후", "hint": "광복과 함께 형성됐어요.", "explanation": "동문시장은 1945년 광복 직후 형성된 제주에서 가장 오래된 상설시장입니다."},
-        {"quiz_index": 5, "img_url": null, "question": "제주에서 옥돔을 말려 구워 먹는 방식의 이름은?", "options": ["옥돔구이", "옥돔회", "옥돔탕", "옥돔찜"], "answer": "옥돔구이", "hint": "말린 뒤 굽습니다.", "explanation": "제주에서는 옥돔을 반건조해 구워 먹는 옥돔구이가 대표적인 밥상 반찬입니다."}
-    ]');
+        {"quiz_index": 3, "img_url": null, "question": "돼지 육수에 모자반을 넣어 끓인 제주 국은?", "options": ["몸국", "접짝뼈국", "각재기국", "성게국"], "answer": "몸국", "hint": "모자반을 제주말로 몸이라 해요.", "explanation": "몸국은 돼지 육수에 모자반을 넣고 끓인 제주 잔치 음식입니다."}
+    ]',
+    '{"ar_character_id": 4, "point": 100, "coupon_location": "동문시장 오메기떡", "coupon_price": 3000}');
 
 
 -- ---------------------------------------------------------------------
@@ -229,11 +177,15 @@ VALUES
 -- (역할 카드는 방(progress)이 만들어질 때 생성되므로 여기서는 비워 둔다)
 -- ---------------------------------------------------------------------
 
-INSERT INTO `COOPERATIVE_MISSION` (`mission_id`, `role_total_count`)
+INSERT INTO `COOPERATIVE_MISSION`
+    (`id`, `mission_id`, `location_id`, `role_total_count`, `reward_detail`)
 VALUES
-    (5, 4),
-    (6, 3),
-    (7, 5);
+    (5, 2, 3, 4,
+     '{"ar_character_id": 5, "point": 100, "coupon_location": "종화네 과수원", "coupon_price": 1000}'),
+    (6, 2, 6, 3,
+     '{"ar_character_id": 6, "point": 200, "coupon_location": "카멜리아힐 가든카페", "coupon_price": 4000}'),
+    (7, 2, 10, 5,
+     '{"ar_character_id": 7, "point": 250, "coupon_location": "애월 한담 베이커리", "coupon_price": 5000}');
 
 
 -- ---------------------------------------------------------------------
@@ -241,31 +193,29 @@ VALUES
 -- item_detail : [{index, mx, my, radius}]
 -- ---------------------------------------------------------------------
 
-INSERT INTO `TREASURE_MISSION` (`mission_id`, `item_total_count`, `item_detail`)
+INSERT INTO `TREASURE_MISSION`
+    (`id`, `mission_id`, `location_id`, `item_total_count`, `item_detail`, `reward_detail`)
 VALUES
-    (8, 5, '[
+    (8, 3, 4, 3, '[
         {"index": 1, "mx": 126.5535, "my": 33.2470, "radius": 25},
         {"index": 2, "mx": 126.5544, "my": 33.2462, "radius": 25},
-        {"index": 3, "mx": 126.5551, "my": 33.2468, "radius": 30},
-        {"index": 4, "mx": 126.5528, "my": 33.2459, "radius": 30},
-        {"index": 5, "mx": 126.5547, "my": 33.2455, "radius": 25}
-    ]'),
+        {"index": 3, "mx": 126.5551, "my": 33.2468, "radius": 30}
+    ]',
+    '{"ar_character_id": 8, "point": 150, "coupon_location": "서귀포 올레시장 분식", "coupon_price": 3000}'),
 
-    (9, 4, '[
+    (9, 3, 8, 3, '[
         {"index": 1, "mx": 126.6265, "my": 33.2546, "radius": 25},
         {"index": 2, "mx": 126.6274, "my": 33.2538, "radius": 25},
-        {"index": 3, "mx": 126.6281, "my": 33.2549, "radius": 30},
-        {"index": 4, "mx": 126.6259, "my": 33.2533, "radius": 30}
-    ]'),
+        {"index": 3, "mx": 126.6281, "my": 33.2549, "radius": 30}
+    ]',
+    '{"ar_character_id": 9, "point": 150, "coupon_location": "하효 감귤빵집", "coupon_price": 3000}'),
 
-    (10, 6, '[
-        {"index": 1, "mx": 126.4925, "my": 33.3865, "radius": 30},
-        {"index": 2, "mx": 126.4936, "my": 33.3858, "radius": 30},
-        {"index": 3, "mx": 126.4941, "my": 33.3869, "radius": 35},
-        {"index": 4, "mx": 126.4918, "my": 33.3852, "radius": 35},
-        {"index": 5, "mx": 126.4947, "my": 33.3847, "radius": 30},
-        {"index": 6, "mx": 126.4912, "my": 33.3871, "radius": 30}
-    ]');
+    (10, 3, 7, 3, '[
+        {"index": 1, "mx": 126.3569, "my": 33.3668, "radius": 30},
+        {"index": 2, "mx": 126.3579, "my": 33.3660, "radius": 30},
+        {"index": 3, "mx": 126.3585, "my": 33.3671, "radius": 35}
+    ]',
+    '{"ar_character_id": 10, "point": 200, "coupon_location": "새별 오름 휴게소", "coupon_price": 4000}');
 
 
 -- ---------------------------------------------------------------------
@@ -277,6 +227,24 @@ INSERT INTO `CULTURE_MISSION_PROGRESS`
      `current_quiz_index`, `correct_number`, `completed_at`)
 VALUES
     (1, 1, 1, 'IN_PROGRESS', 2, 1, NULL);
+
+
+-- ---------------------------------------------------------------------
+-- COOPERATIVE_MISSION_PROGRESS : 홈 조회 예시용 진행 중 미션 1건
+-- 현재 사용자는 참여자 테이블을 통해 진행 중인 협동 미션과 연결된다.
+-- ---------------------------------------------------------------------
+
+INSERT INTO `COOPERATIVE_MISSION_PROGRESS`
+    (`id`, `cooperative_mission_id`, `current_step`, `mission_status`,
+     `team_token`, `completed_at`)
+VALUES
+    (1, 5, 2, 'IN_PROGRESS', 'mock-team-token-1', NULL);
+
+INSERT INTO `COOPERATIVE_MISSION_PARTICIPANT`
+    (`id`, `cooperative_mission_progress_id`, `participant_type`, `user_id`,
+     `guest_name`, `guest_token`, `participant_status`, `joined_at`)
+VALUES
+    (1, 1, 'USER', 1, NULL, NULL, 'ACCEPTED', '2026-08-20 10:00:00');
 
 
 -- ---------------------------------------------------------------------
@@ -396,12 +364,12 @@ VALUES
     (1, 1, 9,  '2026-08-18',
      '["https://cdn.jamkkan-jeju.dev/guestbook/1-1.jpg"]',
      '동문시장에서 오메기떡 한 봉지 사서 걸었다. 시장 냄새가 여행 시작 같았다.',
-     NULL, 'SUNNY', '#FFD8A8', '2026-08-18T12:10:00', 4, NULL),
+     NULL, 'SUNNY', '#FFD8A8', '2026-08-18T12:10:00', 1, NULL),
 
     (2, 1, 2,  '2026-08-18',
      '["https://cdn.jamkkan-jeju.dev/guestbook/2-1.jpg", "https://cdn.jamkkan-jeju.dev/guestbook/2-2.jpg"]',
      '만장굴 안이 생각보다 훨씬 서늘했다. 용암석주 앞에서 한참 서 있었다.',
-     '["https://cdn.jamkkan-jeju.dev/guestbook/2-audio.m4a"]', 'CLOUDY', '#A5D8FF', '2026-08-18T16:00:00', 2, NULL),
+     '["https://cdn.jamkkan-jeju.dev/guestbook/2-audio.m4a"]', 'CLOUDY', '#A5D8FF', '2026-08-18T16:00:00', 1, NULL),
 
     (3, 1, 1,  '2026-08-19',
      '["https://cdn.jamkkan-jeju.dev/guestbook/3-1.jpg"]',
@@ -411,7 +379,7 @@ VALUES
     (4, 1, 5,  '2026-08-19',
      '["https://cdn.jamkkan-jeju.dev/guestbook/4-1.jpg"]',
      '우도 해안길을 천천히 돌았다. 해녀 삼춘이 물질하는 걸 멀리서 봤다.',
-     NULL, 'WINDY', '#B2F2BB', '2026-08-19T13:15:00', 3, NULL),
+     NULL, 'WINDY', '#B2F2BB', '2026-08-19T13:15:00', 1, NULL),
 
     (5, 1, 8,  '2026-08-20',
      NULL,
@@ -421,17 +389,17 @@ VALUES
     (6, 1, 4,  '2026-08-20',
      '["https://cdn.jamkkan-jeju.dev/guestbook/6-1.jpg"]',
      '천지연폭포 물소리가 커서 아무 말도 안 하고 서 있었다. 여기 보물 다 찾았다.',
-     '["https://cdn.jamkkan-jeju.dev/guestbook/6-audio.m4a"]', 'RAIN', '#99E9F2', '2026-08-20T15:20:00', 8, NULL),
+     '["https://cdn.jamkkan-jeju.dev/guestbook/6-audio.m4a"]', 'RAIN', '#99E9F2', '2026-08-20T15:20:00', 3, NULL),
 
     (7, 1, 6,  '2026-08-21',
      '["https://cdn.jamkkan-jeju.dev/guestbook/7-1.jpg", "https://cdn.jamkkan-jeju.dev/guestbook/7-2.jpg"]',
      '카멜리아힐은 사진 찍을 데가 너무 많았다. 색깔별로 담느라 오래 걸렸다.',
-     NULL, 'SUNNY', '#FFDEEB', '2026-08-21T12:00:00', 6, NULL),
+     NULL, 'SUNNY', '#FFDEEB', '2026-08-21T12:00:00', 2, NULL),
 
     (8, 1, 3,  '2026-08-21',
      '["https://cdn.jamkkan-jeju.dev/guestbook/8-1.jpg"]',
      '협재 바다 색이 비현실적이었다. 발만 담그려다 결국 다 젖었다.',
-     NULL, 'SUNNY', '#A5D8FF', '2026-08-21T17:05:00', 5, NULL),
+     NULL, 'SUNNY', '#A5D8FF', '2026-08-21T17:05:00', 2, NULL),
 
     (9, 2, 10, '2026-08-22',
      '["https://cdn.jamkkan-jeju.dev/guestbook/9-1.jpg"]',

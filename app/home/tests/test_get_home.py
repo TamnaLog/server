@@ -1,6 +1,9 @@
 """GET /api/v1/users/me/home - 홈 조회 테스트.
 
 기준 문서: app/home/docs/API_SPEC.md, app/home/docs/BUSINESS_RULES.md
+
+미션 구조상 실제 미션 한 건은 미션 유형별 테이블의 행이므로,
+응답의 `missionId` 는 `MISSION.id` 가 아니라 유형별 테이블의 id다.
 """
 
 from datetime import date, datetime
@@ -9,7 +12,6 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.core.deps import CURRENT_USER_ID
 from app.cooperative_mission.models import (
     CooperativeMission,
     CooperativeMissionParticipant,
@@ -17,6 +19,7 @@ from app.cooperative_mission.models import (
     ParticipantStatus,
     ParticipantType,
 )
+from app.core.deps import CURRENT_USER_ID
 from app.culture_mission.models import CultureMission, CultureMissionProgress
 from app.guestbook.models import Guestbook, RoadGuestbook
 from app.home import distance
@@ -32,13 +35,28 @@ USER_LONGITUDE = 126.5312
 
 CHARACTER_IMG_URL = "https://example.com/images/characters/jacheongbi.png"
 
-# 미션 id
-CULTURE_MISSION_ID = 1
-COOPERATIVE_MISSION_ID = 2
-TREASURE_MISSION_ID = 3
-NO_LOCATION_MISSION_ID = 4
+# MISSION(유형 분류) id
+CULTURE_TYPE_ID = 1
+COOPERATIVE_TYPE_ID = 2
+TREASURE_TYPE_ID = 3
+
+# 미션 유형별 테이블 id = 응답의 missionId
+CULTURE_MISSION_ID = 11
+COOPERATIVE_MISSION_ID = 21
+TREASURE_MISSION_ID = 31
+
+# 장소 id
+SEONGSAN_LOCATION_ID = 1
+SAEBYEOL_LOCATION_ID = 2
 
 OTHER_USER_ID = 2
+
+REWARD_DETAIL = {
+    "ar_character_id": 1,
+    "point": 100,
+    "coupon_location": "제주 기념품숍",
+    "coupon_price": 1000,
+}
 
 
 def _step_detail(count: int) -> list[dict[str, object]]:
@@ -48,18 +66,22 @@ def _step_detail(count: int) -> list[dict[str, object]]:
     ]
 
 
-REWARD_DETAIL = {
-    "ar_character_id": 1,
-    "point": 100,
-    "coupon_location": "성산 해맞이 카페",
-    "coupon_price": 2000,
-}
+def _mission(mission_id: int, mission_type: str, title: str, step_count: int) -> Mission:
+    """MISSION - 미션 유형 분류 행."""
+    return Mission(
+        id=mission_id,
+        mission_type=mission_type,
+        mission_title=title,
+        description=f"{title} 미션입니다.",
+        step_detail=_step_detail(step_count),
+    )
 
 
 @pytest.fixture
 def home_data(db_session: Session) -> None:
     """홈 조회에 필요한 장소 / 미션 / 사용자 목업 데이터.
 
+    미션은 유형별로 1건씩만 둔다. (추천이 랜덤이라 3건이면 항상 세 건 모두 추천된다)
     진행도와 방명록은 각 테스트에서 필요한 만큼 따로 추가한다.
     """
     db_session.add_all(
@@ -73,7 +95,7 @@ def home_data(db_session: Session) -> None:
                 hashtags=["#인생사진"],
             ),
             Location(
-                id=1,
+                id=SEONGSAN_LOCATION_ID,
                 content_id=126508,
                 location_title="성산일출봉",
                 location_address="제주특별자치도 서귀포시 성산읍 일출로 284-12",
@@ -83,7 +105,7 @@ def home_data(db_session: Session) -> None:
                 my=33.4580,
             ),
             Location(
-                id=2,
+                id=SAEBYEOL_LOCATION_ID,
                 content_id=126454,
                 location_title="새별 오름",
                 location_address="제주특별자치도 제주시 애월읍 봉성리 산59-8",
@@ -92,48 +114,9 @@ def home_data(db_session: Session) -> None:
                 mx=126.3577,
                 my=33.3663,
             ),
-        ]
-    )
-    db_session.flush()
-
-    db_session.add_all(
-        [
-            Mission(
-                id=CULTURE_MISSION_ID,
-                mission_type="CULTURE",
-                mission_title="성산일출봉 화산 이야기",
-                description="성산일출봉 문화 퀴즈 미션입니다.",
-                location_id=1,
-                reward_detail=REWARD_DETAIL,
-                step_detail=_step_detail(3),
-            ),
-            Mission(
-                id=COOPERATIVE_MISSION_ID,
-                mission_type="COOPERATIVE",
-                mission_title="함께 키우는 귤나무",
-                description="팀원과 함께하는 협동 미션입니다.",
-                location_id=2,
-                reward_detail=REWARD_DETAIL,
-                step_detail=_step_detail(4),
-            ),
-            Mission(
-                id=TREASURE_MISSION_ID,
-                mission_type="TREASURE",
-                mission_title="보물 찾기",
-                description="숨은 보물을 찾는 미션입니다.",
-                location_id=2,
-                reward_detail=REWARD_DETAIL,
-                step_detail=_step_detail(3),
-            ),
-            Mission(
-                id=NO_LOCATION_MISSION_ID,
-                mission_type="CULTURE",
-                mission_title="오늘의 제주 퀴즈",
-                description="장소와 상관없이 푸는 퀴즈 미션입니다.",
-                location_id=None,
-                reward_detail=REWARD_DETAIL,
-                step_detail=_step_detail(2),
-            ),
+            _mission(CULTURE_TYPE_ID, "CULTURE", "제주 문화 퀴즈", step_count=3),
+            _mission(COOPERATIVE_TYPE_ID, "COOPERATIVE", "함께 키우는 귤나무", step_count=4),
+            _mission(TREASURE_TYPE_ID, "TREASURE", "보물 찾기", step_count=3),
             User(id=CURRENT_USER_ID, nickname="몽글몽글파도", point=0, ar_character_id=1),
             User(id=OTHER_USER_ID, nickname="한라봉주스", point=0),
         ]
@@ -142,23 +125,52 @@ def home_data(db_session: Session) -> None:
 
     db_session.add_all(
         [
-            CultureMission(mission_id=CULTURE_MISSION_ID, quiz_total_count=5, quiz_detail=[]),
-            CultureMission(mission_id=NO_LOCATION_MISSION_ID, quiz_total_count=5, quiz_detail=[]),
-            CooperativeMission(mission_id=COOPERATIVE_MISSION_ID, role_total_count=4),
+            # 문화 미션은 장소를 갖지 않는다.
+            CultureMission(
+                id=CULTURE_MISSION_ID,
+                mission_id=CULTURE_TYPE_ID,
+                quiz_total_count=5,
+                quiz_detail=[],
+                reward_detail=REWARD_DETAIL,
+            ),
+            CooperativeMission(
+                id=COOPERATIVE_MISSION_ID,
+                mission_id=COOPERATIVE_TYPE_ID,
+                location_id=SAEBYEOL_LOCATION_ID,
+                role_total_count=4,
+                reward_detail=REWARD_DETAIL,
+            ),
             TreasureMission(
-                mission_id=TREASURE_MISSION_ID, item_total_count=5, item_detail=[]
+                id=TREASURE_MISSION_ID,
+                mission_id=TREASURE_TYPE_ID,
+                location_id=SEONGSAN_LOCATION_ID,
+                item_total_count=5,
+                item_detail=[],
+                reward_detail=REWARD_DETAIL,
             ),
         ]
     )
     db_session.commit()
 
 
-def _request_home(client: TestClient) -> dict[str, object]:
+def _request_home(client: TestClient) -> dict:
     response = client.get(
         ENDPOINT, params={"latitude": USER_LATITUDE, "longitude": USER_LONGITUDE}
     )
     assert response.status_code == 200
     return response.json()
+
+
+def _expected_distance(location: Location) -> tuple[int, int]:
+    meter = distance.calculate_distance_meter(
+        USER_LATITUDE, USER_LONGITUDE, location.my, location.mx
+    )
+    return meter, distance.calculate_duration_minutes(meter)
+
+
+# ---------------------------------------------------------------------
+# 응답 형식
+# ---------------------------------------------------------------------
 
 
 def test_홈을_조회하면_명세의_필드를_모두_반환한다(
@@ -189,80 +201,90 @@ def test_홈을_조회하면_명세의_필드를_모두_반환한다(
         }
 
 
-def test_추천_미션은_DB에_존재하는_미션_중에서_선정된다(
+# ---------------------------------------------------------------------
+# 추천 미션
+# ---------------------------------------------------------------------
+
+
+def test_추천_미션의_missionId는_미션_유형별_테이블의_id다(
+    client: TestClient, home_data: None
+) -> None:
+    # MISSION(유형 분류) id가 아니라 유형별 테이블의 id가 나가야 한다.
+    body = _request_home(client)
+    by_type = {mission["missionType"]: mission for mission in body["missionRecommend"]}
+
+    assert by_type["CULTURE"]["missionId"] == CULTURE_MISSION_ID
+    assert by_type["COOPERATIVE"]["missionId"] == COOPERATIVE_MISSION_ID
+    assert by_type["TREASURE"]["missionId"] == TREASURE_MISSION_ID
+
+
+def test_추천_미션의_유형과_이름은_공통_미션_정보를_따른다(
+    client: TestClient, home_data: None
+) -> None:
+    body = _request_home(client)
+    by_type = {mission["missionType"]: mission for mission in body["missionRecommend"]}
+
+    assert by_type["CULTURE"]["missionTitle"] == "제주 문화 퀴즈"
+    assert by_type["COOPERATIVE"]["missionTitle"] == "함께 키우는 귤나무"
+    assert by_type["TREASURE"]["missionTitle"] == "보물 찾기"
+
+
+def test_추천_미션은_DB에_존재하는_미션_중에서_중복_없이_선정된다(
     client: TestClient, db_session: Session, home_data: None
 ) -> None:
     # 추천 로직이 랜덤이므로 값 자체가 아니라 DB에 있는 미션인지로 검증한다.
-    saved_missions = {
-        mission.id: mission for mission in db_session.query(Mission).all()
-    }
+    saved = (
+        {("CULTURE", row.id) for row in db_session.query(CultureMission).all()}
+        | {("COOPERATIVE", row.id) for row in db_session.query(CooperativeMission).all()}
+        | {("TREASURE", row.id) for row in db_session.query(TreasureMission).all()}
+    )
 
-    body = _request_home(client)
-    recommended = body["missionRecommend"]
+    recommended = [
+        (mission["missionType"], mission["missionId"])
+        for mission in _request_home(client)["missionRecommend"]
+    ]
 
-    recommended_ids = [mission["missionId"] for mission in recommended]
-    assert len(set(recommended_ids)) == len(recommended_ids)
-
-    for mission in recommended:
-        saved = saved_missions.get(mission["missionId"])
-        assert saved is not None
-        assert mission["missionTitle"] == saved.mission_title
-        assert mission["missionType"] == saved.mission_type
+    assert len(set(recommended)) == len(recommended)
+    assert set(recommended) <= saved
 
 
 def test_장소가_있는_추천_미션은_좌표와_거리_예상_소요_시간을_반환한다(
     client: TestClient, db_session: Session, home_data: None
 ) -> None:
     body = _request_home(client)
+    by_type = {mission["missionType"]: mission for mission in body["missionRecommend"]}
 
-    located = [
-        mission for mission in body["missionRecommend"] if mission["location"] is not None
-    ]
-    assert located, "장소가 있는 추천 미션이 하나도 없습니다."
+    saved_location = db_session.get(Location, SAEBYEOL_LOCATION_ID)
+    assert saved_location is not None
+    expected_meter, expected_minutes = _expected_distance(saved_location)
 
-    for mission in located:
-        saved_location = db_session.get(Mission, mission["missionId"]).location
-        assert saved_location is not None
-
-        assert mission["locationTitle"] == saved_location.location_title
-        assert mission["location"] == {
-            "lat": saved_location.my,
-            "lng": saved_location.mx,
-        }
-
-        expected_distance = distance.calculate_distance_meter(
-            USER_LATITUDE, USER_LONGITUDE, saved_location.my, saved_location.mx
-        )
-        assert mission["distanceMeter"] == expected_distance
-        assert mission["durationMinutes"] == distance.calculate_duration_minutes(
-            expected_distance
-        )
+    cooperative = by_type["COOPERATIVE"]
+    assert cooperative["locationTitle"] == "새별 오름"
+    # DB는 my=위도 / mx=경도로 저장하고 응답은 lat / lng 로 나간다.
+    assert cooperative["location"] == {"lat": saved_location.my, "lng": saved_location.mx}
+    assert cooperative["distanceMeter"] == expected_meter
+    assert cooperative["durationMinutes"] == expected_minutes
 
 
-def test_장소가_없는_미션은_장소_관련_필드가_모두_null이다(
-    client: TestClient, db_session: Session, home_data: None
+def test_문화_미션은_장소가_없어_장소_관련_필드가_모두_null이다(
+    client: TestClient, home_data: None
 ) -> None:
-    # 추천이 랜덤이므로 장소 없는 미션만 남겨서 반드시 추천되게 한다.
-    db_session.query(CultureMission).filter(
-        CultureMission.mission_id == CULTURE_MISSION_ID
-    ).delete()
-    db_session.query(CooperativeMission).delete()
-    db_session.query(TreasureMission).delete()
-    db_session.query(Mission).filter(Mission.id != NO_LOCATION_MISSION_ID).delete()
-    db_session.commit()
-
     body = _request_home(client)
+    by_type = {mission["missionType"]: mission for mission in body["missionRecommend"]}
 
-    assert len(body["missionRecommend"]) == 1
-    mission = body["missionRecommend"][0]
-    assert mission["missionId"] == NO_LOCATION_MISSION_ID
-    assert mission["locationTitle"] is None
-    assert mission["location"] is None
-    assert mission["distanceMeter"] is None
-    assert mission["durationMinutes"] is None
+    culture = by_type["CULTURE"]
+    assert culture["locationTitle"] is None
+    assert culture["location"] is None
+    assert culture["distanceMeter"] is None
+    assert culture["durationMinutes"] is None
 
 
-def test_진행_중인_문화_미션을_현재_퀴즈_단계와_함께_반환한다(
+# ---------------------------------------------------------------------
+# 진행 중인 미션
+# ---------------------------------------------------------------------
+
+
+def test_진행_중인_문화_미션을_퀴즈_단계와_함께_반환한다(
     client: TestClient, db_session: Session, home_data: None
 ) -> None:
     db_session.add(
@@ -293,13 +315,16 @@ def test_진행_중인_문화_미션을_현재_퀴즈_단계와_함께_반환한
     }
     assert progress["missionId"] == CULTURE_MISSION_ID
     assert progress["missionType"] == "CULTURE"
-    assert progress["locationTitle"] == "성산일출봉"
-    # 문화 미션의 전체 단계는 MISSION.step_detail이 아니라 퀴즈 총개수를 사용한다.
+    # 문화 미션의 전체 단계는 step_detail(3)이 아니라 퀴즈 총 개수(5)를 쓴다.
     assert progress["totalStep"] == 5
     assert progress["currentStep"] == 2
+    # 문화 미션은 장소가 없다.
+    assert progress["locationTitle"] is None
+    assert progress["distanceMeter"] is None
+    assert progress["durationMinutes"] is None
 
 
-def test_진행_중인_보물찾기_미션을_현재_단계와_함께_반환한다(
+def test_진행_중인_보물찾기_미션을_장소와_현재_단계와_함께_반환한다(
     client: TestClient, db_session: Session, home_data: None
 ) -> None:
     # 보물 찾기 진행 단계는 1 | 2 | 3 이고 3이 완료 단계다.
@@ -315,12 +340,20 @@ def test_진행_중인_보물찾기_미션을_현재_단계와_함께_반환한�
     )
     db_session.commit()
 
+    saved_location = db_session.get(Location, SEONGSAN_LOCATION_ID)
+    assert saved_location is not None
+    expected_meter, expected_minutes = _expected_distance(saved_location)
+
     body = _request_home(client)
 
     assert len(body["progressMission"]) == 1
     progress = body["progressMission"][0]
     assert progress["missionId"] == TREASURE_MISSION_ID
     assert progress["missionType"] == "TREASURE"
+    assert progress["locationTitle"] == "성산일출봉"
+    assert progress["distanceMeter"] == expected_meter
+    assert progress["durationMinutes"] == expected_minutes
+    # 보물 찾기는 공통 미션 단계 정보(step_detail 개수)를 쓴다.
     assert progress["totalStep"] == 3
     assert progress["currentStep"] == 2
 
@@ -357,8 +390,61 @@ def test_참여자로_등록된_협동_미션을_진행_중_미션으로_반환�
     progress = body["progressMission"][0]
     assert progress["missionId"] == COOPERATIVE_MISSION_ID
     assert progress["missionType"] == "COOPERATIVE"
+    assert progress["locationTitle"] == "새별 오름"
     assert progress["totalStep"] == 4
     assert progress["currentStep"] == 3
+
+
+def test_세_유형의_진행_중_미션을_모두_반환한다(
+    client: TestClient, db_session: Session, home_data: None
+) -> None:
+    db_session.add_all(
+        [
+            CultureMissionProgress(
+                id=1,
+                culture_mission_id=CULTURE_MISSION_ID,
+                user_id=CURRENT_USER_ID,
+                mission_status=MissionStatus.IN_PROGRESS.value,
+                current_quiz_index=1,
+                correct_number=0,
+            ),
+            TreasureMissionProgress(
+                id=1,
+                treasure_mission_id=TREASURE_MISSION_ID,
+                user_id=CURRENT_USER_ID,
+                current_found_item_idx=[],
+                current_step=1,
+                mission_status=MissionStatus.IN_PROGRESS.value,
+            ),
+            CooperativeMissionProgress(
+                id=1,
+                cooperative_mission_id=COOPERATIVE_MISSION_ID,
+                current_step=1,
+                mission_status=MissionStatus.IN_PROGRESS.value,
+                team_token="team-token-1",
+            ),
+        ]
+    )
+    db_session.flush()
+    db_session.add(
+        CooperativeMissionParticipant(
+            id=1,
+            cooperative_mission_progress_id=1,
+            participant_type=ParticipantType.USER.value,
+            user_id=CURRENT_USER_ID,
+            participant_status=ParticipantStatus.ACCEPTED.value,
+            joined_at=datetime(2026, 8, 20, 10, 0, 0),
+        )
+    )
+    db_session.commit()
+
+    body = _request_home(client)
+
+    assert {progress["missionType"] for progress in body["progressMission"]} == {
+        "CULTURE",
+        "TREASURE",
+        "COOPERATIVE",
+    }
 
 
 def test_완료된_미션과_다른_사용자의_미션은_진행_중_미션에_포함하지_않는다(
@@ -394,6 +480,11 @@ def test_완료된_미션과_다른_사용자의_미션은_진행_중_미션에_
     assert body["progressMission"] == []
 
 
+# ---------------------------------------------------------------------
+# 방명록 개수 / 캐릭터 / 사용자 없음
+# ---------------------------------------------------------------------
+
+
 def test_방명록_개수는_전체_방명록에서_삭제된_것을_뺀_값이다(
     client: TestClient, db_session: Session, home_data: None
 ) -> None:
@@ -402,7 +493,7 @@ def test_방명록_개수는_전체_방명록에서_삭제된_것을_뺀_값이�
             Guestbook(
                 id=1,
                 user_id=CURRENT_USER_ID,
-                location_id=1,
+                location_id=SEONGSAN_LOCATION_ID,
                 visited_at=date(2026, 8, 19),
                 saved_at=datetime(2026, 8, 19, 8, 30, 0),
             ),
@@ -410,7 +501,7 @@ def test_방명록_개수는_전체_방명록에서_삭제된_것을_뺀_값이�
             Guestbook(
                 id=2,
                 user_id=OTHER_USER_ID,
-                location_id=1,
+                location_id=SEONGSAN_LOCATION_ID,
                 visited_at=date(2026, 8, 20),
                 saved_at=datetime(2026, 8, 20, 9, 0, 0),
             ),
@@ -418,7 +509,7 @@ def test_방명록_개수는_전체_방명록에서_삭제된_것을_뺀_값이�
             Guestbook(
                 id=3,
                 user_id=CURRENT_USER_ID,
-                location_id=1,
+                location_id=SEONGSAN_LOCATION_ID,
                 visited_at=date(2026, 8, 21),
                 saved_at=datetime(2026, 8, 21, 9, 0, 0),
                 deleted_at=datetime(2026, 8, 21, 20, 0, 0),
@@ -477,6 +568,11 @@ def test_사용자_데이터가_없어도_홈_조회는_정상_동작한다(
 
     assert body["characterImgUrl"] is None
     assert body["progressMission"] == []
+
+
+# ---------------------------------------------------------------------
+# 잘못된 요청
+# ---------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(

@@ -23,6 +23,11 @@
 **DB에 존재하는 미션 중 하나가 중복 없이 뽑혔는지**로 검증한다.
 추천 기준이 실제 로직으로 바뀌어도 이 테스트는 그대로 쓸 수 있다.
 
+또 하나 중요한 축이 **미션 id를 어디서 가져오는지**다.
+`MISSION` 은 유형/이름/단계만 갖는 분류 테이블이고, 실제 미션 한 건은 미션 유형별 테이블의 행이다.
+그래서 응답의 `missionId` 는 `MISSION.id` 가 아니라 **유형별 테이블의 id** 여야 한다.
+목업 데이터는 두 id를 겹치지 않게(분류 1~3, 유형별 11/21/31) 잡아서 잘못된 id가 나가면 바로 드러나게 했다.
+
 거리·예상 소요 시간은 기대값을 테스트에 직접 적지 않고 `app/home/distance.py` 의 계산 함수로 검증한다.
 좌표를 `lat`(위도) ↔ `lng`(경도) 순으로 잘못 넘기는 실수를 잡기 위해서다.
 (DB는 `mx` = 경도, `my` = 위도로 저장하는데 응답은 `lat` / `lng` 라서 뒤집히기 쉽다)
@@ -39,14 +44,16 @@
 
 ### 2. 추천 미션
 
+- `missionId` 는 유형별 테이블(CULTURE / COOPERATIVE / TREASURE_MISSION)의 id다.
+- `missionType` / `missionTitle` 은 그 행이 속한 `MISSION` 의 값을 따른다.
 - 추천된 미션은 모두 DB에 존재하는 미션이고, 같은 미션이 중복되지 않는다.
 - 장소가 있는 미션은 `location.lat` / `location.lng` 가 DB의 `my` / `mx` 와 각각 일치하고,
   `distanceMeter` / `durationMinutes` 가 계산 결과와 일치한다.
 
 ### 3. 장소가 없는 미션
 
-- `locationTitle`, `location`, `distanceMeter`, `durationMinutes` 가 모두 `null` 이다.
-  (추천이 랜덤이므로 장소 없는 미션만 남겨 놓고 검증한다)
+- 장소는 협동 / 보물 찾기 미션만 가지고, **문화 미션은 장소를 갖지 않는다.**
+- 문화 미션은 `locationTitle`, `location`, `distanceMeter`, `durationMinutes` 가 모두 `null` 이다.
 
 ### 4. 진행 중인 미션
 
@@ -56,11 +63,12 @@
 문화 미션이 공통 단계 정보를 잘못 쓰면 바로 드러나게 했다.
 
 - **문화 미션**: 퀴즈 진행도를 쓴다. `CULTURE_MISSION.quiz_total_count` → `totalStep`,
-  진행도의 `current_quiz_index` → `currentStep`.
+  진행도의 `current_quiz_index` → `currentStep`. 장소 관련 필드는 모두 `null`.
 - **보물 찾기 미션**: 공통 단계 정보를 쓴다. `MISSION.step_detail` 항목 개수 → `totalStep`,
   진행도의 `current_step` → `currentStep`. (단계는 1 | 2 | 3 이고 3이 완료 단계)
 - **협동 미션**: 진행도 테이블에 `user_id` 가 없으므로 **참여자(`COOPERATIVE_MISSION_PARTICIPANT`)를 통해**
   현재 사용자의 방을 찾아야 한다. 단계 정보는 보물 찾기와 같이 공통 단계 정보를 쓴다.
+- 세 유형의 진행 중 미션이 있으면 세 건이 모두 한 목록에 나온다.
 - 완료된(`COMPLETED`) 미션과 **다른 사용자**의 진행 중 미션은 목록에 포함되지 않는다.
   (상태 필터와 사용자 필터가 둘 다 걸려 있는지 확인)
 
@@ -104,5 +112,6 @@ pytest app/home/tests/test_get_home.py -k 협동
 
 DB는 SQLite 인메모리를 사용하므로 MySQL이 떠 있지 않아도 실행된다.
 공통 픽스처(`client`, `db_session`)는 루트 `conftest.py`에 있고, 장소/미션/사용자 목업 데이터는
-각 테스트의 `home_data` 픽스처에서 만든다. 진행도와 방명록은 검증할 내용이 테스트마다 달라서
-`home_data` 에 넣지 않고 각 테스트에서 필요한 만큼 직접 추가한다.
+각 테스트의 `home_data` 픽스처에서 만든다. 미션은 유형별로 1건씩만 둬서(추천 개수와 같음)
+랜덤 추천이어도 세 건이 항상 모두 추천되게 했다.
+진행도와 방명록은 검증할 내용이 테스트마다 달라서 `home_data` 에 넣지 않고 각 테스트에서 직접 추가한다.

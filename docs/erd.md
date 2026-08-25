@@ -45,8 +45,6 @@ MISSION {
 	varchar_50 mission_type "NOT NULL, Enum: CULTURE | COOPERATIVE | TREASURE"
 	varchar_50 mission_title "NOT NULL"
 	varchar_200 description "NOT NULL"
-	bigint location_id FK "NULL"
-	json reward_detail "NOT NULL, json: {ar_character_id: int, point: int, coupon_location: string, coupon_price: int}"
 	json step_detail "NOT NULL, json: {step: int, step_title: string, description: string}"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
@@ -85,9 +83,11 @@ GPS {
 }
 
 CULTURE_MISSION {
-	bigint mission_id PK, FK "NOT NULL"
+	bigint id PK "NOT NULL"
+	bigint mission_id FK "NOT NULL"
 	int quiz_total_count "NOT NULL"
 	json quiz_detail "NOT NULL, json: {quiz_index: int, img_url: string | null, question: string, options: string[] | null, answer: string, hint: string, explanation: string}"
+	json reward_detail "NOT NULL, json: {ar_character_id: int, point: int, coupon_location: string, coupon_price: int}"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
     datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 }
@@ -105,8 +105,11 @@ CULTURE_MISSION_PROGRESS {
 }
 
 COOPERATIVE_MISSION {
-	bigint mission_id PK, FK "NOT NULL"
+	bigint id PK "NOT NULL"
+	bigint mission_id FK "NOT NULL"
+	bigint location_id FK "NOT NULL"
 	int role_total_count "NOT NULL"
+	json reward_detail "NOT NULL, json: {ar_character_id: int, point: int, coupon_location: string, coupon_price: int}"
     datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
     datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 }
@@ -160,9 +163,12 @@ COOPERATIVE_ROLE_PROGRESS {
 }
 
 TREASURE_MISSION {
-	bigint mission_id PK, FK "NOT NULL"
+	bigint id PK "NOT NULL"
+	bigint mission_id FK "NOT NULL"
+	bigint location_id FK "NOT NULL"
 	int item_total_count "NOT NULL"
 	json item_detail "NOT NULL, json: {index: int, mx: float, my: float, radius: int}"
+	json reward_detail "NOT NULL, json: {ar_character_id: int, point: int, coupon_location: string, coupon_price: int}"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 }
@@ -271,14 +277,15 @@ USER ||--o{ ACQUIRED_AR_CHARACTER : acquires
 USER ||--o{ TRAVEL_ENDING_CONTENT : owns
 USER ||--o{ PICTURE_WITH_CHARACTER : has
 
-LOCATION o|--o{ MISSION : hosts
 LOCATION ||--o{ VISITED_LOCATION : visited_by
 LOCATION ||--o{ GUESTBOOK : contains
 LOCATION o|--o{ ROAD_GUESTBOOK : references
+LOCATION ||--o{ COOPERATIVE_MISSION : hosts
+LOCATION ||--o{ TREASURE_MISSION : hosts
 
-MISSION ||--o| CULTURE_MISSION : specializes
-MISSION ||--o| COOPERATIVE_MISSION : specializes
-MISSION ||--o| TREASURE_MISSION : specializes
+MISSION ||--o{ CULTURE_MISSION : categorizes
+MISSION ||--o{ COOPERATIVE_MISSION : categorizes
+MISSION ||--o{ TREASURE_MISSION : categorizes
 MISSION o|--o{ GUESTBOOK : relates_to
 MISSION ||--o{ ACQUIRED_AR_CHARACTER : rewards
 
