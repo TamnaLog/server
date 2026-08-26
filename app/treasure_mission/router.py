@@ -1,44 +1,152 @@
 """보물 찾기 도메인 라우터.
 
-노션 API 명세서 기준. 엔드포인트/HTTP 메서드/API 명은 확정값이며,
-요청/응답 스키마는 아직 확정 전이라 TODO로 남겨둔다.
+API 명세: app/treasure_mission/docs/API_SPEC.md
+
+AR 캐릭터와 사진 저장은 명세 확정 전이라 TODO로 남겨둔다.
 """
 
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Body, Depends, Path, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.deps import get_current_user_id
 from app.treasure_mission import service
+from app.treasure_mission.schemas import (
+    TreasureMissionProgressSaveRequest,
+    TreasureMissionProgressSaveResponse,
+    TreasureMissionStartResponse,
+    TreasureMissionStopResponse,
+)
 
 
 router = APIRouter(prefix="/api/v1/treasure-missions", tags=["treasure-mission"])
 
 
+def _error_response(description: str, code: str) -> dict[str, Any]:
+    return {
+        "description": description,
+        "content": {
+            "application/json": {
+                "schema": {"$ref": "#/components/schemas/ErrorResponse"},
+                "example": {"code": code},
+            }
+        },
+    }
+
+
+@router.post(
+    "/{treasure_mission_id}/progress",
+    summary="보물찾기 시작/이어하기",
+    # 진행도를 새로 만든 경우가 기본이고, 이어서 하는 경우에만 200으로 바꾼다.
+    status_code=status.HTTP_201_CREATED,
+    response_model=TreasureMissionStartResponse,
+    response_model_by_alias=True,
+    responses={
+        status.HTTP_200_OK: {
+            "description": "이미 진행 중인 보물찾기 미션을 이어서 하는 경우",
+            "model": TreasureMissionStartResponse,
+        },
+        status.HTTP_404_NOT_FOUND: _error_response(
+            "보물찾기 미션을 찾을 수 없음", service.TREASURE_MISSION_NOT_FOUND
+        ),
+    },
+)
+def start_treasure_mission(
+    response: Response,
+    db: Annotated[Session, Depends(get_db)],
+    current_user_id: Annotated[int, Depends(get_current_user_id)],
+    treasure_mission_id: Annotated[
+        int, Path(ge=1, description="진행도를 생성하거나 조회할 TREASURE_MISSION.id")
+    ],
+    latitude: Annotated[float, Query(ge=-90, le=90, description="사용자 현재 위치의 위도")],
+    longitude: Annotated[float, Query(ge=-180, le=180, description="사용자 현재 위치의 경도")],
+) -> TreasureMissionStartResponse:
+    """POST /api/v1/treasure-missions/{treasureMissionId}/progress - 보물찾기 시작/이어하기."""
+    result = service.start_treasure_mission(
+        db=db,
+        current_user_id=current_user_id,
+        treasure_mission_id=treasure_mission_id,
+        latitude=latitude,
+        longitude=longitude,
+    )
+    if not result.is_created:
+        response.status_code = status.HTTP_200_OK
+    return result.response
+
+
 @router.post("/pictures-with-character", summary="ar 캐릭터와 사진 저장")
-def save_picture_with_character(db: Session = Depends(get_db)) -> dict[str, Any]:
+def save_picture_with_character(db: Annotated[Session, Depends(get_db)]) -> dict[str, Any]:
     """POST /api/v1/treasure-missions/pictures-with-character - ar 캐릭터와 사진 저장."""
     # TODO: 요청/응답 스키마 연결 (app/treasure_mission/schemas.py)
     return service.save_picture_with_character(db)
 
 
-@router.post("/{mission_id}/progress", summary="보물 찾기 시작/이어하기")
-def start_treasure_mission(mission_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
-    """POST /api/v1/treasure-missions/{missionId}/progress - 보물 찾기 시작/이어하기."""
-    # TODO: 요청/응답 스키마 연결 (app/treasure_mission/schemas.py)
-    return service.start_treasure_mission(mission_id, db)
+@router.patch(
+    "/{treasure_mission_progress_id}/progress",
+    summary="보물찾기 진행도 저장",
+    status_code=status.HTTP_200_OK,
+    response_model=TreasureMissionProgressSaveResponse,
+    response_model_by_alias=True,
+    responses={
+        status.HTTP_404_NOT_FOUND: _error_response(
+            "진행 중인 진행도 또는 요청한 보물을 찾을 수 없음",
+            f"{service.TREASURE_MISSION_PROGRESS_NOT_FOUND} | {service.TREASURE_ITEM_NOT_FOUND}",
+        ),
+        status.HTTP_409_CONFLICT: _error_response(
+            "이미 찾은 보물", service.TREASURE_ITEM_ALREADY_FOUND
+        ),
+    },
+)
+def save_treasure_mission_progress(
+    db: Annotated[Session, Depends(get_db)],
+    current_user_id: Annotated[int, Depends(get_current_user_id)],
+    treasure_mission_progress_id: Annotated[
+        int, Path(ge=1, description="저장할 TREASURE_MISSION_PROGRESS.id")
+    ],
+    request: Annotated[TreasureMissionProgressSaveRequest, Body()],
+    latitude: Annotated[float, Query(ge=-90, le=90, description="사용자 현재 위치의 위도")],
+    longitude: Annotated[float, Query(ge=-180, le=180, description="사용자 현재 위치의 경도")],
+) -> TreasureMissionProgressSaveResponse:
+    """PATCH /api/v1/treasure-missions/{treasureMissionProgressId}/progress - 보물찾기 진행도 저장."""
+    return service.save_treasure_mission_progress(
+        db=db,
+        current_user_id=current_user_id,
+        treasure_mission_progress_id=treasure_mission_progress_id,
+        request=request,
+        latitude=latitude,
+        longitude=longitude,
+    )
 
 
-@router.patch("/{mission_id}/progress", summary="보물 찾기 진행도 저장")
-def save_treasure_mission_progress(mission_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
-    """PATCH /api/v1/treasure-missions/{missionId}/progress - 보물 찾기 진행도 저장."""
-    # TODO: 요청/응답 스키마 연결 (app/treasure_mission/schemas.py)
-    return service.save_treasure_mission_progress(mission_id, db)
-
-
-@router.patch("/{mission_id}/progress/stop", summary="보물 찾기 중단")
-def stop_treasure_mission(mission_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
-    """PATCH /api/v1/treasure-missions/{missionId}/progress/stop - 보물 찾기 중단."""
-    # TODO: 요청/응답 스키마 연결 (app/treasure_mission/schemas.py)
-    return service.stop_treasure_mission(mission_id, db)
+@router.patch(
+    "/{treasure_mission_progress_id}/progress/stop",
+    summary="보물찾기 중단",
+    status_code=status.HTTP_200_OK,
+    response_model=TreasureMissionStopResponse,
+    response_model_by_alias=True,
+    responses={
+        status.HTTP_404_NOT_FOUND: _error_response(
+            "진행 중인 보물찾기 진행도를 찾을 수 없음",
+            service.TREASURE_MISSION_PROGRESS_NOT_FOUND,
+        ),
+    },
+)
+def stop_treasure_mission(
+    db: Annotated[Session, Depends(get_db)],
+    current_user_id: Annotated[int, Depends(get_current_user_id)],
+    treasure_mission_progress_id: Annotated[
+        int, Path(ge=1, description="중단할 TREASURE_MISSION_PROGRESS.id")
+    ],
+    latitude: Annotated[float, Query(ge=-90, le=90, description="사용자 현재 위치의 위도")],
+    longitude: Annotated[float, Query(ge=-180, le=180, description="사용자 현재 위치의 경도")],
+) -> TreasureMissionStopResponse:
+    """PATCH /api/v1/treasure-missions/{treasureMissionProgressId}/progress/stop - 보물찾기 중단."""
+    return service.stop_treasure_mission(
+        db=db,
+        current_user_id=current_user_id,
+        treasure_mission_progress_id=treasure_mission_progress_id,
+        latitude=latitude,
+        longitude=longitude,
+    )

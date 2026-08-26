@@ -69,6 +69,7 @@ class TreasureMission(Base):
 
     자체 `id` 를 PK로 갖고, `mission_id` 로 공통 미션(MISSION)에 속한다.
     (MISSION 1 : N 보물 찾기 미션) 미션이 진행되는 장소는 이 테이블이 가진다.
+    보물 좌표(`item_detail`)는 진행도마다 달라지므로 TREASURE_MISSION_PROGRESS 가 가진다.
     """
 
     __tablename__ = "TREASURE_MISSION"
@@ -81,8 +82,6 @@ class TreasureMission(Base):
         BigInteger, ForeignKey("LOCATION.id", ondelete="RESTRICT"), nullable=False
     )
     item_total_count: Mapped[int] = mapped_column(Integer, nullable=False)
-    # [{index, mx, my, radius}]
-    item_detail: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     # 미션 보상. {ar_character_id, point, coupon_location, coupon_price}
     reward_detail: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -97,7 +96,10 @@ class TreasureMission(Base):
 
 
 class TreasureMissionProgress(Base):
-    """TREASURE_MISSION_PROGRESS - 보물 찾기 진행도."""
+    """TREASURE_MISSION_PROGRESS - 보물 찾기 진행도.
+
+    보물 좌표(`item_detail`)는 미션이 아니라 진행도마다 정해지므로 여기에 저장한다.
+    """
 
     __tablename__ = "TREASURE_MISSION_PROGRESS"
 
@@ -108,6 +110,8 @@ class TreasureMissionProgress(Base):
     user_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("USER.id", ondelete="CASCADE"), nullable=False
     )
+    # 이 진행도에서 찾아야 할 보물 좌표. [{index, mx, my}]
+    item_detail: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     # 찾은 보물 index 목록 (int[])
     current_found_item_idx: Mapped[list[int]] = mapped_column(JSON, nullable=False)
     # 진행 단계. 1 | 2 | 3 (3 = 완료)

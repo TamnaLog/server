@@ -294,7 +294,6 @@ def test_포인트_보상이_없으면_null로_반환한다(
             mission_id=TREASURE_TYPE_ID,
             location_id=LOCATION_ID,
             item_total_count=3,
-            item_detail=[],
             reward_detail={},
         )
     )
@@ -426,7 +425,6 @@ def test_다른_유형에만_존재하는_id면_404_MISSION_NOT_FOUND로_응답�
             mission_id=TREASURE_TYPE_ID,
             location_id=LOCATION_ID,
             item_total_count=3,
-            item_detail=[],
             reward_detail={},
         )
     )

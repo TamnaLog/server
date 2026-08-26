@@ -368,7 +368,6 @@ def test_추천되는_미션은_해당_장소에_연결된_미션_중_하나다(
                 mission_id=COOPERATIVE_TYPE_ID,
                 location_id=LOCATION_ID,
                 item_total_count=3,
-                item_detail=[],
                 reward_detail={},
             ),
         ]

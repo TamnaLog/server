@@ -189,33 +189,20 @@ VALUES
 
 
 -- ---------------------------------------------------------------------
--- TREASURE_MISSION : 보물 좌표 (전부 해당 장소 반경 안)
--- item_detail : [{index, mx, my, radius}]
+-- TREASURE_MISSION : 미션 정보 (보물 좌표는 진행도에서 정해진다)
 -- ---------------------------------------------------------------------
 
 INSERT INTO `TREASURE_MISSION`
-    (`id`, `mission_id`, `location_id`, `item_total_count`, `item_detail`, `reward_detail`)
+    (`id`, `mission_id`, `location_id`, `item_total_count`, `reward_detail`)
 VALUES
-    (1, 3, 4, 3, '[
-        {"index": 1, "mx": 126.5535, "my": 33.2470, "radius": 25},
-        {"index": 2, "mx": 126.5544, "my": 33.2462, "radius": 25},
-        {"index": 3, "mx": 126.5551, "my": 33.2468, "radius": 30}
-    ]',
-    '{"ar_character_id": 8, "point": 150, "coupon_location": "서귀포 올레시장 분식", "coupon_price": 3000}'),
+    (1, 3, 4, 3,
+     '{"ar_character_id": 8, "point": 150, "coupon_location": "서귀포 올레시장 분식", "coupon_price": 3000}'),
 
-    (2, 3, 8, 3, '[
-        {"index": 1, "mx": 126.6265, "my": 33.2546, "radius": 25},
-        {"index": 2, "mx": 126.6274, "my": 33.2538, "radius": 25},
-        {"index": 3, "mx": 126.6281, "my": 33.2549, "radius": 30}
-    ]',
-    '{"ar_character_id": 9, "point": 150, "coupon_location": "하효 감귤빵집", "coupon_price": 3000}'),
+    (2, 3, 8, 3,
+     '{"ar_character_id": 9, "point": 150, "coupon_location": "하효 감귤빵집", "coupon_price": 3000}'),
 
-    (3, 3, 7, 3, '[
-        {"index": 1, "mx": 126.3569, "my": 33.3668, "radius": 30},
-        {"index": 2, "mx": 126.3579, "my": 33.3660, "radius": 30},
-        {"index": 3, "mx": 126.3585, "my": 33.3671, "radius": 35}
-    ]',
-    '{"ar_character_id": 10, "point": 200, "coupon_location": "새별 오름 휴게소", "coupon_price": 4000}');
+    (3, 3, 7, 3,
+     '{"ar_character_id": 10, "point": 200, "coupon_location": "새별 오름 휴게소", "coupon_price": 4000}');
 
 
 -- ---------------------------------------------------------------------
@@ -256,13 +243,19 @@ VALUES
 -- ---------------------------------------------------------------------
 
 -- current_step : 1 | 2 | 3 (3 = 완료)
+-- item_detail : 진행도 생성 시 사용자 위치 방향의 반원 안에서 확정된 보물 좌표
 INSERT INTO `TREASURE_MISSION_PROGRESS`
-    (`id`, `treasure_mission_id`, `user_id`, `current_found_item_idx`, `current_step`,
+    (`id`, `treasure_mission_id`, `user_id`, `item_detail`, `current_found_item_idx`, `current_step`,
      `mission_status`,
      `ar_character_reward_granted`, `point_reward_granted`, `coupon_reward_granted`,
      `completed_at`)
 VALUES
-    (1, 1, 1, '[1, 2]', 2, 'IN_PROGRESS', FALSE, FALSE, FALSE, NULL);
+    (1, 1, 1, '[
+        {"index": 1, "mx": 126.5535, "my": 33.2470},
+        {"index": 2, "mx": 126.5544, "my": 33.2462},
+        {"index": 3, "mx": 126.5551, "my": 33.2468}
+    ]',
+    '[1, 2]', 2, 'IN_PROGRESS', FALSE, FALSE, FALSE, NULL);
 
 
 -- ---------------------------------------------------------------------
