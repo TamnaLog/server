@@ -139,6 +139,31 @@ MYSQL_SSL_ENABLED=true
 
 로컬 Docker Compose에서는 MySQL 컨테이너를 직접 띄우기 때문에 `MYSQL_SSL_ENABLED=false`를 사용합니다.
 
+## 파일 저장소 (Azure Blob Storage)
+
+사용자가 올린 사진/음성 파일은 DB에 URL만 저장하고 실제 파일은 Blob Storage에 둡니다.
+
+```text
+Storage Account: jamkkanjejustorage
+Blob Endpoint:   https://jamkkanjejustorage.blob.core.windows.net/
+```
+
+업로드 코드는 다음 파일에 있습니다.
+
+```text
+app/services/blob_storage.py
+```
+
+관련 환경변수:
+
+```env
+AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=jamkkanjejustorage;AccountKey=...;EndpointSuffix=core.windows.net
+AZURE_STORAGE_CONTAINER=media
+```
+
+연결 문자열에는 계정 키가 들어 있으므로 Git에 올리지 않고 환경변수로만 주입합니다.
+컨테이너는 첫 업로드 시 없으면 자동으로 생성합니다.
+
 ## 비밀값 관리
 
 비밀번호나 외부 API 키는 Git에 올리지 않습니다.

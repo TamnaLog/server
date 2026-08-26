@@ -58,6 +58,12 @@ REWARD_DETAIL = {
     "coupon_price": 1000,
 }
 
+# 보물 좌표는 미션이 아니라 진행도가 가진다. [{index, mx, my}]
+TREASURE_ITEM_DETAIL = [
+    {"index": 1, "mx": 126.9410, "my": 33.4580},
+    {"index": 2, "mx": 126.9415, "my": 33.4585},
+]
+
 
 def _step_detail(count: int) -> list[dict[str, object]]:
     return [
@@ -145,7 +151,6 @@ def home_data(db_session: Session) -> None:
                 mission_id=TREASURE_TYPE_ID,
                 location_id=SEONGSAN_LOCATION_ID,
                 item_total_count=5,
-                item_detail=[],
                 reward_detail=REWARD_DETAIL,
             ),
         ]
@@ -333,6 +338,7 @@ def test_진행_중인_보물찾기_미션을_장소와_현재_단계와_함께_
             id=1,
             treasure_mission_id=TREASURE_MISSION_ID,
             user_id=CURRENT_USER_ID,
+            item_detail=TREASURE_ITEM_DETAIL,
             current_found_item_idx=[1],
             current_step=2,
             mission_status=MissionStatus.IN_PROGRESS.value,
@@ -412,6 +418,7 @@ def test_세_유형의_진행_중_미션을_모두_반환한다(
                 id=1,
                 treasure_mission_id=TREASURE_MISSION_ID,
                 user_id=CURRENT_USER_ID,
+                item_detail=TREASURE_ITEM_DETAIL,
                 current_found_item_idx=[],
                 current_step=1,
                 mission_status=MissionStatus.IN_PROGRESS.value,
@@ -467,6 +474,7 @@ def test_완료된_미션과_다른_사용자의_미션은_진행_중_미션에_
                 id=1,
                 treasure_mission_id=TREASURE_MISSION_ID,
                 user_id=OTHER_USER_ID,
+                item_detail=TREASURE_ITEM_DETAIL,
                 current_found_item_idx=[],
                 current_step=1,
                 mission_status=MissionStatus.IN_PROGRESS.value,

@@ -12,6 +12,7 @@
 지급 규칙:
 
 - 지급 가능한 보상은 AR 캐릭터 → 포인트 → 쿠폰 순서로 계산한다.
+  (후보 계산은 미션 유형과 무관하므로 `app/common/rewards.py` 의 `remaining_reward_items()` 를 쓴다)
 - 같은 사용자/문화 미션의 **모든 진행도 이력**에서 이미 지급된 항목과
   `reward_detail` 에 없는 항목은 지급 후보에서 제외한다.
 - 이번 요청에서 지급하는 개수는 `정답 수` 와 남은 후보 수 중 작은 값이다.
@@ -21,7 +22,6 @@
 호출한 service 에서 한 번만 커밋한다.
 """
 
-from enum import Enum
 from typing import Any
 
 from sqlalchemy import select
@@ -31,7 +31,8 @@ from app.common.rewards import (
     ArCharacterResponse,
     CouponResponse,
     GrantedRewardResponse,
-    GrantedRewards,
+    RewardItem,
+    remaining_reward_items,
     to_ar_character,
     to_coupon,
 )
@@ -40,14 +41,6 @@ from app.mission import reward_history
 from app.mission.schemas import MissionType
 from app.treasure_mission.models import AcquiredArCharacter
 from app.user.models import User
-
-
-class RewardItem(str, Enum):
-    """보상 항목. 정의 순서가 곧 지급 순서다."""
-
-    AR_CHARACTER = "AR_CHARACTER"
-    POINT = "POINT"
-    COUPON = "COUPON"
 
 
 def grant_culture_mission_reward(
@@ -66,7 +59,7 @@ def grant_culture_mission_reward(
         current_user_id=progress.user_id,
     )
 
-    candidates = _candidates(db, reward, granted_before)
+    candidates = remaining_reward_items(db, reward, granted_before)
     grant_count = min(progress.correct_number, len(candidates))
     grant_items = set(candidates[:grant_count])
 
@@ -79,23 +72,6 @@ def grant_culture_mission_reward(
     coupon = _grant_coupon(progress, reward) if RewardItem.COUPON in grant_items else None
 
     return GrantedRewardResponse(ar_character=ar_character, point=point, coupon=coupon)
-
-
-def _candidates(
-    db: Session, reward: dict[str, Any], granted_before: GrantedRewards
-) -> list[RewardItem]:
-    """지급 순서대로 정렬된 지급 후보를 만든다.
-
-    이미 지급된 항목과 `reward_detail` 에 없는 항목은 후보에서 뺀다.
-    """
-    candidates = []
-    if not granted_before.ar_character and to_ar_character(db, reward.get("ar_character_id")):
-        candidates.append(RewardItem.AR_CHARACTER)
-    if not granted_before.point and (reward.get("point") or 0) > 0:
-        candidates.append(RewardItem.POINT)
-    if not granted_before.coupon and to_coupon(reward):
-        candidates.append(RewardItem.COUPON)
-    return candidates
 
 
 def _grant_ar_character(

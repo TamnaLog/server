@@ -16,6 +16,7 @@
 """
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
@@ -123,6 +124,33 @@ class GrantedRewardResponse(RewardItemsResponse):
 
     지급하지 않은 항목은 모두 `null` 이다.
     """
+
+
+class RewardItem(str, Enum):
+    """보상 항목. 정의 순서가 곧 지급 순서다. (AR 캐릭터 → 포인트 → 쿠폰)"""
+
+    AR_CHARACTER = "AR_CHARACTER"
+    POINT = "POINT"
+    COUPON = "COUPON"
+
+
+def remaining_reward_items(
+    db: Session, reward_detail: dict[str, Any] | None, granted: GrantedRewards
+) -> list[RewardItem]:
+    """아직 지급하지 않은 보상 항목을 지급 순서대로 반환한다.
+
+    이미 지급된 항목과 `reward_detail` 에 없는 항목은 후보에서 뺀다.
+    몇 개를 지급할지는 미션 유형마다 다르므로 각 도메인의 보상 지급 모듈에서 정한다.
+    """
+    reward = reward_detail or {}
+    items = []
+    if not granted.ar_character and to_ar_character(db, reward.get("ar_character_id")):
+        items.append(RewardItem.AR_CHARACTER)
+    if not granted.point and (reward.get("point") or 0) > 0:
+        items.append(RewardItem.POINT)
+    if not granted.coupon and to_coupon(reward):
+        items.append(RewardItem.COUPON)
+    return items
 
 
 def to_remaining_reward(
