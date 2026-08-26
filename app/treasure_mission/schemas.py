@@ -4,6 +4,7 @@
 보물 표시/인식 반경은 프론트가 관리하므로 응답에 포함하지 않는다.
 """
 
+from fastapi import UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
@@ -104,3 +105,14 @@ class TreasureMissionStopResponse(CamelModel):
     treasure_count: int
     found_treasure_indexes: list[int]
     next_location: NextLocationResponse
+
+
+class PictureWithCharacterSaveRequest(CamelModel):
+    """POST /api/v1/treasure-missions/pictures-with-character 요청 Body.
+
+    `multipart/form-data` 로 받는다. 사진 형식/크기 검증은 파일 내용을 봐야 하므로
+    스키마가 아니라 service 에서 처리한다.
+    """
+
+    picture: UploadFile
+    taken_at: str

@@ -1,19 +1,27 @@
 """보물 찾기 도메인 라우터.
 
 API 명세: app/treasure_mission/docs/API_SPEC.md
-
-AR 캐릭터와 사진 저장은 명세 확정 전이라 TODO로 남겨둔다.
 """
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Depends, Path, Query, Response, status
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    File,
+    Path,
+    Query,
+    Response,
+    status,
+)
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import get_current_user_id
 from app.treasure_mission import service
 from app.treasure_mission.schemas import (
+    PictureWithCharacterSaveRequest,
     TreasureMissionProgressSaveRequest,
     TreasureMissionProgressSaveResponse,
     TreasureMissionStartResponse,
@@ -76,11 +84,26 @@ def start_treasure_mission(
     return result.response
 
 
-@router.post("/pictures-with-character", summary="ar 캐릭터와 사진 저장")
-def save_picture_with_character(db: Annotated[Session, Depends(get_db)]) -> dict[str, Any]:
+@router.post(
+    "/pictures-with-character",
+    summary="ar 캐릭터와 사진 저장",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+def save_picture_with_character(
+    db: Annotated[Session, Depends(get_db)],
+    current_user_id: Annotated[int, Depends(get_current_user_id)],
+    # File() 로 선언해야 Swagger 문서에도 multipart/form-data 로 나온다.
+    request: Annotated[PictureWithCharacterSaveRequest, File()],
+) -> None:
     """POST /api/v1/treasure-missions/pictures-with-character - ar 캐릭터와 사진 저장."""
-    # TODO: 요청/응답 스키마 연결 (app/treasure_mission/schemas.py)
-    return service.save_picture_with_character(db)
+    # UploadFile.file 은 동기 파일 객체라, DB 세션과 같은 동기 흐름에서 그대로 읽을 수 있다.
+    service.save_picture_with_character(
+        db=db,
+        current_user_id=current_user_id,
+        picture=request.picture.file,
+        taken_at=request.taken_at,
+    )
 
 
 @router.patch(

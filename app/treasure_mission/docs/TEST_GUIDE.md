@@ -7,6 +7,7 @@
 | `POST /api/v1/treasure-missions/{treasureMissionId}/progress` (보물찾기 시작/이어하기) | `app/treasure_mission/tests/test_start_treasure_mission.py` |
 | `PATCH /api/v1/treasure-missions/{treasureMissionProgressId}/progress` (보물찾기 진행도 저장) | `app/treasure_mission/tests/test_save_treasure_mission_progress.py` |
 | `PATCH /api/v1/treasure-missions/{treasureMissionProgressId}/progress/stop` (보물찾기 중단) | `app/treasure_mission/tests/test_stop_treasure_mission.py` |
+| `POST /api/v1/treasure-missions/pictures-with-character` (AR 캐릭터와 사진 저장) | `app/treasure_mission/tests/test_save_picture_with_character.py` |
 
 ## 시작/이어하기 테스트 의도
 
@@ -179,6 +180,54 @@
 - 진행도 id가 0 이하이거나 정수가 아님
 - 이 경우 진행도 상태가 그대로인지도 확인한다.
 
+## AR 캐릭터와 사진 저장 테스트 의도
+
+이 API의 핵심은 **파일을 믿지 않는 것**이다.
+파일명 확장자와 multipart 의 Content-Type 은 클라이언트가 마음대로 보낼 수 있으므로,
+실제 파일 내용의 시그니처로 형식을 판별하고 저장 확장자도 그 결과로 정한다.
+그래서 **"내용은 JPEG인데 파일명·Content-Type 은 PNG"** 같은 요청을 일부러 넣어 검증한다.
+
+두 번째는 **저장소와 DB가 어긋나지 않는 것**이다.
+Blob 업로드가 실패하면 DB 행이 생기면 안 되고, 반대로 DB 저장이 실패하면
+이미 올라간 Blob 을 지워서 아무도 참조하지 않는 파일이 남지 않아야 한다.
+
+Blob 업로드는 실제 Azure 로 나가면 안 되므로 `uploads` / `deletes` 픽스처로 가로채
+**호출 인자까지 기록**한다. 업로드 경로와 확장자를 직접 확인하기 위해서다.
+
+### 주요 검증 항목
+
+#### 1. 정상 저장
+
+- **204** 로 응답하고 응답 본문이 비어 있다.
+- `PICTURE_WITH_CHARACTER` 에 로그인 사용자 id / 업로드 URL / 촬영 시각이 저장된다.
+  (`takenAt` 은 KST 기준 offset 없는 값 그대로 `saved_at` 에 들어간다)
+- 업로드 경로 prefix 가 `ar_character_picture/{userId}` 다.
+- 파일 내용은 변환·압축 없이 그대로 올린다.
+- 원본 파일명은 blob 이름에 쓰지 않는다.
+
+#### 2. 이미지 형식 판별
+
+- JPEG / PNG / WebP 를 모두 저장하고 각각 `.jpg` / `.png` / `.webp` 로 올린다.
+- 파일명·Content-Type 이 실제 형식과 달라도 **실제 형식**을 따른다.
+- `.jpeg` 로 보내도 저장 확장자는 `.jpg` 로 통일한다.
+- GIF 등 허용하지 않는 형식은 **400** 이고 업로드도 DB 저장도 하지 않는다.
+
+#### 3. 파일 크기
+
+- 빈 파일은 400.
+- 10MB 를 초과하면 400이고 업로드하지 않는다.
+- 정확히 10MB 는 정상 저장한다. (경계값)
+
+#### 4. 실패 시 되돌리기
+
+- Blob 업로드가 실패하면 DB 행을 만들지 않는다.
+- DB 저장이 실패하면 **업로드한 Blob 을 지운다.** (삭제 호출 인자까지 확인)
+
+#### 5. 400 `INVALID_REQUEST`
+
+- `picture` 또는 `takenAt` 누락
+- `takenAt` 이 offset 포함(`+09:00`, `Z`)이거나 날짜만 있거나 형식이 아닌 경우
+
 ## 실행 방법
 
 ```bash
@@ -195,6 +244,7 @@ pytest app/treasure_mission
 pytest app/treasure_mission/tests/test_start_treasure_mission.py -k 반원
 pytest app/treasure_mission/tests/test_save_treasure_mission_progress.py -k 보상
 pytest app/treasure_mission/tests/test_stop_treasure_mission.py -k 중단
+pytest app/treasure_mission/tests/test_save_picture_with_character.py -k 형식
 ```
 
 DB는 SQLite 인메모리를 사용하므로 MySQL이 떠 있지 않아도 실행된다.
@@ -202,3 +252,4 @@ DB는 SQLite 인메모리를 사용하므로 MySQL이 떠 있지 않아도 실�
 공통 미션/장소/보물찾기 미션/사용자 목업은 `treasure_mission_data` 픽스처에서 만든다.
 진행 이력은 테스트마다 조합이 달라서 `_add_progress()` 헬퍼로 각 테스트에서 직접 만든다.
 진행도 저장/중단 테스트는 `progress_data` 픽스처로 미션/장소/보상 캐릭터를 만들고, TourAPI 호출은 픽스처로 막는다.
+사진 저장 테스트는 `uploads` / `deletes` 픽스처로 Blob 호출을 가로채므로 Azure 연결이 없어도 실행된다.

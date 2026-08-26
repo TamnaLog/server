@@ -438,3 +438,107 @@ distance.calculate_distance_meter(
 - 해당 진행도가 이미 `COMPLETED` 상태인 경우
 
 이미 완료된 진행도도 별도의 완료 오류로 구분하지 않고 `404 TREASURE_MISSION_PROGRESS_NOT_FOUND`로 처리한다.
+
+# AR 캐릭터와 사진 저장 비즈니스 룰
+
+## 1. 요청 기준
+
+프론트는 `multipart/form-data`로 다음 두 필드를 전송한다.
+
+- `picture`: AR 캐릭터와 함께 촬영한 사진 파일
+- `takenAt`: 사진 촬영 시각
+
+백엔드는 사진의 AR 캐릭터 합성 여부나 촬영 내용을 별도로 검증하지 않는다. 전달받은 사진 파일을 저장하고 촬영 시각과 로그인한 사용자 정보를 DB에 기록한다.
+
+## 2. 허용 이미지 형식
+
+다음 이미지 형식만 허용한다.
+
+| 실제 이미지 형식 | 허용 Content-Type | 저장 확장자 |
+| --- | --- | --- |
+| JPEG | `image/jpeg` | `.jpg` |
+| PNG | `image/png` | `.png` |
+| WebP | `image/webp` | `.webp` |
+
+`.jpeg` 확장자로 전달된 JPEG 파일도 저장할 때는 `.jpg`로 통일한다.
+
+GIF, BMP, TIFF, SVG, HEIC, HEIF 등은 허용하지 않는다. 특히 모바일에서 HEIC/HEIF로 촬영된 사진은 프론트에서 JPEG로 변환한 후 전송한다.
+
+파일명 확장자나 multipart의 Content-Type만 신뢰하지 않고 실제 파일 내용의 이미지 형식을 확인한다. 실제 형식과 파일명 또는 Content-Type이 다르면 실제 형식을 기준으로 검증하고 저장 확장자를 결정한다.
+
+서버는 허용된 이미지의 크기 조절, 압축, 화질 변경 또는 포맷 변환을 하지 않고 전달받은 파일 내용을 그대로 저장한다.
+
+## 3. 파일 크기
+
+사진 파일의 최대 크기는 10MB이다.
+
+- 파일이 비어 있으면 `400 INVALID_REQUEST`
+- 파일이 10MB를 초과하면 `400 INVALID_REQUEST`
+
+파일 전체를 메모리에 무제한으로 읽은 다음 크기를 확인하지 않는다. 업로드 데이터를 읽는 과정에서 10MB를 초과하면 즉시 중단하도록 구현한다.
+
+## 4. Blob 저장 위치
+
+사진은 App Service 또는 Docker 컨테이너의 로컬 파일 시스템에 저장하지 않는다. 컨테이너 로컬 디스크는 재시작이나 재배포 시 유지되지 않을 수 있으므로 Azure Blob Storage에 저장한다.
+
+Azure Blob 컨테이너는 환경 변수 `AZURE_STORAGE_CONTAINER`에 설정된 값을 사용한다.
+
+Blob 이름은 다음 형식으로 생성한다.
+
+```text
+ar_character_picture/{userId}/{uuid}.{extension}
+```
+
+예시:
+
+```text
+ar_character_picture/1/550e8400e29b41d4a716446655440000.jpg
+```
+
+저장 경로의 최상위 디렉터리 역할을 하는 prefix는 항상 `ar_character_picture/`로 고정한다. 사용자별 파일을 구분하기 위해 그 아래에 로그인한 사용자 id를 사용한다.
+
+원본 파일명은 Blob 이름에 포함하지 않는다. 서버가 생성한 UUID를 사용하여 파일명 충돌과 원본 파일명을 통한 경로 조작을 방지한다.
+
+구현에서는 공통 Blob 업로드 모듈 `app/services/blob_storage.py`의 `upload_file()`을 사용하고 다음 prefix를 전달한다.
+
+```python
+prefix = f"ar_character_picture/{current_user_id}"
+```
+
+## 5. DB 저장
+
+Blob 업로드가 완료되면 `PICTURE_WITH_CHARACTER`에 다음 값을 저장한다.
+
+| 컬럼 | 저장값 |
+| --- | --- |
+| `user_id` | 현재 로그인한 사용자 id |
+| `picture_url` | 업로드된 Blob의 접근 URL |
+| `saved_at` | 요청의 `takenAt` |
+
+`takenAt`은 KST 기준 offset 없는 ISO 8601 형식으로 전달받아 `saved_at`에 저장한다.
+
+## 6. 처리 순서
+
+1. 로그인한 사용자 정보를 확인한다.
+2. `picture`와 `takenAt`의 존재 여부와 형식을 검증한다.
+3. 사진 크기가 10MB 이하인지 확인한다.
+4. 실제 이미지 형식이 JPEG, PNG, WebP 중 하나인지 확인한다.
+5. 실제 이미지 형식에 맞는 확장자와 UUID로 Blob 이름을 생성한다.
+6. Azure Blob Storage의 `ar_character_picture/{userId}/` 아래에 사진을 업로드한다.
+7. 업로드된 Blob URL과 촬영 시각을 `PICTURE_WITH_CHARACTER`에 저장한다.
+8. 정상적으로 저장되면 응답 Body 없이 `204 No Content`를 반환한다.
+
+Blob 업로드에 실패하면 DB 데이터를 생성하지 않는다. Blob 업로드는 성공했지만 DB 저장이 실패하면 업로드된 Blob을 삭제하여 DB에서 참조하지 않는 파일이 남지 않도록 한다.
+
+## 7. 오류 응답
+
+### 400 `INVALID_REQUEST`
+
+사진 저장 요청의 모든 검증 실패는 공통 요청 오류인 `400 INVALID_REQUEST`로 처리한다.
+
+- `picture` 또는 `takenAt`이 누락된 경우
+- 사진 파일이 비어 있는 경우
+- 사진 파일 크기가 10MB를 초과한 경우
+- 실제 이미지 형식을 판별할 수 없거나 파일이 손상된 경우
+- 실제 이미지 형식이 JPEG, PNG, WebP 중 하나가 아닌 경우
+- `takenAt`이 KST 기준 offset 없는 ISO 8601 형식이 아닌 경우

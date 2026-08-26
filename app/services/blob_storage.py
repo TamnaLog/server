@@ -18,7 +18,7 @@ from mimetypes import guess_extension
 from pathlib import PurePosixPath
 from uuid import uuid4
 
-from azure.core.exceptions import ResourceExistsError
+from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 from azure.storage.blob import (
     BlobServiceClient,
     ContainerClient,
@@ -63,14 +63,17 @@ def upload_file(
     prefix: str,
     filename: str | None = None,
     content_type: str | None = None,
+    extension: str | None = None,
 ) -> str:
     """파일을 업로드하고 접근 URL 을 반환한다.
 
-    - `prefix`: blob 을 구분하는 폴더 이름. (예: `guestbook`, `ar-character`)
+    - `prefix`: blob 을 구분하는 폴더 이름. (예: `guestbook`, `ar_character_picture/1`)
     - `filename`: 원본 파일명. 확장자를 정하는 데만 쓰고 blob 이름으로는 쓰지 않는다.
     - `content_type`: 없으면 `application/octet-stream` 으로 올린다.
+    - `extension`: 확장자를 직접 지정한다. 파일 내용으로 형식을 판별한 경우처럼
+      파일명/Content-Type 을 믿을 수 없을 때 사용한다. 지정하면 가장 우선한다.
     """
-    blob_name = _build_blob_name(prefix, filename, content_type)
+    blob_name = _build_blob_name(prefix, filename, content_type, extension)
     blob_client = get_container_client().get_blob_client(blob_name)
     blob_client.upload_blob(
         data,
@@ -80,13 +83,41 @@ def upload_file(
     return blob_client.url
 
 
-def _build_blob_name(prefix: str, filename: str | None, content_type: str | None) -> str:
+def _build_blob_name(
+    prefix: str,
+    filename: str | None,
+    content_type: str | None,
+    extension: str | None = None,
+) -> str:
     """`{prefix}/{uuid}{확장자}` 형태의 blob 이름을 만든다."""
-    return f"{prefix.strip('/')}/{uuid4().hex}{_extension(filename, content_type)}"
+    return f"{prefix.strip('/')}/{uuid4().hex}{_extension(filename, content_type, extension)}"
 
 
-def _extension(filename: str | None, content_type: str | None) -> str:
-    """원본 파일명 → content type 순서로 확장자를 정한다. 둘 다 없으면 확장자를 붙이지 않는다."""
+def delete_file(blob_url: str) -> None:
+    """업로드한 blob 을 지운다.
+
+    업로드는 됐지만 뒤이은 DB 저장이 실패했을 때, DB 에서 참조하지 않는 파일이 남지 않도록
+    되돌리는 용도다. 이미 없는 blob 을 지워도 예외를 올리지 않는다.
+    """
+    container_client = get_container_client()
+    blob_name = blob_url.removeprefix(f"{container_client.url}/")
+    if blob_name == blob_url:
+        # 이 컨테이너의 URL 이 아니면 지울 대상이 아니다.
+        return
+
+    try:
+        container_client.get_blob_client(blob_name).delete_blob()
+    except ResourceNotFoundError:
+        pass
+
+
+def _extension(
+    filename: str | None, content_type: str | None, extension: str | None = None
+) -> str:
+    """확장자를 정한다. 직접 지정한 값 → 원본 파일명 → content type 순으로 본다."""
+    if extension:
+        return extension.lower()
+
     if filename:
         suffix = PurePosixPath(filename).suffix
         if suffix:

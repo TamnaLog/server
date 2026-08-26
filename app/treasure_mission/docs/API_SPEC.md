@@ -482,3 +482,71 @@ Status Code : 404
 }
 ```
 
+
+
+## ar 캐릭터와 사진 저장
+- http 메서드: post
+- domain: treasure-mission
+- endpoint: /api/v1/treasure-missions/pictures-with-character
+
+### API 설명
+
+사용자가 AR 캐릭터와 함께 촬영한 사진을 저장할 때 호출한다.
+
+프론트는 사진 파일과 사진 촬영 시각을 `multipart/form-data`로 전송한다. 서버는 사진 파일을 이미지 저장소에 업로드한 뒤 로그인한 사용자 id, 업로드된 사진 URL, 촬영 시각을 `PICTURE_WITH_CHARACTER`에 저장한다.
+
+사진은 JPEG, PNG, WebP 형식만 허용하며 최대 크기는 10MB이다. 원본 파일명은 저장에 사용하지 않고 실제 이미지 형식에 맞는 확장자로 정규화한다. HEIC/HEIF 형식은 직접 저장하지 않으며 프론트에서 JPEG로 변환한 후 전송한다.
+
+사진 파일은 App Service 또는 Docker 컨테이너의 로컬 파일 시스템에 저장하지 않는다. `AZURE_STORAGE_CONTAINER`로 지정된 Azure Blob 컨테이너의 `ar_character_picture/{userId}/{uuid}.{extension}` 경로에 저장한다.
+
+- 로그인한 사용자 id → `PICTURE_WITH_CHARACTER.user_id`
+- 업로드된 사진 URL → `PICTURE_WITH_CHARACTER.picture_url`
+- 요청의 `takenAt` → `PICTURE_WITH_CHARACTER.saved_at`
+
+저장이 완료되면 별도의 응답 데이터를 반환하지 않고 `204 No Content`를 반환한다.
+
+---
+
+### 요청 Query
+
+없음
+
+---
+
+### 요청 Path
+
+없음
+
+---
+
+### 요청 Body
+
+Content-Type : `multipart/form-data`
+
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `picture` | file | O | AR 캐릭터와 함께 촬영한 이미지 파일. JPEG, PNG, WebP만 허용하며 최대 10MB |
+| `takenAt` | string(date-time) | O | 사진 촬영 시각. KST 기준 offset 없는 ISO 8601 형식 |
+
+요청 예시
+
+```bash
+curl -X POST \
+  "https://jankkan-jeju.azurewebsites.net/api/v1/treasure-missions/pictures-with-character" \
+  -F "picture=@picture-with-character.jpg" \
+  -F "takenAt=2026-08-26T14:32:10"
+```
+
+---
+
+### 정상 응답 데이터
+
+Status Code : 204
+
+응답 Body 없음
+
+---
+
+### 오류 응답 데이터
+
+없음

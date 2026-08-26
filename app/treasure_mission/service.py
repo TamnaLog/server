@@ -4,19 +4,25 @@
 """
 
 from dataclasses import dataclass
-from typing import Any
+from datetime import datetime
+from typing import Any, BinaryIO
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.common import next_location
+from app.common import images, next_location
 from app.common.datetimes import now_kst
 from app.common.next_location import NextLocationResponse
-from app.core.errors import ConflictError, NotFoundError
+from app.core.errors import ConflictError, InvalidRequestError, NotFoundError
 from app.map.models import Location
 from app.mission.models import MissionStatus
+from app.services import blob_storage
 from app.treasure_mission import reward_granter, treasure_placer
-from app.treasure_mission.models import TreasureMission, TreasureMissionProgress
+from app.treasure_mission.models import (
+    PictureWithCharacter,
+    TreasureMission,
+    TreasureMissionProgress,
+)
 from app.treasure_mission.schemas import (
     TreasureItemResponse,
     TreasureLocationResponse,
@@ -334,6 +340,94 @@ def _recommend_next_location(
 # ---------------------------------------------------------------------
 
 
-def save_picture_with_character(db: Session) -> dict[str, Any]:
-    """ar 캐릭터와 사진 저장."""
-    raise NotImplementedError
+# ---------------------------------------------------------------------
+# AR 캐릭터와 사진 저장
+# ---------------------------------------------------------------------
+
+# 사진 파일 최대 크기(10MB)
+MAX_PICTURE_SIZE_BYTE = 10 * 1024 * 1024
+
+# 업로드 데이터를 나눠 읽는 단위
+PICTURE_CHUNK_SIZE_BYTE = 1024 * 1024
+
+# Blob 저장 경로의 최상위 prefix. 그 아래를 사용자 id로 나눈다.
+PICTURE_BLOB_PREFIX = "ar_character_picture"
+
+
+def save_picture_with_character(
+    db: Session, current_user_id: int, picture: BinaryIO, taken_at: str
+) -> None:
+    """AR 캐릭터와 사진 저장.
+
+    사진은 컨테이너 로컬 디스크가 아니라 Azure Blob Storage 에 올리고 DB에는 URL만 남긴다.
+    Blob 업로드가 실패하면 DB 데이터를 만들지 않고, DB 저장이 실패하면 올린 Blob 을 지워
+    DB가 참조하지 않는 파일이 남지 않게 한다.
+    """
+    saved_at = _parse_taken_at(taken_at)
+    data = _read_picture(picture)
+    image_format = images.detect_image_format(data)
+    if image_format is None:
+        raise InvalidRequestError(
+            "허용하지 않는 이미지 형식입니다. (JPEG / PNG / WebP 만 허용)"
+        )
+
+    picture_url = blob_storage.upload_file(
+        data,
+        prefix=f"{PICTURE_BLOB_PREFIX}/{current_user_id}",
+        content_type=image_format.content_type,
+        extension=image_format.extension,
+    )
+
+    try:
+        db.add(
+            PictureWithCharacter(
+                user_id=current_user_id,
+                picture_url=picture_url,
+                saved_at=saved_at,
+            )
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        blob_storage.delete_file(picture_url)
+        raise
+
+
+def _parse_taken_at(taken_at: str) -> datetime:
+    """촬영 시각을 KST 기준 offset 없는 ISO 8601 로 해석한다."""
+    try:
+        parsed = datetime.fromisoformat(taken_at)
+    except ValueError as error:
+        raise InvalidRequestError(f"촬영 시각 형식이 올바르지 않습니다: {taken_at}") from error
+
+    if parsed.tzinfo is not None:
+        # 시간은 KST 로 취급하므로 offset 이 붙은 값은 받지 않는다.
+        raise InvalidRequestError(f"촬영 시각에 offset 을 포함할 수 없습니다: {taken_at}")
+
+    if "T" not in taken_at and " " not in taken_at:
+        # 날짜만 온 경우. date-time 이 필요하다.
+        raise InvalidRequestError(f"촬영 시각에 시간이 없습니다: {taken_at}")
+
+    return parsed
+
+
+def _read_picture(picture: BinaryIO) -> bytes:
+    """사진 파일을 크기 제한을 지키며 읽는다.
+
+    전체를 한 번에 메모리로 읽지 않고 나눠 읽다가 최대 크기를 넘으면 즉시 중단한다.
+    """
+    chunks: list[bytes] = []
+    size = 0
+
+    while chunk := picture.read(PICTURE_CHUNK_SIZE_BYTE):
+        size += len(chunk)
+        if size > MAX_PICTURE_SIZE_BYTE:
+            raise InvalidRequestError(
+                f"사진 파일이 최대 크기({MAX_PICTURE_SIZE_BYTE} bytes)를 초과했습니다."
+            )
+        chunks.append(chunk)
+
+    if size == 0:
+        raise InvalidRequestError("사진 파일이 비어 있습니다.")
+
+    return b"".join(chunks)
