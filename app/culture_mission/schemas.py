@@ -1,16 +1,29 @@
 """문화 미션 도메인 요청/응답 스키마.
 
 필드명은 app/culture_mission/docs/API_SPEC.md 기준(camelCase)이다.
-보상 스키마는 세 미션 유형이 같은 형태를 쓰므로 공용 모듈(app/common/rewards.py)의 것을 쓴다.
+보상 / 다음 장소 스키마는 미션 유형과 무관하게 같은 형태를 쓰므로 공용 모듈(app/common/)의 것을 쓴다.
 """
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
+from app.common.next_location import NextLocationMissionResponse, NextLocationResponse
 from app.common.rewards import RewardDetailResponse
+from app.culture_mission.models import MissionStatus
+from app.mission.schemas import MissionType
 
 
-__all__ = ["CultureMissionStartResponse", "QuizDetailResponse", "RewardDetailResponse"]
+__all__ = [
+    "CultureMissionProgressSaveRequest",
+    "CultureMissionProgressSaveResponse",
+    "CultureMissionStartResponse",
+    "MissionStatus",
+    "MissionType",
+    "NextLocationMissionResponse",
+    "NextLocationResponse",
+    "QuizDetailResponse",
+    "RewardDetailResponse",
+]
 
 
 class CamelModel(BaseModel):
@@ -46,3 +59,26 @@ class CultureMissionStartResponse(CamelModel):
     is_rewarded: bool
     quiz_details: list[QuizDetailResponse]
     reward_detail: RewardDetailResponse
+
+
+class CultureMissionProgressSaveRequest(CamelModel):
+    """PATCH /api/v1/culture-missions/{cultureMissionProgressId}/progress 요청 Body.
+
+    정답 여부는 프론트 판정 결과를 그대로 신뢰한다. (백엔드에서 정답을 재검증하지 않는다)
+    """
+
+    quiz_index: int = Field(ge=1, description="사용자가 제출한 퀴즈 번호")
+    is_correct: bool = Field(description="사용자가 해당 퀴즈를 맞혔는지 여부")
+
+
+class CultureMissionProgressSaveResponse(CamelModel):
+    """PATCH /api/v1/culture-missions/{cultureMissionProgressId}/progress 정상 응답.
+
+    미션이 아직 진행 중이면 `next_location` 은 `null` 이다.
+    """
+
+    mission_progress_status: MissionStatus
+    quiz_count: int
+    current_quiz_number: int
+    correct_number: int
+    next_location: NextLocationResponse | None = None

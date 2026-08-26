@@ -38,6 +38,9 @@
   - `app/common/`: 도메인이 공유하는 계산/유틸과 공용 응답 스키마
     - `distance.py`: 좌표 거리·예상 소요 시간
     - `rewards.py`: 미션 보상(`reward_detail`) 응답 스키마 + 조합 로직 (문화/협동/보물 공용)
+    - `next_location.py`: 미션 완료 후 다음 장소 추천 응답 스키마 + 추천 로직
+    - `reward_granter.py`: 미션 보상 지급(포인트 누적 / AR 캐릭터 획득 기록)
+    - `datetimes.py`: KST 기준 현재 시각(`now_kst()`)
 - 테스트: 루트 `conftest.py` + `app/<domain>/tests/` (공통 규칙 테스트는 `app/core/tests/`)
 - 라우터는 `app/main.py`의 `ROUTERS`에 등록한다.
 

@@ -9,13 +9,21 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.common import rewards
-from app.core.errors import NotFoundError
+from app.common import next_location, reward_granter, rewards
+from app.common.datetimes import now_kst
+from app.core.errors import ConflictError, NotFoundError
 from app.culture_mission.models import CultureMission, CultureMissionProgress, MissionStatus
-from app.culture_mission.schemas import CultureMissionStartResponse, QuizDetailResponse
+from app.culture_mission.schemas import (
+    CultureMissionProgressSaveRequest,
+    CultureMissionProgressSaveResponse,
+    CultureMissionStartResponse,
+    QuizDetailResponse,
+)
 
 
 CULTURE_MISSION_NOT_FOUND = "CULTURE_MISSION_NOT_FOUND"
+CULTURE_MISSION_PROGRESS_NOT_FOUND = "CULTURE_MISSION_PROGRESS_NOT_FOUND"
+CULTURE_MISSION_QUIZ_INDEX_MISMATCH = "CULTURE_MISSION_QUIZ_INDEX_MISMATCH"
 
 # 신규 진행도 초기값
 FIRST_QUIZ_INDEX = 1
@@ -143,3 +151,98 @@ def _to_quiz_details(quiz_detail: list[dict[str, Any]] | None) -> list[QuizDetai
         )
         for quiz in quizzes
     ]
+
+
+# ---------------------------------------------------------------------
+# 진행도 저장
+# ---------------------------------------------------------------------
+
+
+def save_culture_mission_progress(
+    db: Session,
+    current_user_id: int,
+    culture_mission_progress_id: int,
+    request: CultureMissionProgressSaveRequest,
+    latitude: float,
+    longitude: float,
+) -> CultureMissionProgressSaveResponse:
+    """문화 미션 진행도 저장.
+
+    - 제출한 퀴즈 번호가 진행도의 현재 퀴즈 번호와 다르면 아무것도 바꾸지 않고 409.
+    - 마지막 퀴즈가 아니면 퀴즈 번호를 1 올리고 `IN_PROGRESS` 를 유지한다.
+    - 마지막 퀴즈면 퀴즈 번호를 올리지 않고 `COMPLETED` 로 바꾼 뒤 다음 장소를 추천한다.
+
+    미션을 처음 완료하는 경우에만 보상을 지급하고, 완료 처리와 같은 트랜잭션으로 커밋한다.
+    과거에 완료한 적이 있으면(재도전) 보상을 다시 주지 않는다.
+    """
+    progress = _get_in_progress_by_id(db, current_user_id, culture_mission_progress_id)
+    culture_mission = _get_culture_mission(db, progress.culture_mission_id)
+
+    # 이번 진행도를 완료 처리하기 전에 확인해야 "과거에 받은 적이 있는지"를 알 수 있다.
+    is_already_rewarded = _has_completed_progress(db, current_user_id, progress.culture_mission_id)
+
+    if request.quiz_index != progress.current_quiz_index:
+        raise ConflictError(
+            CULTURE_MISSION_QUIZ_INDEX_MISMATCH,
+            detail=(
+                f"제출한 퀴즈 번호 {request.quiz_index} 가 "
+                f"현재 퀴즈 번호 {progress.current_quiz_index} 와 다릅니다."
+            ),
+        )
+
+    if request.is_correct:
+        progress.correct_number += 1
+
+    is_last_quiz = progress.current_quiz_index >= culture_mission.quiz_total_count
+    if is_last_quiz:
+        # 마지막 퀴즈는 번호를 올리지 않고 그대로 두고 완료 처리한다.
+        progress.mission_status = MissionStatus.COMPLETED.value
+        progress.completed_at = now_kst()
+        if not is_already_rewarded:
+            reward_granter.grant_mission_reward(
+                db,
+                user_id=current_user_id,
+                mission_id=culture_mission.mission_id,
+                reward_detail=culture_mission.reward_detail,
+            )
+    else:
+        progress.current_quiz_index += 1
+
+    db.commit()
+    db.refresh(progress)
+
+    return CultureMissionProgressSaveResponse(
+        mission_progress_status=MissionStatus(progress.mission_status),
+        quiz_count=culture_mission.quiz_total_count,
+        current_quiz_number=progress.current_quiz_index,
+        correct_number=progress.correct_number,
+        next_location=(
+            next_location.recommend_next_location(db, latitude, longitude)
+            if is_last_quiz
+            else None
+        ),
+    )
+
+
+def _get_in_progress_by_id(
+    db: Session, current_user_id: int, culture_mission_progress_id: int
+) -> CultureMissionProgress:
+    """현재 사용자의 진행 중인 진행도를 조회한다.
+
+    다른 사용자의 진행도이거나 이미 완료된 진행도면 갱신 대상이 아니므로 404로 처리한다.
+    (완료 요청이 중복으로 들어와도 정답 수가 다시 반영되지 않는다)
+    """
+    progress = db.get(CultureMissionProgress, culture_mission_progress_id)
+    if (
+        progress is None
+        or progress.user_id != current_user_id
+        or progress.mission_status != MissionStatus.IN_PROGRESS.value
+    ):
+        raise NotFoundError(
+            CULTURE_MISSION_PROGRESS_NOT_FOUND,
+            detail=(
+                f"사용자 {current_user_id} 의 진행 중인 문화 미션 진행도 "
+                f"{culture_mission_progress_id} 을(를) 찾을 수 없습니다."
+            ),
+        )
+    return progress

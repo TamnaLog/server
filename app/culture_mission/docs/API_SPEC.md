@@ -169,6 +169,10 @@ Query로 전달받은 사용자의 위도와 경도는 미션 완료 후 추천�
 
 문화 미션이 아직 진행 중이면 `nextLocation`은 `null`로 반환한다.
 
+마지막 퀴즈를 제출해 미션을 완료하면 보상을 지급한다. 포인트는 `USER.point`에 누적하고 AR 캐릭터는 획득 기록으로 저장한다. 쿠폰은 저장할 테이블이 없어 기록하지 않는다. 과거에 같은 문화 미션을 완료한 적이 있으면 보상을 다시 지급하지 않는다. 보상 지급 결과는 이 API의 응답에 포함하지 않는다.
+
+`nextLocation.locationImageUrl`은 `LOCATION.content_id`로 TourAPI를 조회해서 채운다. 이미지 URL은 부가 정보이므로, 인증키 미설정·통신 실패·이미지 없음 등으로 조회하지 못하면 미션 완료 응답 전체를 실패시키지 않고 `null`로 반환한다.
+
 ---
 
 ### 요청 Query
@@ -225,7 +229,7 @@ Status Code : 200
 | `nextLocation` | object | null | 다음 추천 장소 정보. 진행 중이면 `null` |
 | `nextLocation.id` | number | 다음 장소 id |
 | `nextLocation.locationTitle` | string | 다음 장소명 |
-| `nextLocation.locationImageUrl` | string | 다음 장소 이미지 URL |
+| `nextLocation.locationImageUrl` | string \| null | 다음 장소 이미지 URL. TourAPI 에서 조회하지 못하면 `null` |
 | `nextLocation.distanceMeter` | number | 사용자 위치에서 다음 장소까지의 직선거리(m) |
 | `nextLocation.mission` | object | null | 다음 장소에서 수행할 미션. 연결된 미션이 없으면 `null` |
 | `nextLocation.mission.id` | number | 다음 미션 id |

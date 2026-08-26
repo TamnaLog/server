@@ -5,8 +5,9 @@
 | API | 테스트 파일 |
 | --- | --- |
 | `POST /api/v1/culture-missions/{cultureMissionId}/progress` (문화 미션 시작/이어하기) | `app/culture_mission/tests/test_start_culture_mission.py` |
+| `PATCH /api/v1/culture-missions/{cultureMissionProgressId}/progress` (문화 미션 진행도 저장) | `app/culture_mission/tests/test_save_culture_mission_progress.py` |
 
-## 테스트 의도
+## 시작/이어하기 테스트 의도
 
 이 API는 **같은 요청이 상황에 따라 전혀 다르게 동작한다.** 진행 이력에 따라
 새 진행도를 만들 수도, 기존 진행도를 그대로 돌려줄 수도 있고 상태 코드도 201 / 200으로 갈린다.
@@ -27,9 +28,9 @@
 `isRewarded` 는 "지금 진행도가 완료됐는지"가 아니라 "과거에 이 미션을 완료한 적이 있는지"라서,
 사용자/미션이 다른 완료 기록에 오염되지 않는지도 따로 본다.
 
-## 주요 검증 항목
+### 주요 검증 항목
 
-### 1. 응답 형식
+#### 1. 응답 형식
 
 - 처음 시작하면 201로 응답하고, 응답 전체가 명세와 정확히 일치한다.
   (`cultureMissionProgressId`, `quizCount`, `currentQuizNumber`, `isRewarded`,
@@ -38,7 +39,7 @@
   (목업은 3 → 1 → 2 순서로 저장해 두어, 정렬을 빠뜨리면 바로 드러난다)
 - 주관식 문제는 `options` 가 `null`, 이미지가 없는 문제는 `imgUrl` 이 `null` 이다.
 
-### 2. 진행 이력에 따른 분기
+#### 2. 진행 이력에 따른 분기
 
 - **이력 없음** → 201, 새 진행도 1건 생성. DB에 `IN_PROGRESS` / `current_quiz_index=1` /
   `correct_number=0` / `completed_at=null` 로 저장된다.
@@ -49,16 +50,93 @@
 - 시작 API를 **연속 두 번 호출**하면 첫 번째는 201, 두 번째는 200이고
   같은 진행도 id를 반환하며 진행도는 하나만 남는다.
 
-### 3. 사용자 / 미션 구분
+#### 3. 사용자 / 미션 구분
 
 - 다른 사용자의 `IN_PROGRESS` 진행도는 이어받지 않고 새로 만든다.
 - 다른 문화 미션의 `COMPLETED` 기록은 `isRewarded` 를 `true` 로 만들지 않는다.
 
-### 4. 오류
+#### 4. 오류
 
 - 문화 미션이 없으면 **404 `CULTURE_MISSION_NOT_FOUND`**.
   이때 **진행도를 만들지 않는다**는 것도 함께 확인한다. (조회 실패인데 데이터가 생기면 안 된다)
 - `cultureMissionId` 가 정수가 아니거나 1보다 작으면 **400 `INVALID_REQUEST`**.
+
+## 진행도 저장 테스트 의도
+
+이 API는 **퀴즈 하나를 제출할 때마다 진행도를 바꾸는** API라, 잘못 동작하면 사용자의 기록이 틀어진다.
+그래서 테스트는 응답만 보지 않고 **DB에 저장된 값까지 매번 확인**한다.
+
+가장 헷갈리는 지점은 **마지막 퀴즈의 처리**다.
+진행 중이면 퀴즈 번호를 1 올리지만, 마지막 퀴즈는 번호를 **올리지 않고** 완료로 바꾼다.
+그래서 목업의 전체 퀴즈 수를 3으로 두고 1→2번(진행 중), 3번(완료)을 나눠서 검증한다.
+
+보상 지급도 같은 맥락이다. 완료 처리와 보상 지급이 한 트랜잭션이어야 하고,
+재도전으로 두 번째 완료를 하더라도 포인트와 캐릭터가 다시 지급되면 안 된다.
+
+또 하나는 **중복 요청 방어**다. 완료 응답을 못 받아 같은 요청이 다시 들어와도
+정답 수가 두 번 반영되면 안 되므로, 완료된 진행도는 404로 처리되고 값이 그대로인지 확인한다.
+
+다음 장소 추천(`app/common/next_location.py`)은 아직 랜덤이라
+**어떤 장소가 뽑혔는지**가 아니라 **DB에 있는 장소/연결 미션인지**로 검증한다.
+장소 이미지 URL은 TourAPI에서 가져오므로, 테스트가 외부 네트워크를 타지 않도록
+`stub_location_image` 픽스처(autouse)로 조회 함수를 대체한다.
+
+### 주요 검증 항목
+
+#### 1. 진행 중 처리
+
+- 마지막 퀴즈가 아니면 `current_quiz_index` 를 1 올리고 `IN_PROGRESS` / `completed_at=null` 을 유지한다.
+- `isCorrect=true` 면 정답 수 +1, `false` 면 그대로. (응답과 DB 양쪽 확인)
+- 진행 중이면 `nextLocation` 은 `null` 이다.
+
+#### 2. 완료 처리
+
+- 마지막 퀴즈를 제출하면 `missionProgressStatus` 가 `COMPLETED` 로 바뀌고
+  **`currentQuizNumber` 는 올라가지 않고 마지막 번호 그대로**다.
+- `completed_at` 이 기록된다.
+- 마지막 퀴즈의 정답 여부도 정답 수에 반영된다.
+
+#### 3. 다음 장소 추천 (완료 시에만)
+
+- `id` / `locationTitle` 은 DB의 장소 값과 일치한다.
+- `distanceMeter` 는 `app/common/distance.py` 의 계산 결과와 일치한다.
+  (`my`=위도 / `mx`=경도 순서를 뒤집지 않았는지 확인)
+- 장소에 연결된 세부 미션이 없으면 `mission` 은 `null`.
+- 연결된 미션이 있으면 **공통 `MISSION.id` 가 아니라 세부 미션 id** 와 유형을 반환한다.
+- 여러 미션이 연결돼 있으면 그중 하나가 나온다.
+- 추천할 장소가 아예 없으면 `nextLocation` 은 `null`.
+- 이미지 조회에 실패하면 `locationImageUrl` 은 `null` (미션 완료 응답 자체는 성공)
+
+#### 4. 보상 지급 (완료 시에만)
+
+보상은 사용자 데이터를 실제로 바꾸므로 **응답이 아니라 DB로만 검증**한다.
+(진행도 저장 API 응답에는 보상 지급 결과가 나가지 않는다)
+
+- 완료하면 `USER.point` 가 보상 포인트만큼 늘고 `ACQUIRED_AR_CHARACTER` 에 획득 기록이 생긴다.
+- 획득 기록의 `acquired_mission_id` 는 세부 미션 id가 아니라 **공통 `MISSION.id`** 다.
+- 진행 중이면 아무것도 지급하지 않는다.
+- **재도전 완료 시 중복 지급하지 않는다.** (과거 `COMPLETED` 기록이 있으면 포인트/캐릭터 모두 그대로)
+- 같은 캐릭터를 다른 미션에서 이미 획득했으면 기록을 또 남기지 않는다. 이때도 **포인트는 지급**된다.
+- 보상이 없거나(빈 객체) 쿠폰만 있는 미션은 아무것도 저장하지 않는다.
+- 보상 지급 중 오류가 나면 **완료 처리도 저장되지 않는다.** (한 트랜잭션인지 확인)
+
+#### 5. 409 `CULTURE_MISSION_QUIZ_INDEX_MISMATCH`
+
+- 제출한 `quizIndex` 가 현재 퀴즈 번호와 다르면(앞 번호든 뒤 번호든) 409로 응답하고
+  **진행도를 전혀 바꾸지 않는다.**
+
+#### 6. 404 `CULTURE_MISSION_PROGRESS_NOT_FOUND`
+
+- 진행도가 없는 경우
+- **다른 사용자의 진행도**인 경우 (남의 기록을 바꾸면 안 된다)
+- **이미 완료된 진행도**인 경우 (중복 반영 방지)
+
+#### 7. 400 `INVALID_REQUEST`
+
+- 위치(`latitude` / `longitude`) 누락·범위 초과
+- `quizIndex` 누락·0 이하·정수 아님
+- `isCorrect` 누락·boolean 아님
+- 진행도 id가 0 이하이거나 정수가 아님
 
 ## 실행 방법
 
@@ -74,9 +152,11 @@ pytest app/culture_mission
 
 # 특정 테스트만
 pytest app/culture_mission/tests/test_start_culture_mission.py -k 재도전
+pytest app/culture_mission/tests/test_save_culture_mission_progress.py -k 마지막
 ```
 
 DB는 SQLite 인메모리를 사용하므로 MySQL이 떠 있지 않아도 실행된다.
 공통 픽스처(`client`, `db_session`)는 루트 `conftest.py`에 있고,
 캐릭터/공통 미션/문화 미션/사용자 목업 데이터는 각 테스트의 `culture_mission_data` 픽스처에서 만든다.
 진행 이력은 테스트마다 조합이 달라서 `_add_progress()` 헬퍼로 각 테스트에서 직접 만든다.
+진행도 저장 테스트는 `progress_data` 픽스처로 미션/장소를 만들고, TourAPI 호출은 픽스처로 막는다.

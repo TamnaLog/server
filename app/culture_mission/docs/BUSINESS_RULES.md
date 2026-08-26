@@ -222,7 +222,29 @@ quizIndex = current_quiz_index
 - `correctNumber`: 마지막 정답 여부까지 반영한 `correct_number`
 - `nextLocation`: 다음 장소 추천 결과
 
-이 API는 문화 미션 진행도만 완료 처리하며, 포인트·쿠폰·AR 캐릭터 등의 보상은 지급하지 않는다.
+미션을 완료하면 `CULTURE_MISSION.reward_detail`의 보상을 실제 데이터에 반영한다.
+
+보상 지급 로직은 문화 미션 진행도 저장 로직 안에 직접 작성하지 않고 공용 모듈 `app/common/reward_granter.py`의 `grant_mission_reward()`를 사용한다. 보상 형태는 미션 유형과 무관하게 같으므로 협동 미션과 보물찾기 미션도 같은 모듈을 사용한다.
+
+| 보상 | 저장 위치 |
+| --- | --- |
+| 포인트 | `USER.point`에 누적 |
+| AR 캐릭터 | `ACQUIRED_AR_CHARACTER`에 획득 기록 추가 |
+| 쿠폰 | 저장할 테이블이 없어 기록하지 않는다 |
+
+`ACQUIRED_AR_CHARACTER.acquired_mission_id`에는 유형별 세부 미션 id가 아니라 연결된 공통 `MISSION.id`를 저장한다.
+
+`(user_id, ar_character_id)`는 UNIQUE이므로, 같은 캐릭터를 다른 미션 보상으로 이미 획득했다면 획득 기록을 추가하지 않는다. 이때도 포인트는 정상 지급한다.
+
+미션 완료 처리와 보상 지급은 하나의 트랜잭션으로 처리한다. 보상 지급 중 오류가 발생하면 완료 처리도 저장되지 않는다.
+
+### 5.3 보상 중복 지급 방지
+
+보상은 해당 사용자가 이 문화 미션을 **처음 완료할 때만** 지급한다.
+
+이번 진행도를 완료 처리하기 전에 같은 사용자와 문화 미션의 `COMPLETED` 진행도가 이미 있는지 확인한다. 하나라도 있으면 과거에 보상을 받은 것이므로 재도전을 완료하더라도 보상을 지급하지 않는다.
+
+이 판단은 진행 이력을 아는 문화 미션 도메인에서 하고, `grant_mission_reward()`는 호출되면 지급만 수행한다.
 
 ## 6. 다음 장소 추천
 
@@ -234,11 +256,13 @@ quizIndex = current_quiz_index
 
 추천할 수 있는 장소가 없으면 `nextLocation`은 `null`로 반환한다.
 
+장소 이미지 URL은 외부 API(TourAPI)에 의존하므로 조회 실패를 미션 완료 실패로 취급하지 않는다. 인증키 미설정, 통신 오류, 응답에 이미지가 없는 경우 모두 `locationImageUrl`을 `null`로 반환하고 나머지 응답은 정상으로 처리한다.
+
 장소 정보는 다음 기준으로 조합한다.
 
 - `nextLocation.id`: `LOCATION.id`
 - `nextLocation.locationTitle`: `LOCATION.location_title`
-- `nextLocation.locationImageUrl`: `LOCATION.content_id`를 사용하여 TourAPI에서 조회한 장소 이미지 URL
+- `nextLocation.locationImageUrl`: `LOCATION.content_id`를 사용하여 TourAPI에서 조회한 장소 이미지 URL. 조회하지 못하면 `null`
 - `nextLocation.distanceMeter`: 사용자 위치에서 추천 장소까지의 직선거리(m)
 
 `distanceMeter`는 별도의 거리 계산 로직을 새로 작성하지 않고 공통 거리 모듈인 `app/common/distance.py`의 `calculate_distance_meter()`를 사용하여 계산한다.
