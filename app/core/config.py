@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     mysql_password: str = Field(default="tour_password")
     mysql_ssl_enabled: bool = Field(default=False)
 
+    # Azure Blob Storage (이미지/오디오 업로드)
+    azure_storage_connection_string: str = Field(default="")
+    azure_storage_container: str = Field(default="media")
+
     kto_base_url: str = Field(default="https://apis.data.go.kr/B551011/KorService2")
     kto_service_key: str = Field(default="")
     kto_mobile_os: str = Field(default="ETC")
@@ -41,6 +45,11 @@ class Settings(BaseSettings):
         if not self.mysql_ssl_enabled:
             return {}
         return {"ssl": {"ca": "/etc/ssl/certs/ca-certificates.crt"}}
+
+    @property
+    def azure_storage_enabled(self) -> bool:
+        """Blob Storage 연결 문자열이 설정돼 있는지."""
+        return bool(self.azure_storage_connection_string)
 
     @property
     def cors_origins(self) -> list[str]:
