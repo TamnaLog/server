@@ -1,19 +1,21 @@
 ## 문화 미션 시작/이어하기
 - http 메서드: post
-- domain: culture_mission
-- endpoint: /api/v1/culture-missions/{missionId}/progress
+- domain: culture-mission
+- /api/v1/culture-missions/{cultureMissionId}/progress
 
 ### API 설명
 
 사용자가 문화 미션을 처음 시작하거나 진행 중이던 문화 미션을 이어서 할 때 호출한다.
 
-`missionId`에 해당하는 문화 미션과 로그인한 사용자의 진행도를 조회한다. 진행 중인 기록이 없으면 현재 퀴즈 번호를 `1`, 정답 개수를 `0`으로 초기화한 진행도를 새로 생성한다. 이미 `IN_PROGRESS` 상태인 기록이 있으면 새로 생성하지 않고 해당 진행도를 반환한다.
+`cultureMissionId`에 해당하는 문화 미션과 로그인한 사용자의 진행도를 조회한다. `cultureMissionId`는 공통 `MISSION.id`가 아니라 `CULTURE_MISSION.id`를 의미한다. 진행 중인 기록이 없으면 현재 퀴즈 번호를 `1`, 정답 개수를 `0`으로 초기화한 진행도를 새로 생성한다. 이미 `IN_PROGRESS` 상태인 기록이 있으면 새로 생성하지 않고 해당 진행도를 반환한다.
 
 완료한 진행도가 있더라도 같은 문화 미션을 다시 시작할 수 있다. 이 경우 기존 완료 기록은 유지하고 새로운 진행도를 생성하여 Status Code `201`로 반환한다.
 
 `isRewarded`는 사용자가 해당 미션의 보상을 이미 받은 적이 있는지를 나타낸다. 동일한 사용자와 문화 미션에 `COMPLETED` 상태의 이전 진행도가 하나 이상 있으면 `true`, 없으면 `false`를 반환한다. 문화 미션의 최초 완료 처리와 보상 지급은 하나의 트랜잭션으로 처리하므로 완료된 진행도는 보상이 지급된 기록으로 간주한다. 재도전 완료 시에도 백엔드는 이전 완료 기록을 확인하여 보상을 중복 지급하지 않는다.
 
 `currentQuizNumber`에는 사용자가 다음에 풀 퀴즈 번호를 반환한다. 예를 들어 1번 퀴즈까지 풀었다면 `2`를 반환한다.
+
+프론트에서 이후 진행도 저장 요청에 사용할 수 있도록 현재 진행 중인 `CULTURE_MISSION_PROGRESS.id`를 `cultureMissionProgressId`로 반환한다. 신규 진행도를 생성한 경우에는 새로 생성된 진행도 id를, 기존 미션을 이어서 하는 경우에는 조회된 진행도 id를 반환한다.
 
 프론트에서 문화 미션 화면을 구성할 수 있도록 전체 문제 정보와 각 문제의 해설, 보상 정보를 함께 반환한다. 문제의 정답은 주관식과 객관식 모두 문자열로 반환한다.
 
@@ -29,11 +31,11 @@
 
 | 필드 | 타입 | 필수 | 설명 |
 | --- | --- | --- | --- |
-| `missionId` | number | O | 진행도를 생성하거나 조회할 문화 미션 id |
+| `cultureMissionId` | number | O | 진행도를 생성하거나 조회할 `CULTURE_MISSION.id` |
 
 요청 예시
 
-```text
+```
 POST /api/v1/culture-missions/12/progress
 ```
 
@@ -57,6 +59,7 @@ Status Code : 200
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
+| `cultureMissionProgressId` | number | 현재 진행 중인 문화 미션 진행도 id. `CULTURE_MISSION_PROGRESS.id` |
 | `quizCount` | number | 문화 미션의 전체 문제 수 |
 | `currentQuizNumber` | number | 사용자가 다음에 풀 퀴즈 번호. 신규 진행도는 `1` |
 | `isRewarded` | boolean | 동일한 사용자와 문화 미션에 보상 지급을 완료한 이전 `COMPLETED` 진행도가 있는지 여부 |
@@ -78,17 +81,17 @@ Status Code : 200
 | `rewardDetail.coupon.couponLocation` | string | 쿠폰 사용처 |
 | `rewardDetail.coupon.couponPrice` | number | 쿠폰 금액 |
 
-완료한 문화 미션을 다시 시작한 경우의 응답 예시
 
 ```json
 {
+  "cultureMissionProgressId": 1,
   "quizCount": 3,
   "currentQuizNumber": 1,
   "isRewarded": true,
   "quizDetails": [
     {
       "quizIndex": 1,
-      "imgUrl": "https://example.com/images/quizzes/jeju-dialect-1.jpg",
+      "imgUrl": "<https://example.com/images/quizzes/jeju-dialect-1.jpg>",
       "question": "제주어로 할아버지는 무엇일까요?",
       "options": ["하르방", "하라범", "하르봉", "하르범"],
       "answer": "하르방",
@@ -97,7 +100,7 @@ Status Code : 200
     },
     {
       "quizIndex": 2,
-      "imgUrl": "https://example.com/images/quizzes/jeju-drama.jpg",
+      "imgUrl": "<https://example.com/images/quizzes/jeju-drama.jpg>",
       "question": "제주를 배경으로 여러 인물의 삶을 옴니버스 형식으로 담아낸 노희경 작가의 드라마는 무엇일까요?",
       "options": ["우리들의 블루스", "우도의 봄", "갯마을 차차차", "도깨비"],
       "answer": "우리들의 블루스",
@@ -118,7 +121,7 @@ Status Code : 200
     "arCharacter": {
       "id": 7,
       "name": "돌담이",
-      "imageUrl": "https://example.com/characters/stone-spirit.png"
+      "imageUrl": "<https://example.com/characters/stone-spirit.png>"
     },
     "point": 100,
     "coupon": {
@@ -135,10 +138,152 @@ Status Code : 200
 
 Status Code : 404
 
-`missionId`에 해당하는 문화 미션이 존재하지 않는 경우
+`cultureMissionId`에 해당하는 문화 미션이 존재하지 않는 경우
 
 ```json
 {
   "code": "CULTURE_MISSION_NOT_FOUND"
+}
+```
+
+
+
+## 문화 미션 진행도 저장
+- http 메서드: patch
+- domian: culture-mission
+- endpoint: /api/v1/culture-missions/{cultureMissionProgressId}/progress
+
+### API 설명
+
+사용자가 문화 미션 퀴즈를 풀고 다음 문제로 이동할 때 호출한다.
+
+Path로 전달받은 `cultureMissionProgressId`를 사용하여 로그인한 사용자의 진행 중인 문화 미션 진행도를 조회하고, 해당 진행도와 연결된 문화 미션을 조회한다. 요청 Body로 전달받은 `quizIndex`가 진행도의 `current_quiz_index`와 일치하면 진행도를 갱신한다.
+
+`isCorrect`가 `true`이면 정답 개수를 `1` 증가시키고, `false`이면 정답 개수를 그대로 유지한다.
+
+제출한 `quizIndex`가 문화 미션의 마지막 퀴즈 번호가 아니면 `current_quiz_index`를 `1` 증가시킨다. 마지막 퀴즈 번호이면 `current_quiz_index`를 증가시키지 않고 진행도 상태를 `COMPLETED`로 변경한다.
+
+응답의 `currentQuizNumber`에는 저장된 `current_quiz_index`를 반환한다. 따라서 마지막 퀴즈를 제출해 완료된 경우에도 `null`이 아니라 마지막 퀴즈 번호를 그대로 반환하고, 다음 장소 정보를 함께 반환한다.
+
+Query로 전달받은 사용자의 위도와 경도는 미션 완료 후 추천된 다음 장소까지의 직선거리를 계산하는 데 사용한다. 거리는 미터 단위의 `distanceMeter`로 반환한다. 현재 다음 장소는 랜덤으로 추천하므로 사용자 좌표는 추천 장소 선정 기준으로 사용하지 않는다.
+
+문화 미션이 아직 진행 중이면 `nextLocation`은 `null`로 반환한다.
+
+---
+
+### 요청 Query
+
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `latitude` | number | O | 사용자 현재 위치의 위도. `-90` 이상 `90` 이하 |
+| `longitude` | number | O | 사용자 현재 위치의 경도. `-180` 이상 `180` 이하 |
+
+---
+
+### 요청 Path
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `cultureMissionProgressId` | number | 저장할 문화 미션 진행도 id. `CULTURE_MISSION_PROGRESS.id` |
+
+요청 예시
+
+```
+PATCH /api/v1/culture-missions/31/progress?latitude=33.5572&longitude=126.7591
+```
+
+---
+
+### 요청 Body
+
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `quizIndex` | number | O | 사용자가 제출한 퀴즈 번호 |
+| `isCorrect` | boolean | O | 사용자가 해당 퀴즈를 맞혔는지 여부 |
+
+```json
+{
+  "quizIndex": 2,
+  "isCorrect": true
+}
+```
+
+---
+
+### 정상 응답 데이터
+
+Status Code : 200
+
+문화 미션 진행도를 정상적으로 저장한 경우
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `missionProgressStatus` | string | 문화 미션 진행 상태. `IN_PROGRESS | COMPLETED` |
+| `quizCount` | number | 문화 미션의 전체 문제 수 |
+| `currentQuizNumber` | number | 현재 진행도에 저장된 퀴즈 번호 |
+| `correctNumber` | number | 현재까지 맞힌 문제 수 |
+| `nextLocation` | object | null | 다음 추천 장소 정보. 진행 중이면 `null` |
+| `nextLocation.id` | number | 다음 장소 id |
+| `nextLocation.locationTitle` | string | 다음 장소명 |
+| `nextLocation.locationImageUrl` | string | 다음 장소 이미지 URL |
+| `nextLocation.distanceMeter` | number | 사용자 위치에서 다음 장소까지의 직선거리(m) |
+| `nextLocation.mission` | object | null | 다음 장소에서 수행할 미션. 연결된 미션이 없으면 `null` |
+| `nextLocation.mission.id` | number | 다음 미션 id |
+| `nextLocation.mission.missionType` | string | 다음 미션 유형. `CULTURE | COOPERATIVE | TREASURE` |
+
+```json
+{
+  "missionProgressStatus": "IN_PROGRESS",
+  "quizCount": 3,
+  "currentQuizNumber": 3,
+  "correctNumber": 2,
+  "nextLocation": null
+}
+```
+
+마지막 퀴즈를 제출하여 문화 미션을 완료하면 `missionProgressStatus`는 `COMPLETED`로 반환한다. 이때 `current_quiz_index`는 증가시키지 않으며 `currentQuizNumber`에는 마지막 퀴즈 번호를 그대로 반환한다.
+
+```json
+{
+  "missionProgressStatus": "COMPLETED",
+  "quizCount": 3,
+  "currentQuizNumber": 3,
+  "correctNumber": 3,
+  "nextLocation": {
+    "id": 39,
+    "locationTitle": "한담 해안 산책로",
+    "locationImageUrl": "<https://example.com/locations/handam.jpg>",
+    "distanceMeter": 4200,
+    "mission": {
+      "id": 342,
+      "missionType": "TREASURE"
+    }
+  }
+}
+```
+
+다음 장소에 연결된 미션이 없으면 `nextLocation.mission`은 `null`로 반환한다.
+
+---
+
+### 오류 응답 데이터
+
+Status Code : 404
+
+`cultureMissionProgressId`에 해당하는 로그인한 사용자의 `IN_PROGRESS` 문화 미션 진행도가 존재하지 않는 경우
+
+```json
+{
+  "code": "CULTURE_MISSION_PROGRESS_NOT_FOUND"
+}
+```
+
+Status Code : 409
+
+요청한 `quizIndex`가 사용자가 현재 풀어야 하는 퀴즈 번호와 일치하지 않는 경우
+
+```json
+{
+  "code": "CULTURE_MISSION_QUIZ_INDEX_MISMATCH"
 }
 ```

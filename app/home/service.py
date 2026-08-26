@@ -10,7 +10,8 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.home import distance, guestbook_counter, mission_recommender
+from app.common import distance
+from app.home import guestbook_counter, mission_recommender
 from app.home.models import (
     CooperativeMission,
     CooperativeMissionParticipant,

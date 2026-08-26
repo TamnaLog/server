@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.common import distance
 from app.cooperative_mission.models import (
     CooperativeMission,
     CooperativeMissionParticipant,
@@ -22,7 +23,6 @@ from app.cooperative_mission.models import (
 from app.core.deps import CURRENT_USER_ID
 from app.culture_mission.models import CultureMission, CultureMissionProgress
 from app.guestbook.models import Guestbook, RoadGuestbook
-from app.home import distance
 from app.home.models import ArCharacter, Location, Mission, MissionStatus, User
 from app.treasure_mission.models import TreasureMission, TreasureMissionProgress
 

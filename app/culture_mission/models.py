@@ -14,7 +14,7 @@ from typing import Any
 from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.database import Base
+from app.core.database import Base, BigIntPk
 from app.mission.models import Mission, MissionStatus
 
 
@@ -29,7 +29,7 @@ class CultureMission(Base):
 
     __tablename__ = "CULTURE_MISSION"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     mission_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("MISSION.id", ondelete="CASCADE"), nullable=False
     )
@@ -53,7 +53,7 @@ class CultureMissionProgress(Base):
 
     __tablename__ = "CULTURE_MISSION_PROGRESS"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     culture_mission_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("CULTURE_MISSION.id", ondelete="CASCADE"), nullable=False
     )

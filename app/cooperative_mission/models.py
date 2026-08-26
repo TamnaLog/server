@@ -27,7 +27,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.database import Base
+from app.core.database import Base, BigIntPk
 from app.map.models import Location
 from app.mission.models import Mission, MissionStatus
 
@@ -69,7 +69,7 @@ class CooperativeMission(Base):
 
     __tablename__ = "COOPERATIVE_MISSION"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     mission_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("MISSION.id", ondelete="CASCADE"), nullable=False
     )
@@ -98,7 +98,7 @@ class CooperativeMissionProgress(Base):
 
     __tablename__ = "COOPERATIVE_MISSION_PROGRESS"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     cooperative_mission_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("COOPERATIVE_MISSION.id", ondelete="CASCADE"),
@@ -123,7 +123,7 @@ class CooperativeRoleCard(Base):
 
     __tablename__ = "COOPERATIVE_ROLE_CARD"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     cooperative_mission_progress_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("COOPERATIVE_MISSION_PROGRESS.id", ondelete="CASCADE"),
@@ -153,7 +153,7 @@ class CooperativeMissionParticipant(Base):
 
     __tablename__ = "COOPERATIVE_MISSION_PARTICIPANT"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     cooperative_mission_progress_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("COOPERATIVE_MISSION_PROGRESS.id", ondelete="CASCADE"),
@@ -180,7 +180,7 @@ class CooperativeRoleProgress(Base):
 
     __tablename__ = "COOPERATIVE_ROLE_PROGRESS"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     participant_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("COOPERATIVE_MISSION_PARTICIPANT.id", ondelete="CASCADE"),

@@ -1,8 +1,3 @@
-## 홈 조회
-- http 메서드: get
-- domain: home
-- endpoint: /api/v1/users/me/home
-
 ### API 설명
 
 사용자가 메인 홈 화면에 진입하거나 홈을 새로고침할 때 호출한다. 또한 사용자가 위치를 직접 선택하면 호출한다. 이때는 해당 행정구역의 대표 위도와 경도를 전송한다.
@@ -47,7 +42,7 @@ Status Code : 200
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
 | `missionRecommend` | object[] | 홈에 노출할 추천 미션 목록 |
-| `missionRecommend[].missionId` | number | 미션 id |
+| `missionRecommend[].missionId` | number | missionType에 해당하는 유형별 세부 미션 id |
 | `missionRecommend[].missionType` | string | 미션 유형. `CULTURE | TREASURE | COOPERATIVE` |
 | `missionRecommend[].missionTitle` | string | 미션 이름 |
 | `missionRecommend[].locationTitle` | string | null | 미션 장소명. 장소가 없는 미션이면 `null` |
@@ -57,7 +52,7 @@ Status Code : 200
 | `missionRecommend[].distanceMeter` | number | null | 사용자 위치에서 미션 장소까지의 거리(m). 장소가 없으면 `null` |
 | `missionRecommend[].durationMinutes` | number | null | 사용자 위치에서 미션 장소까지의 예상 소요 시간(분). 장소가 없으면 `null` |
 | `progressMission` | object[] | 사용자가 진행 중인 미션 목록 |
-| `progressMission[].missionId` | number | 진행 중인 미션 id |
+| `progressMission[].missionId` | number | missionType에 해당하는 유형별 세부 미션 진행 대상 id |
 | `progressMission[].missionType` | string | 미션 유형. `CULTURE | TREASURE | COOPERATIVE` |
 | `progressMission[].missionTitle` | string | 진행 중인 미션 이름 |
 | `progressMission[].locationTitle` | string | null | 미션 장소명. 장소가 없는 미션이면 `null` |
@@ -65,7 +60,7 @@ Status Code : 200
 | `progressMission[].durationMinutes` | number | null | 사용자 위치에서 미션 장소까지의 예상 소요 시간(분). 장소가 없으면 `null` |
 | `progressMission[].totalStep` | number | 미션의 전체 단계 수 |
 | `progressMission[].currentStep` | number | 사용자가 현재 진행 중인 단계 |
-| `guestbookCount` | number | 쌓인 방명록 개수 |
+| `guestbookCount` | number | 쌓인 방명록 갯수 |
 | `characterImgUrl` | string | null | 사용자에게 배정된 AR 캐릭터 이미지 URL, 없으면 `null` |
 
 ```json
@@ -125,5 +120,11 @@ Status Code : 200
 ---
 
 ### 오류 응답 데이터
+
+없음
+
+---
+
+### 추가 고려 사항
 
 없음

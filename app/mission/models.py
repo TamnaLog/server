@@ -8,6 +8,10 @@ MISSION 은 미션의 공통 정보(유형/이름/설명/단계)만 가진다.
 
 MISSION 과 미션 진행 상태 값은 문화/협동/보물 찾기 도메인이 함께 쓰므로
 여기서 한 번만 정의하고 다른 도메인은 import해서 사용한다.
+
+반대로 유형별 세부 미션 모델은 여기서 import하지 않는다.
+세 도메인이 모두 이 모듈을 import하므로 순환 참조가 되기 때문이다.
+미션 도메인에서 세부 미션이 필요하면 app/mission/service.py 처럼 각 소유 도메인에서 직접 import한다.
 """
 
 from datetime import datetime
@@ -17,7 +21,7 @@ from typing import Any
 from sqlalchemy import JSON, BigInteger, DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.database import Base
+from app.core.database import Base, BigIntPk
 
 
 class MissionType(str, Enum):
@@ -40,7 +44,7 @@ class Mission(Base):
 
     __tablename__ = "MISSION"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     mission_type: Mapped[str] = mapped_column(String(50), nullable=False)
     mission_title: Mapped[str] = mapped_column(String(50), nullable=False)
     description: Mapped[str] = mapped_column(String(200), nullable=False)

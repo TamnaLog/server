@@ -24,7 +24,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.database import Base
+from app.core.database import Base, BigIntPk
 from app.treasure_mission.models import ArCharacter
 
 
@@ -33,7 +33,7 @@ class UserTravelStyle(Base):
 
     __tablename__ = "USER_TRAVEL_STYLE"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     user_type: Mapped[str] = mapped_column(String(20), nullable=False)
     type_description: Mapped[str] = mapped_column(String(200), nullable=False)
     hashtags: Mapped[list[str]] = mapped_column(JSON, nullable=False)
@@ -50,7 +50,7 @@ class User(Base):
 
     __tablename__ = "USER"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     expectation: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     transportation: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     travel_style: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
@@ -78,7 +78,7 @@ class UserSetting(Base):
 
     __tablename__ = "USER_SETTING"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("USER.id", ondelete="CASCADE"), nullable=False, unique=True
     )
@@ -101,7 +101,7 @@ class StepCount(Base):
 
     __tablename__ = "STEP_COUNT"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("USER.id", ondelete="CASCADE"), nullable=False
     )

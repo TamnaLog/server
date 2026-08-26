@@ -27,7 +27,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.database import Base
+from app.core.database import Base, BigIntPk
 from app.map.models import Location
 from app.mission.models import Mission, MissionStatus
 
@@ -49,7 +49,7 @@ class ArCharacter(Base):
 
     __tablename__ = "AR_CHARACTER"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     character_name: Mapped[str] = mapped_column(String(50), nullable=False)
     character_description: Mapped[str] = mapped_column(String(200), nullable=False)
     acquire_condition: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -72,7 +72,7 @@ class TreasureMission(Base):
 
     __tablename__ = "TREASURE_MISSION"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     mission_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("MISSION.id", ondelete="CASCADE"), nullable=False
     )
@@ -100,7 +100,7 @@ class TreasureMissionProgress(Base):
 
     __tablename__ = "TREASURE_MISSION_PROGRESS"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     treasure_mission_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("TREASURE_MISSION.id", ondelete="CASCADE"), nullable=False
     )
@@ -129,7 +129,7 @@ class AcquiredArCharacter(Base):
     __tablename__ = "ACQUIRED_AR_CHARACTER"
     __table_args__ = (UniqueConstraint("user_id", "ar_character_id"),)
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     ar_character_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("AR_CHARACTER.id", ondelete="CASCADE"), nullable=False
     )
@@ -154,7 +154,7 @@ class PictureWithCharacter(Base):
 
     __tablename__ = "PICTURE_WITH_CHARACTER"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("USER.id", ondelete="CASCADE"), nullable=False
     )

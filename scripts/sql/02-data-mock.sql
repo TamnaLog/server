@@ -125,7 +125,7 @@ INSERT INTO `MISSION`
 VALUES
     (1, 'CULTURE', '제주 문화 퀴즈',
      '제주의 퀴즈를 맞춰보세요.',
-     '[{"step": 1, "step_title": "퀴즈 시작하기", "description": "제주 방언, 엔터, 역사에 대한 퀴즈를 풀어보세요."}, {"step": 2, "step_title": "3문제 풀기", "description": "각 문제마다 보기 중 정답을 선택하세요."}, {"step": 3, "step_title": "정답 확인", "description": "정답과 해설을 확인하고 미션 보상을 받아보세요."}]'),
+     '[{"step": 1, "step_title": "퀴즈 시작하기", "description": "제주 방언, 엔터, 역사에 대한 퀴즈를 풀어보세요."}, {"step": 2, "step_title": "3문제 풀기", "description": "각 문제마다 보기 중 정답을 선택하세요."}, {"step": 3, "step_title": "정답 확인", "description": "문제를 다 풀면 결과를 확인할 수 있어요."}]'),
 
     (2, 'COOPERATIVE', '함께 키우는 귤나무',
      '일행과 역할을 나눠 귤나무를 완성해보세요!',
@@ -180,11 +180,11 @@ VALUES
 INSERT INTO `COOPERATIVE_MISSION`
     (`id`, `mission_id`, `location_id`, `role_total_count`, `reward_detail`)
 VALUES
-    (5, 2, 3, 4,
+    (1, 2, 3, 4,
      '{"ar_character_id": 5, "point": 100, "coupon_location": "종화네 과수원", "coupon_price": 1000}'),
-    (6, 2, 6, 3,
+    (2, 2, 6, 3,
      '{"ar_character_id": 6, "point": 200, "coupon_location": "카멜리아힐 가든카페", "coupon_price": 4000}'),
-    (7, 2, 10, 5,
+    (3, 2, 10, 5,
      '{"ar_character_id": 7, "point": 250, "coupon_location": "애월 한담 베이커리", "coupon_price": 5000}');
 
 
@@ -196,21 +196,21 @@ VALUES
 INSERT INTO `TREASURE_MISSION`
     (`id`, `mission_id`, `location_id`, `item_total_count`, `item_detail`, `reward_detail`)
 VALUES
-    (8, 3, 4, 3, '[
+    (1, 3, 4, 3, '[
         {"index": 1, "mx": 126.5535, "my": 33.2470, "radius": 25},
         {"index": 2, "mx": 126.5544, "my": 33.2462, "radius": 25},
         {"index": 3, "mx": 126.5551, "my": 33.2468, "radius": 30}
     ]',
     '{"ar_character_id": 8, "point": 150, "coupon_location": "서귀포 올레시장 분식", "coupon_price": 3000}'),
 
-    (9, 3, 8, 3, '[
+    (2, 3, 8, 3, '[
         {"index": 1, "mx": 126.6265, "my": 33.2546, "radius": 25},
         {"index": 2, "mx": 126.6274, "my": 33.2538, "radius": 25},
         {"index": 3, "mx": 126.6281, "my": 33.2549, "radius": 30}
     ]',
     '{"ar_character_id": 9, "point": 150, "coupon_location": "하효 감귤빵집", "coupon_price": 3000}'),
 
-    (10, 3, 7, 3, '[
+    (3, 3, 7, 3, '[
         {"index": 1, "mx": 126.3569, "my": 33.3668, "radius": 30},
         {"index": 2, "mx": 126.3579, "my": 33.3660, "radius": 30},
         {"index": 3, "mx": 126.3585, "my": 33.3671, "radius": 35}
@@ -238,7 +238,7 @@ INSERT INTO `COOPERATIVE_MISSION_PROGRESS`
     (`id`, `cooperative_mission_id`, `current_step`, `mission_status`,
      `team_token`, `completed_at`)
 VALUES
-    (1, 5, 2, 'IN_PROGRESS', 'mock-team-token-1', NULL);
+    (1, 1, 2, 'IN_PROGRESS', 'mock-team-token-1', NULL);
 
 INSERT INTO `COOPERATIVE_MISSION_PARTICIPANT`
     (`id`, `cooperative_mission_progress_id`, `participant_type`, `user_id`,
@@ -256,7 +256,7 @@ INSERT INTO `TREASURE_MISSION_PROGRESS`
     (`id`, `treasure_mission_id`, `user_id`, `current_found_item_idx`, `current_step`,
      `mission_status`, `completed_at`)
 VALUES
-    (1, 8, 1, '[1, 2]', 2, 'IN_PROGRESS', NULL);
+    (1, 1, 1, '[1, 2]', 2, 'IN_PROGRESS', NULL);
 
 
 -- ---------------------------------------------------------------------
