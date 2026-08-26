@@ -111,7 +111,6 @@ COOPERATIVE_MISSION {
 	bigint id PK "NOT NULL"
 	bigint mission_id FK "NOT NULL"
 	bigint location_id FK "NOT NULL"
-	int role_total_count "NOT NULL"
 	json reward_detail "NOT NULL, json: {ar_character_id: int, point: int, coupon_location: string, coupon_price: int}"
     datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
     datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
@@ -133,13 +132,9 @@ COOPERATIVE_MISSION_PROGRESS {
 
 COOPERATIVE_ROLE_CARD {
 	bigint id PK "NOT NULL"
-	bigint cooperative_mission_progress_id FK "NOT NULL"
 	varchar_20 role_name "NOT NULL"
 	varchar_200 role_description "NOT NULL"
-	varchar_200 location_to_find "NOT NULL"
-	varchar_200 hint "NOT NULL"
-	varchar_200 picture_guide "NOT NULL"
-	boolean is_selected "NOT NULL"
+	json location_to_find "NOT NULL, json: string[]"
     datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
     datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 }
@@ -147,11 +142,9 @@ COOPERATIVE_ROLE_CARD {
 COOPERATIVE_MISSION_PARTICIPANT {
     bigint id PK "NOT NULL"
     bigint cooperative_mission_progress_id FK "NOT NULL"
-    varchar_20 participant_type "NOT NULL, Enum: USER, GUEST"
-    bigint user_id FK "NULL"
-    varchar_100 guest_name "NULL"
-    varchar_500 guest_token "NULL"
-    varchar_20 participant_status "NOT NULL, Enum: ACCEPTED, INVITED"
+    bigint user_id FK "NOT NULL"
+	varchar_20 participant_status "NOT NULL, Enum: PENDING | ACCEPTED"
+    varchar_20 participant_role "NOT NULL, Enum: HOST | MEMBER"
     datetime joined_at "NULL"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
     datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
@@ -278,7 +271,7 @@ USER ||--o{ STEP_COUNT : records
 USER ||--o{ VISITED_LOCATION : visits
 USER ||--o{ GPS : records
 USER ||--o{ CULTURE_MISSION_PROGRESS : progresses
-USER o|--o{ COOPERATIVE_MISSION_PARTICIPANT : joins
+USER ||--o{ COOPERATIVE_MISSION_PARTICIPANT : joins
 USER ||--o{ TREASURE_MISSION_PROGRESS : progresses
 USER ||--o{ GUESTBOOK : writes
 USER ||--o{ ROAD_GUESTBOOK : writes
@@ -301,10 +294,9 @@ MISSION ||--o{ ACQUIRED_AR_CHARACTER : rewards
 CULTURE_MISSION ||--o{ CULTURE_MISSION_PROGRESS : tracks
 
 COOPERATIVE_MISSION ||--o{ COOPERATIVE_MISSION_PROGRESS : tracks
-COOPERATIVE_MISSION_PROGRESS ||--o{ COOPERATIVE_ROLE_CARD : has
 COOPERATIVE_MISSION_PROGRESS ||--o{ COOPERATIVE_MISSION_PARTICIPANT : has
 COOPERATIVE_MISSION_PARTICIPANT ||--o| COOPERATIVE_ROLE_PROGRESS : assigned
-COOPERATIVE_ROLE_CARD ||--o| COOPERATIVE_ROLE_PROGRESS : tracks
+COOPERATIVE_ROLE_CARD ||--o{ COOPERATIVE_ROLE_PROGRESS : assigned_as
 
 TREASURE_MISSION ||--o{ TREASURE_MISSION_PROGRESS : tracks
 

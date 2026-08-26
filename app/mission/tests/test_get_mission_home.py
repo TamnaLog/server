@@ -11,8 +11,8 @@ from app.cooperative_mission.models import (
     CooperativeMission,
     CooperativeMissionParticipant,
     CooperativeMissionProgress,
+    ParticipantRole,
     ParticipantStatus,
-    ParticipantType,
 )
 from app.core.deps import CURRENT_USER_ID
 from app.culture_mission.models import CultureMission, CultureMissionProgress
@@ -107,9 +107,9 @@ def _participant(*, id: int, progress_id: int, user_id: int) -> CooperativeMissi
     return CooperativeMissionParticipant(
         id=id,
         cooperative_mission_progress_id=progress_id,
-        participant_type=ParticipantType.USER.value,
         user_id=user_id,
         participant_status=ParticipantStatus.ACCEPTED.value,
+        participant_role=ParticipantRole.HOST.value,
     )
 
 
@@ -174,7 +174,6 @@ def mission_data(db_session: Session) -> None:
                 id=SHARED_DETAIL_ID,
                 mission_id=COOPERATIVE_TYPE_ID,
                 location_id=LOCATION_ID,
-                role_total_count=4,
                 reward_detail={"ar_character_id": None, "point": 200},
             ),
         ]

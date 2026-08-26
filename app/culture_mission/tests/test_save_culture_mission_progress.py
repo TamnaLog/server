@@ -290,7 +290,6 @@ def test_다음_장소에_연결된_미션이_있으면_유형과_세부_미션_
             id=COOPERATIVE_MISSION_ID,
             mission_id=COOPERATIVE_TYPE_ID,
             location_id=LOCATION_ID,
-            role_total_count=4,
             reward_detail={},
         )
     )
@@ -360,7 +359,6 @@ def test_추천되는_미션은_해당_장소에_연결된_미션_중_하나다(
                 id=COOPERATIVE_MISSION_ID,
                 mission_id=COOPERATIVE_TYPE_ID,
                 location_id=LOCATION_ID,
-                role_total_count=4,
                 reward_detail={},
             ),
             TreasureMission(

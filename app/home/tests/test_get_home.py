@@ -17,8 +17,8 @@ from app.cooperative_mission.models import (
     CooperativeMission,
     CooperativeMissionParticipant,
     CooperativeMissionProgress,
+    ParticipantRole,
     ParticipantStatus,
-    ParticipantType,
 )
 from app.core.deps import CURRENT_USER_ID
 from app.culture_mission.models import CultureMission, CultureMissionProgress
@@ -143,7 +143,6 @@ def home_data(db_session: Session) -> None:
                 id=COOPERATIVE_MISSION_ID,
                 mission_id=COOPERATIVE_TYPE_ID,
                 location_id=SAEBYEOL_LOCATION_ID,
-                role_total_count=4,
                 reward_detail=REWARD_DETAIL,
             ),
             TreasureMission(
@@ -382,9 +381,9 @@ def test_참여자로_등록된_협동_미션을_진행_중_미션으로_반환�
         CooperativeMissionParticipant(
             id=1,
             cooperative_mission_progress_id=1,
-            participant_type=ParticipantType.USER.value,
             user_id=CURRENT_USER_ID,
             participant_status=ParticipantStatus.ACCEPTED.value,
+            participant_role=ParticipantRole.HOST.value,
             joined_at=datetime(2026, 8, 20, 10, 0, 0),
         )
     )
@@ -437,9 +436,9 @@ def test_세_유형의_진행_중_미션을_모두_반환한다(
         CooperativeMissionParticipant(
             id=1,
             cooperative_mission_progress_id=1,
-            participant_type=ParticipantType.USER.value,
             user_id=CURRENT_USER_ID,
             participant_status=ParticipantStatus.ACCEPTED.value,
+            participant_role=ParticipantRole.HOST.value,
             joined_at=datetime(2026, 8, 20, 10, 0, 0),
         )
     )
