@@ -8,7 +8,7 @@ import secrets
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import case, select
+from sqlalchemy import case, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -25,15 +25,20 @@ from app.cooperative_mission.models import (
 )
 from app.cooperative_mission.schemas import (
     CooperativeMissionStartResponse,
+    JoinCooperativeMissionRequest,
+    JoinCooperativeMissionResponse,
     ParticipantResponse,
     RoleCardResponse,
     RoleProgressResponse,
 )
-from app.core.errors import NotFoundError
+from app.core.errors import ConflictError, NotFoundError
 from app.user.models import User
 
 
 COOPERATIVE_MISSION_NOT_FOUND = "COOPERATIVE_MISSION_NOT_FOUND"
+INVALID_INVITE_TOKEN = "INVALID_INVITE_TOKEN"
+COOPERATIVE_MISSION_FULL = "COOPERATIVE_MISSION_FULL"
+COOPERATIVE_MISSION_JOIN_CLOSED = "COOPERATIVE_MISSION_JOIN_CLOSED"
 
 # 신규 진행도 초기값
 FIRST_STEP = 1
@@ -43,6 +48,12 @@ TEAM_TOKEN_BYTES = 32
 
 # team_token UNIQUE 충돌 시 재시도 횟수
 MAX_TEAM_TOKEN_ATTEMPTS = 5
+
+# 방장을 포함한 최대 참여 인원
+COOPERATIVE_MISSION_MAX_PARTICIPANTS = 6
+
+# 새 팀원을 받을 수 있는 단계 (초대 단계)
+JOIN_OPEN_STEP = 1
 
 
 @dataclass(frozen=True)
@@ -251,18 +262,142 @@ def _find_role_progresses(db: Session, progress_id: int) -> list[RoleProgressRes
 
 
 # ---------------------------------------------------------------------
-# 미구현 API
+# URL로 참여 요청
 # ---------------------------------------------------------------------
 
 
-def get_invitation(invite_token: str, db: Session) -> dict[str, Any]:
-    """초대 url 정보 조회."""
-    raise NotImplementedError
+@dataclass(frozen=True)
+class JoinCooperativeMissionResult:
+    """참여 요청 결과.
+
+    응답 구조는 같지만 상태 코드가 달라서(신규 201 / 기존 참여자 200)
+    참여자를 새로 만들었는지를 라우터에 함께 전달한다.
+    """
+
+    response: JoinCooperativeMissionResponse
+    is_created: bool
 
 
-def join_as_guest(invite_token: str, db: Session) -> dict[str, Any]:
-    """초대 url로 게스트 참여."""
-    raise NotImplementedError
+def join_cooperative_mission(
+    db: Session, current_user_id: int, request: JoinCooperativeMissionRequest
+) -> JoinCooperativeMissionResult:
+    """초대 URL(팀 토큰)로 협동 미션 방에 참여를 요청한다.
+
+    - 이미 참여자면(수락 전이든 후든) 새로 만들지 않고 기존 정보를 돌려준다.
+    - 새로 요청하는 경우에만 참여 가능 단계와 최대 인원을 확인한다.
+    """
+    progress = _get_progress_by_team_token(db, request.team_token)
+
+    # 기존 참여자 확인을 단계/인원 검증보다 먼저 한다.
+    # 방장이나 이미 요청한 사람이 같은 링크를 다시 열어도 409 가 나면 안 되기 때문이다.
+    participant = _find_participant(db, progress.id, current_user_id)
+    is_created = participant is None
+    if participant is None:
+        _check_join_open(progress)
+        _check_not_full(db, progress.id)
+        participant = _create_member_participant(db, progress.id, current_user_id)
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        db.refresh(participant)
+
+    return JoinCooperativeMissionResult(
+        response=JoinCooperativeMissionResponse(
+            mission_progress_id=progress.id,
+            participant_id=participant.id,
+            participant_status=ParticipantStatus(participant.participant_status),
+        ),
+        is_created=is_created,
+    )
+
+
+def _get_progress_by_team_token(db: Session, team_token: str) -> CooperativeMissionProgress:
+    """팀 토큰으로 진행 중인 방을 찾는다. 없거나 이미 끝난 방이면 유효하지 않은 초대다.
+
+    동시에 여러 참여 요청이 들어와도 인원 계산이 어긋나지 않도록 진행도 행을 잠근다.
+    (SQLite 는 행 잠금이 없어 무시되고, MySQL 에서만 실제로 걸린다)
+    """
+    statement = (
+        select(CooperativeMissionProgress)
+        .where(
+            CooperativeMissionProgress.team_token == team_token,
+            CooperativeMissionProgress.mission_status == MissionStatus.IN_PROGRESS.value,
+        )
+        .with_for_update()
+    )
+    progress = db.scalars(statement).first()
+    if progress is None:
+        # 토큰 원문은 로그에 남기지 않는다.
+        raise NotFoundError(
+            INVALID_INVITE_TOKEN, detail="진행 중인 협동 미션 방을 찾을 수 없습니다."
+        )
+    return progress
+
+
+def _find_participant(
+    db: Session, progress_id: int, current_user_id: int
+) -> CooperativeMissionParticipant | None:
+    """이 방에 현재 사용자의 참여자 데이터가 이미 있는지 찾는다."""
+    statement = (
+        select(CooperativeMissionParticipant)
+        .where(
+            CooperativeMissionParticipant.cooperative_mission_progress_id == progress_id,
+            CooperativeMissionParticipant.user_id == current_user_id,
+        )
+        .order_by(CooperativeMissionParticipant.id)
+    )
+    return db.scalars(statement).first()
+
+
+def _check_join_open(progress: CooperativeMissionProgress) -> None:
+    """새 팀원을 받을 수 있는 단계인지 확인한다. (초대 단계에서만 가능)"""
+    if progress.current_step != JOIN_OPEN_STEP:
+        raise ConflictError(
+            COOPERATIVE_MISSION_JOIN_CLOSED,
+            detail=(
+                f"진행도 {progress.id} 의 현재 단계가 {progress.current_step} 이라 "
+                "새 참여 요청을 받을 수 없습니다."
+            ),
+        )
+
+
+def _check_not_full(db: Session, progress_id: int) -> None:
+    """최대 인원을 넘지 않는지 확인한다. 수락 전(PENDING) 참여자도 인원에 포함한다."""
+    participant_count = db.scalar(
+        select(func.count())
+        .select_from(CooperativeMissionParticipant)
+        .where(CooperativeMissionParticipant.cooperative_mission_progress_id == progress_id)
+    )
+    if (participant_count or 0) >= COOPERATIVE_MISSION_MAX_PARTICIPANTS:
+        raise ConflictError(
+            COOPERATIVE_MISSION_FULL,
+            detail=(
+                f"진행도 {progress_id} 의 참여자가 이미 "
+                f"{COOPERATIVE_MISSION_MAX_PARTICIPANTS}명입니다."
+            ),
+        )
+
+
+def _create_member_participant(
+    db: Session, progress_id: int, current_user_id: int
+) -> CooperativeMissionParticipant:
+    """수락 대기 상태의 팀원을 만든다. 수락 시각(`joined_at`)은 아직 없다."""
+    participant = CooperativeMissionParticipant(
+        cooperative_mission_progress_id=progress_id,
+        user_id=current_user_id,
+        participant_status=ParticipantStatus.PENDING.value,
+        participant_role=ParticipantRole.MEMBER.value,
+        joined_at=None,
+    )
+    db.add(participant)
+    return participant
+
+
+# ---------------------------------------------------------------------
+# 미구현 API
+# ---------------------------------------------------------------------
 
 
 def get_cooperative_mission_status(mission_progress_id: int, db: Session) -> dict[str, Any]:

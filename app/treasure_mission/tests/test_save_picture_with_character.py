@@ -198,10 +198,6 @@ def test_DB_저장이_실패하면_올린_Blob을_지운다(
     deletes: list[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # 사용자 행이 없으면 FK 위반으로 커밋이 실패한다.
-    db_session.query(User).delete()
-    db_session.commit()
-
     def boom(self: Session) -> None:
         raise RuntimeError("DB 저장 실패")
 

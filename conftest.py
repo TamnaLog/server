@@ -14,6 +14,8 @@ from sqlalchemy.pool import StaticPool
 
 from app.core import models as all_models  # noqa: F401  (전체 테이블 메타데이터 등록)
 from app.core.database import Base, get_db
+from app.core.deps import CURRENT_USER_ID
+from app.core.errors import TEST_USER_ID_HEADER
 from app.main import app
 
 
@@ -61,6 +63,11 @@ def client(session_factory: sessionmaker[Session]) -> Generator[TestClient, None
 
     app.dependency_overrides[get_db] = override_get_db
     # 500 에러 응답 형식을 검증하기 위해 예외를 다시 발생시키지 않는다.
-    with TestClient(app, raise_server_exceptions=False) as test_client:
+    # 현재 사용자 헤더는 기본값으로 넣어 두고, 필요한 테스트만 직접 덮어쓴다.
+    with TestClient(
+        app,
+        raise_server_exceptions=False,
+        headers={TEST_USER_ID_HEADER: str(CURRENT_USER_ID)},
+    ) as test_client:
         yield test_client
     app.dependency_overrides.clear()

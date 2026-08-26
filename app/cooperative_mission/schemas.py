@@ -3,7 +3,7 @@
 필드명은 app/cooperative_mission/docs/API_SPEC.md 기준(camelCase)이다.
 """
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from app.cooperative_mission.models import (
@@ -15,6 +15,8 @@ from app.cooperative_mission.models import (
 
 __all__ = [
     "CooperativeMissionStartResponse",
+    "JoinCooperativeMissionRequest",
+    "JoinCooperativeMissionResponse",
     "MissionStatus",
     "ParticipantResponse",
     "ParticipantRole",
@@ -77,3 +79,24 @@ class CooperativeMissionStartResponse(CamelModel):
     participants: list[ParticipantResponse]
     role_cards: list[RoleCardResponse]
     role_progresses: list[RoleProgressResponse]
+
+
+class JoinCooperativeMissionRequest(CamelModel):
+    """POST /api/v1/cooperative-missions/join-requests 요청 Body.
+
+    참여할 사람은 Body 가 아니라 공통 `X-Test-User-Id` 헤더로 식별한다.
+    """
+
+    team_token: str = Field(min_length=1, description="초대 URL 에서 추출한 팀 토큰")
+
+
+class JoinCooperativeMissionResponse(CamelModel):
+    """POST /api/v1/cooperative-missions/join-requests 정상 응답.
+
+    새 참여 요청을 만들었으면 `201`, 이미 참여자였으면 `200` 으로 응답한다.
+    프론트는 `mission_progress_id` 로 자신의 참여 상태를 폴링한다.
+    """
+
+    mission_progress_id: int
+    participant_id: int
+    participant_status: ParticipantStatus

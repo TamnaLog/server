@@ -565,16 +565,17 @@ def test_배정된_캐릭터가_없으면_characterImgUrl은_null이다(
     assert body["characterImgUrl"] is None
 
 
-def test_사용자_데이터가_없어도_홈_조회는_정상_동작한다(
+def test_헤더의_사용자가_없으면_401_UNAUTHORIZED_USER로_응답한다(
     client: TestClient, db_session: Session, home_data: None
 ) -> None:
+    # 현재 사용자는 X-Test-User-Id 헤더로 정하고, 없는 사용자면 조회 자체를 막는다.
     db_session.query(User).filter(User.id == CURRENT_USER_ID).delete()
     db_session.commit()
 
-    body = _request_home(client)
+    response = client.get(ENDPOINT, params={"latitude": USER_LATITUDE, "longitude": USER_LONGITUDE})
 
-    assert body["characterImgUrl"] is None
-    assert body["progressMission"] == []
+    assert response.status_code == 401
+    assert response.json() == {"code": "UNAUTHORIZED_USER"}
 
 
 # ---------------------------------------------------------------------

@@ -5,6 +5,7 @@
 | API | 테스트 파일 |
 | --- | --- |
 | `POST /api/v1/cooperative-missions/{cooperativeMissionId}/progress` (협동 미션 시작하기/이어하기) | `app/cooperative_mission/tests/test_start_cooperative_mission.py` |
+| `POST /api/v1/cooperative-missions/join-requests` (URL로 참여 요청) | `app/cooperative_mission/tests/test_join_cooperative_mission.py` |
 
 ## 시작하기/이어하기 테스트 의도
 
@@ -75,6 +76,54 @@
 - 저장이 실패하면 진행도도 참여자도 남지 않는다. (한 트랜잭션인지 확인)
 - `cooperativeMissionId` 가 정수가 아니거나 1보다 작으면 **400 `INVALID_REQUEST`**.
 
+## URL로 참여 요청 테스트 의도
+
+이 API의 핵심은 **검증 순서**다.
+"이미 참여자인가"를 **단계·인원 검증보다 먼저** 확인해야 한다.
+순서를 뒤집으면 방장이 자기 초대 링크를 열었을 때, 또는 이미 요청한 사람이 링크를 다시 열었을 때
+멀쩡한 사용자에게 `409`가 나간다. 그래서 "정원이 찼는데 기존 참여자", "단계가 지났는데 기존 참여자"를
+따로 만들어 **200이 나오는지** 확인한다.
+
+두 번째는 **인원 계산에 수락 대기(`PENDING`)도 포함**하는 것이다.
+`ACCEPTED`만 세면 대기자가 쌓여 정원을 넘길 수 있다.
+
+세 번째는 **요청자를 Body가 아니라 헤더로 식별**하는 것이다.
+`X-Test-User-Id`를 바꾸면 저장되는 `user_id`도 따라 바뀌어야 한다.
+
+### 주요 검증 항목
+
+#### 1. 신규 참여 요청
+
+- **201**, 응답은 `missionProgressId` / `participantId` / `participantStatus` 세 필드다.
+- DB에 `PENDING` / `MEMBER` / `joined_at=null` 로 저장된다. (아직 수락 전이므로 참여 시각 없음)
+- 헤더의 사용자가 그대로 `user_id` 로 저장된다.
+
+#### 2. 기존 참여자
+
+- 이미 요청한 사용자 → **200**, 같은 `participantId`, 참여자 수 그대로.
+- 이미 수락된 사용자 → **200**, `ACCEPTED` 로 반환하고 **상태를 되돌리지 않는다.**
+- **방장이 자기 링크를 열면** → 200, `HOST` 참여자 정보를 그대로 반환.
+- 같은 요청을 두 번 보내면 201 → 200이고 참여자는 하나만 생긴다.
+- **정원이 찼거나 단계가 지나도 기존 참여자는 409가 아니라 200**이다.
+
+#### 3. 409 참여를 받을 수 없는 경우
+
+- `current_step` 이 2 / 3 / 4 면 **`COOPERATIVE_MISSION_JOIN_CLOSED`**.
+- 참여자가 6명이면 **`COOPERATIVE_MISSION_FULL`**.
+- `PENDING` 참여자만으로 6명이어도 `FULL` 이다. (대기자도 인원에 포함)
+- 5명이면 한 자리 남으므로 정상 참여된다. (경계값)
+- 모두 참여자를 만들지 않는다.
+
+#### 4. 404 `INVALID_INVITE_TOKEN`
+
+- 없는 팀 토큰
+- 토큰은 맞지만 이미 **완료된 방**인 경우
+
+#### 5. 400 / 401
+
+- `teamToken` 누락 · 빈 문자열 · `null` → **400 `INVALID_REQUEST`**
+- 헤더의 사용자가 없으면 **401 `UNAUTHORIZED_USER`** 이고 참여자도 생기지 않는다.
+
 ## 실행 방법
 
 ```bash
@@ -89,6 +138,7 @@ pytest app/cooperative_mission
 
 # 특정 테스트만
 pytest app/cooperative_mission/tests/test_start_cooperative_mission.py -k 이어하기
+pytest app/cooperative_mission/tests/test_join_cooperative_mission.py -k 기존
 ```
 
 DB는 SQLite 인메모리를 사용하므로 MySQL이 떠 있지 않아도 실행된다.
@@ -99,3 +149,7 @@ DB는 SQLite 인메모리를 사용하므로 MySQL이 떠 있지 않아도 실�
 팀 토큰 충돌 재시도는 난수라 테스트로 재현하기 어렵다.
 `app/cooperative_mission/service.py`의 `MAX_TEAM_TOKEN_ATTEMPTS` 안에서
 중복이면 트랜잭션을 되돌리고 새 토큰으로 다시 시도하며, 계속 실패하면 공통 500으로 처리한다.
+
+참여 요청 테스트는 `join_data` 픽스처로 방장 1명이 있는 방 하나와 참여 가능한 사용자들을 만든다.
+동시 요청 시 인원 초과를 막는 진행도 행 잠금(`SELECT ... FOR UPDATE`)은 MySQL 에서만 걸리고
+테스트 DB인 SQLite 에서는 무시되므로, 잠금 자체는 테스트로 검증하지 않는다.

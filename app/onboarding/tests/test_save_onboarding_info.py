@@ -115,7 +115,9 @@ def test_나중에_할게요를_선택하면_여행_유형은_null이고_기본_
     assert saved.ar_character_id == DEFAULT_CHARACTER_ID
 
 
-def test_사용자가_없으면_생성한다(client: TestClient, db_session: Session) -> None:
+def test_헤더의_사용자가_없으면_401_UNAUTHORIZED_USER로_응답한다(
+    client: TestClient, db_session: Session
+) -> None:
     db_session.add_all(
         [
             UserTravelStyle(
@@ -133,10 +135,12 @@ def test_사용자가_없으면_생성한다(client: TestClient, db_session: Ses
     )
     db_session.commit()
 
+    # 현재 사용자는 X-Test-User-Id 헤더로 정하고, 없는 사용자면 온보딩도 막는다.
     response = client.patch(ENDPOINT, json={})
 
-    assert response.status_code == 201
-    assert db_session.get(User, CURRENT_USER_ID) is not None
+    assert response.status_code == 401
+    assert response.json() == {"code": "UNAUTHORIZED_USER"}
+    assert db_session.get(User, CURRENT_USER_ID) is None
 
 
 @pytest.mark.parametrize(
@@ -158,8 +162,12 @@ def test_허용되지_않은_값이면_400_INVALID_REQUEST를_반환한다(
 
 
 def test_배정할_데이터가_없으면_500_INTERNAL_SERVER_ERROR를_반환한다(
-    client: TestClient,
+    client: TestClient, db_session: Session
 ) -> None:
+    # 사용자는 있고 여행 유형 / AR 캐릭터 마스터만 비어 있는 상황
+    db_session.add(User(id=CURRENT_USER_ID, nickname="몽글몽글파도", point=0))
+    db_session.commit()
+
     response = client.patch(ENDPOINT, json={})
 
     assert response.status_code == 500

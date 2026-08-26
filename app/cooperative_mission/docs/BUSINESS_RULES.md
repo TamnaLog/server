@@ -224,3 +224,173 @@ const inviteUrl =
   "code": "INTERNAL_SERVER_ERROR"
 }
 ```
+
+
+# URL로 참여 요청 비즈니스 룰
+
+## 1. 요청 및 사용자 식별
+
+- HTTP 메서드: `POST`
+- 엔드포인트: `/api/v1/cooperative-missions/join-requests`
+- 요청 Body의 `teamToken`으로 참여할 협동 미션 방을 식별한다.
+- 참여를 요청하는 사용자는 요청 Body로 받지 않고 공통 `X-Test-User-Id` 헤더를 통해 식별한다.
+- `get_current_user_id()`에서 헤더의 사용자 id가 실제 `USER`에 존재하는지 먼저 검증한다.
+
+## 2. 진행도 조회
+
+요청받은 `teamToken`과 `COOPERATIVE_MISSION_PROGRESS.team_token`이 일치하고 `mission_status = IN_PROGRESS`인 진행도를 조회한다.
+
+조회된 진행도의 `id`는 신규 또는 기존 참여 정보를 반환할 때 응답의 `missionProgressId`로 사용한다.
+
+다음 경우에는 유효한 초대 링크가 아닌 것으로 판단한다.
+
+- `teamToken`과 일치하는 진행도가 없는 경우
+- 일치하는 진행도는 있지만 이미 `COMPLETED` 상태인 경우
+
+## 3. 처리 순서
+
+1. `teamToken`으로 진행 중인 협동 미션 진행도를 조회한다.
+2. 진행도 id와 현재 사용자 id로 기존 참여자를 조회한다.
+3. 기존 참여자가 있으면 새로운 참여자를 만들지 않고 기존 정보를 반환한다.
+4. 기존 참여자가 없으면 현재 단계와 최대 인원을 검증한다.
+5. 검증을 통과하면 현재 사용자를 `PENDING` 상태의 팀원으로 생성한다.
+
+기존 참여자 조회를 새로운 참여 요청 검증보다 먼저 수행한다. 따라서 방장이나 이미 참여 요청을 보낸 사용자가 같은 링크를 다시 열어도 중복 데이터가 생성되지 않는다.
+
+## 4. 기존 참여자가 있는 경우
+
+다음 조건으로 `COOPERATIVE_MISSION_PARTICIPANT`를 조회한다.
+
+```text
+cooperative_mission_progress_id = 조회한 진행도 id
+user_id = 현재 사용자 id
+```
+
+기존 참여자의 상태가 `PENDING`이면 참여 요청을 새로 생성하지 않고 기존 참여 정보를 `200 OK`로 반환한다.
+
+기존 참여자의 상태가 `ACCEPTED`이면 참여자를 새로 생성하거나 상태를 변경하지 않고 기존 참여 정보를 `200 OK`로 반환한다. 방장이 자신의 초대 링크를 열었을 때도 방장은 이미 `HOST`, `ACCEPTED` 상태이므로 이 분기에 해당한다.
+
+기존 참여자를 반환할 때는 현재 인원이 6명이거나 `current_step`이 2 이상이어도 `409`를 반환하지 않는다. 최대 인원과 참여 가능 단계 검증은 새로운 사용자의 참여 요청을 생성할 때만 적용한다.
+
+## 5. 새로운 참여 요청 생성
+
+현재 사용자가 해당 진행도의 참여자 명단에 없으면 새로운 참여 요청을 생성하기 전에 다음 조건을 검증한다.
+
+### 5.1 참여 가능 단계
+
+새로운 참여 요청은 `current_step = 1`인 초대 단계에서만 생성할 수 있다.
+
+`current_step`이 `2`, `3`, `4`이면 새로운 팀원을 받을 수 없는 상태이므로 참여자를 생성하지 않는다.
+
+### 5.2 최대 참여 인원
+
+협동 미션 최대 참여 인원은 방장을 포함하여 6명으로 고정한다.
+
+서비스 코드에는 다음 상수를 사용한다.
+
+```python
+COOPERATIVE_MISSION_MAX_PARTICIPANTS = 6
+```
+
+해당 진행도에 연결된 `COOPERATIVE_MISSION_PARTICIPANT` 행의 수를 조회한다. 인원 계산에는 `PENDING`과 `ACCEPTED` 참여자를 모두 포함한다.
+
+```text
+participant_count = PENDING 참여자 수 + ACCEPTED 참여자 수
+```
+
+`participant_count >= COOPERATIVE_MISSION_MAX_PARTICIPANTS`이면 새로운 참여자를 생성하지 않는다.
+
+### 5.3 참여자 생성값
+
+단계와 최대 인원 검증을 통과하면 다음 값으로 `COOPERATIVE_MISSION_PARTICIPANT`를 생성한다.
+
+- `cooperative_mission_progress_id`: 팀 토큰으로 조회한 진행도 id
+- `user_id`: 현재 사용자 id
+- `participant_status`: `PENDING`
+- `participant_role`: `MEMBER`
+- `joined_at`: `NULL`
+
+새로운 참여자를 정상적으로 생성하면 `201 Created`를 반환한다.
+
+## 6. 응답 데이터
+
+신규 참여 요청과 기존 참여 정보는 같은 응답 구조를 사용한다.
+
+| 응답 필드 | 데이터 출처 |
+| --- | --- |
+| `missionProgressId` | `COOPERATIVE_MISSION_PROGRESS.id` |
+| `participantId` | `COOPERATIVE_MISSION_PARTICIPANT.id` |
+| `participantStatus` | `COOPERATIVE_MISSION_PARTICIPANT.participant_status` |
+
+응답 상태 코드는 다음과 같이 구분한다.
+
+| 조건 | Status Code |
+| --- | --- |
+| 새로운 `PENDING` 참여자를 생성함 | `201 Created` |
+| 기존 `PENDING` 참여자를 반환함 | `200 OK` |
+| 기존 `ACCEPTED` 참여자를 반환함 | `200 OK` |
+
+프론트는 응답의 `missionProgressId`를 사용하여 자신의 참여 상태를 폴링한다.
+
+- `PENDING`: 수락 대기 화면 유지
+- `ACCEPTED`: 협동 미션 방으로 이동
+
+## 7. 중복 생성 및 동시 요청 방지
+
+동일한 진행도와 동일한 사용자에 대한 참여자 데이터는 최대 하나만 존재해야 한다.
+
+같은 사용자가 참여 요청 API를 반복 호출하면 최초 요청에서만 참여자를 생성하고 이후 요청에는 기존 참여자를 반환한다.
+
+진행도 조회, 기존 참여자 재확인, 현재 인원 확인과 참여자 생성을 하나의 트랜잭션 범위에서 처리한다. 동시에 여러 참여 요청이 들어오면 진행도 행을 잠근 뒤 기존 참여자와 현재 인원을 다시 조회하여 중복 참여자 생성과 6명 초과를 방지한다.
+
+## 8. 오류 처리
+
+### 400 `INVALID_REQUEST`
+
+`teamToken`이 누락되거나 빈 문자열인 경우 참여자를 생성하지 않고 공통 `400` 오류를 반환한다.
+
+```json
+{
+  "code": "INVALID_REQUEST"
+}
+```
+
+### 404 `INVALID_INVITE_TOKEN`
+
+`teamToken`에 해당하는 `IN_PROGRESS` 협동 미션 진행도를 찾을 수 없으면 `404`를 반환한다.
+
+```json
+{
+  "code": "INVALID_INVITE_TOKEN"
+}
+```
+
+### 409 `COOPERATIVE_MISSION_FULL`
+
+기존 참여자가 아닌 사용자가 참여를 요청했고, 해당 진행도의 참여자 수가 이미 6명 이상이면 `409`를 반환한다.
+
+```json
+{
+  "code": "COOPERATIVE_MISSION_FULL"
+}
+```
+
+### 409 `COOPERATIVE_MISSION_JOIN_CLOSED`
+
+기존 참여자가 아닌 사용자가 참여를 요청했고, 진행도의 `current_step`이 `2`, `3`, `4`이면 `409`를 반환한다.
+
+```json
+{
+  "code": "COOPERATIVE_MISSION_JOIN_CLOSED"
+}
+```
+
+### 500 `INTERNAL_SERVER_ERROR`
+
+참여자 생성 또는 DB 처리 중 예상하지 못한 오류가 발생하면 트랜잭션을 롤백하고 공통 `500` 오류를 반환한다.
+
+```json
+{
+  "code": "INTERNAL_SERVER_ERROR"
+}
+```

@@ -121,7 +121,16 @@ Status Code : 200
 
 ### 오류 응답 데이터
 
-없음
+Status Code : 401
+
+`X-Test-User-Id` 헤더의 사용자가 존재하지 않는 경우
+
+```json
+{
+  "code": "UNAUTHORIZED_USER"
+}
+```
+
 
 ---
 

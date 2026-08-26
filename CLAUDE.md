@@ -16,9 +16,13 @@
 
 ### 1.3 Authentication Assumption
 - 현재 로그인 기능은 구현되어 있지 않다.
-- 현재 사용자는 항상 `id=1`로 처리한다.
-- DB에는 항상 1번 사용자에 대한 목업 데이터가 존재해야 한다.
-- 현재 사용자 id가 필요한 API는 `get_current_user_id()` 의존성을 사용한다.
+- 현재 사용자는 요청 헤더 `X-Test-User-Id`로 정한다. (프론트가 앱 시작 시 입력받아 모든 요청에 넣는다)
+- 현재 사용자 id가 필요한 API는 `get_current_user_id()` 의존성을 사용한다. (`app/core/deps.py`)
+  - 헤더가 없거나 정수가 아니거나 1보다 작으면 400 `INVALID_REQUEST`
+  - 헤더의 사용자가 DB에 없으면 401 `UNAUTHORIZED_USER`
+  - 401은 `use_common_error_responses()`가 이 헤더를 받는 API에만 자동으로 문서에 넣는다.
+- DB에는 테스트에 쓸 사용자 목업 데이터가 존재해야 한다.
+- 로그인을 구현하면 `get_current_user_id()`의 헤더 처리만 토큰 인증으로 교체한다. 라우터는 그대로 둔다.
 
 ### 1.4 Date and Time Policy
 - 시간 정보는 한국시간(KST) 기준으로 처리한다.

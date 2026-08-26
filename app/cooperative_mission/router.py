@@ -7,11 +7,15 @@ API 명세: app/cooperative_mission/docs/API_SPEC.md
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Path, Response, status
+from fastapi import APIRouter, Body, Depends, Path, Response, status
 from sqlalchemy.orm import Session
 
 from app.cooperative_mission import service
-from app.cooperative_mission.schemas import CooperativeMissionStartResponse
+from app.cooperative_mission.schemas import (
+    CooperativeMissionStartResponse,
+    JoinCooperativeMissionRequest,
+    JoinCooperativeMissionResponse,
+)
 from app.core.database import get_db
 from app.core.deps import get_current_user_id
 
@@ -31,18 +35,40 @@ def _error_response(description: str, code: str) -> dict[str, Any]:
     }
 
 
-@router.get("/invitations/{invite_token}", summary="초대 url 정보 조회")
-def get_invitation(invite_token: str, db: Session = Depends(get_db)) -> dict[str, Any]:
-    """GET /api/v1/cooperative-missions/invitations/{inviteToken} - 초대 url 정보 조회."""
-    # TODO: 요청/응답 스키마 연결 (app/cooperative_mission/schemas.py)
-    return service.get_invitation(invite_token, db)
-
-
-@router.post("/invitations/{invite_token}/participants", summary="초대 url로 게스트 참여")
-def join_as_guest(invite_token: str, db: Session = Depends(get_db)) -> dict[str, Any]:
-    """POST /api/v1/cooperative-missions/invitations/{inviteToken}/participants - 초대 url로 게스트 참여."""
-    # TODO: 요청/응답 스키마 연결 (app/cooperative_mission/schemas.py)
-    return service.join_as_guest(invite_token, db)
+@router.post(
+    "/join-requests",
+    summary="URL로 참여 요청",
+    # 새 참여 요청을 만든 경우가 기본이고, 이미 참여자면 200으로 바꾼다.
+    status_code=status.HTTP_201_CREATED,
+    response_model=JoinCooperativeMissionResponse,
+    response_model_by_alias=True,
+    responses={
+        status.HTTP_200_OK: {
+            "description": "이미 참여 요청했거나 수락된 사용자인 경우",
+            "model": JoinCooperativeMissionResponse,
+        },
+        status.HTTP_404_NOT_FOUND: _error_response(
+            "진행 중인 협동 미션 방을 찾을 수 없음", service.INVALID_INVITE_TOKEN
+        ),
+        status.HTTP_409_CONFLICT: _error_response(
+            "최대 인원 도달 또는 참여를 받을 수 없는 단계",
+            f"{service.COOPERATIVE_MISSION_FULL} | {service.COOPERATIVE_MISSION_JOIN_CLOSED}",
+        ),
+    },
+)
+def join_cooperative_mission(
+    response: Response,
+    db: Annotated[Session, Depends(get_db)],
+    current_user_id: Annotated[int, Depends(get_current_user_id)],
+    request: Annotated[JoinCooperativeMissionRequest, Body()],
+) -> JoinCooperativeMissionResponse:
+    """POST /api/v1/cooperative-missions/join-requests - URL로 참여 요청."""
+    result = service.join_cooperative_mission(
+        db=db, current_user_id=current_user_id, request=request
+    )
+    if not result.is_created:
+        response.status_code = status.HTTP_200_OK
+    return result.response
 
 
 @router.post(
