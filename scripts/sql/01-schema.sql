@@ -123,16 +123,11 @@ CREATE TABLE `MISSION` (
     `mission_type`  VARCHAR(50)  NOT NULL                COMMENT 'CULTURE | COOPERATIVE | TREASURE',
     `mission_title` VARCHAR(50)  NOT NULL,
     `description`   VARCHAR(200) NOT NULL,
-    `location_id`   BIGINT       NULL,
-    `reward_detail` JSON         NOT NULL                COMMENT '{ar_character_id, point, coupon_location, coupon_price}',
     `step_detail`   JSON         NOT NULL                COMMENT '[{step, step_title, description}]',
     `created_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    KEY `idx_mission__location` (`location_id`),
-    KEY `idx_mission__type` (`mission_type`),
-    CONSTRAINT `fk_mission__location`
-        FOREIGN KEY (`location_id`) REFERENCES `LOCATION` (`id`) ON DELETE SET NULL
+    KEY `idx_mission__type` (`mission_type`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '미션 공통';
 
 CREATE TABLE `VISITED_LOCATION` (
@@ -171,12 +166,15 @@ CREATE TABLE `GPS` (
 -- ---------------------------------------------------------------------
 
 CREATE TABLE `CULTURE_MISSION` (
+    `id`               BIGINT   NOT NULL AUTO_INCREMENT,
     `mission_id`       BIGINT   NOT NULL,
     `quiz_total_count` INT      NOT NULL,
     `quiz_detail`      JSON     NOT NULL                COMMENT '[{quiz_index, img_url, question, options, answer, hint, explanation}]',
+    `reward_detail`    JSON     NOT NULL                COMMENT '{ar_character_id, point, coupon_location, coupon_price}',
     `created_at`       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (`mission_id`),
+    PRIMARY KEY (`id`),
+    KEY `idx_culture_mission__mission` (`mission_id`),
     CONSTRAINT `fk_culture_mission__mission`
         FOREIGN KEY (`mission_id`) REFERENCES `MISSION` (`id`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '문화 미션';
@@ -188,6 +186,9 @@ CREATE TABLE `CULTURE_MISSION_PROGRESS` (
     `mission_status`     VARCHAR(20) NOT NULL                COMMENT 'IN_PROGRESS | COMPLETED',
     `current_quiz_index` INT         NOT NULL DEFAULT 1,
     `correct_number`     INT         NOT NULL DEFAULT 0,
+    `ar_character_reward_granted` BOOLEAN NOT NULL DEFAULT FALSE COMMENT 'AR 캐릭터 보상 지급 여부',
+    `point_reward_granted`        BOOLEAN NOT NULL DEFAULT FALSE COMMENT '포인트 보상 지급 여부',
+    `coupon_reward_granted`       BOOLEAN NOT NULL DEFAULT FALSE COMMENT '쿠폰 보상 지급 여부',
     `completed_at`       DATETIME    NULL,
     `created_at`         DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`         DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -195,7 +196,7 @@ CREATE TABLE `CULTURE_MISSION_PROGRESS` (
     KEY `idx_culture_progress__user` (`user_id`, `mission_status`),
     KEY `idx_culture_progress__mission` (`culture_mission_id`),
     CONSTRAINT `fk_culture_progress__mission`
-        FOREIGN KEY (`culture_mission_id`) REFERENCES `CULTURE_MISSION` (`mission_id`) ON DELETE CASCADE,
+        FOREIGN KEY (`culture_mission_id`) REFERENCES `CULTURE_MISSION` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_culture_progress__user`
         FOREIGN KEY (`user_id`) REFERENCES `USER` (`id`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '문화 미션 진행도';
@@ -206,13 +207,20 @@ CREATE TABLE `CULTURE_MISSION_PROGRESS` (
 -- ---------------------------------------------------------------------
 
 CREATE TABLE `COOPERATIVE_MISSION` (
+    `id`               BIGINT   NOT NULL AUTO_INCREMENT,
     `mission_id`       BIGINT   NOT NULL,
+    `location_id`      BIGINT   NOT NULL,
     `role_total_count` INT      NOT NULL,
+    `reward_detail`    JSON     NOT NULL                COMMENT '{ar_character_id, point, coupon_location, coupon_price}',
     `created_at`       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (`mission_id`),
+    PRIMARY KEY (`id`),
+    KEY `idx_cooperative_mission__mission` (`mission_id`),
+    KEY `idx_cooperative_mission__location` (`location_id`),
     CONSTRAINT `fk_cooperative_mission__mission`
-        FOREIGN KEY (`mission_id`) REFERENCES `MISSION` (`id`) ON DELETE CASCADE
+        FOREIGN KEY (`mission_id`) REFERENCES `MISSION` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_cooperative_mission__location`
+        FOREIGN KEY (`location_id`) REFERENCES `LOCATION` (`id`) ON DELETE RESTRICT
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '협동 미션';
 
 CREATE TABLE `COOPERATIVE_MISSION_PROGRESS` (
@@ -221,6 +229,9 @@ CREATE TABLE `COOPERATIVE_MISSION_PROGRESS` (
     `current_step`           INT          NOT NULL DEFAULT 1,
     `mission_status`         VARCHAR(20)  NOT NULL                COMMENT 'IN_PROGRESS | COMPLETED',
     `team_token`             VARCHAR(100) NOT NULL                COMMENT '팀 단위 초대 토큰',
+    `ar_character_reward_granted` BOOLEAN NOT NULL DEFAULT FALSE COMMENT 'AR 캐릭터 보상 지급 여부',
+    `point_reward_granted`        BOOLEAN NOT NULL DEFAULT FALSE COMMENT '포인트 보상 지급 여부',
+    `coupon_reward_granted`       BOOLEAN NOT NULL DEFAULT FALSE COMMENT '쿠폰 보상 지급 여부',
     `completed_at`           DATETIME     NULL,
     `created_at`             DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`             DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -228,7 +239,7 @@ CREATE TABLE `COOPERATIVE_MISSION_PROGRESS` (
     UNIQUE KEY `uk_cooperative_progress__team_token` (`team_token`),
     KEY `idx_cooperative_progress__mission` (`cooperative_mission_id`),
     CONSTRAINT `fk_cooperative_progress__mission`
-        FOREIGN KEY (`cooperative_mission_id`) REFERENCES `COOPERATIVE_MISSION` (`mission_id`) ON DELETE CASCADE
+        FOREIGN KEY (`cooperative_mission_id`) REFERENCES `COOPERATIVE_MISSION` (`id`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '협동 미션 진행도(방)';
 
 CREATE TABLE `COOPERATIVE_ROLE_CARD` (
@@ -292,14 +303,21 @@ CREATE TABLE `COOPERATIVE_ROLE_PROGRESS` (
 -- ---------------------------------------------------------------------
 
 CREATE TABLE `TREASURE_MISSION` (
+    `id`               BIGINT   NOT NULL AUTO_INCREMENT,
     `mission_id`       BIGINT   NOT NULL,
+    `location_id`      BIGINT   NOT NULL,
     `item_total_count` INT      NOT NULL,
     `item_detail`      JSON     NOT NULL                COMMENT '[{index, mx, my, radius}]',
+    `reward_detail`    JSON     NOT NULL                COMMENT '{ar_character_id, point, coupon_location, coupon_price}',
     `created_at`       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (`mission_id`),
+    PRIMARY KEY (`id`),
+    KEY `idx_treasure_mission__mission` (`mission_id`),
+    KEY `idx_treasure_mission__location` (`location_id`),
     CONSTRAINT `fk_treasure_mission__mission`
-        FOREIGN KEY (`mission_id`) REFERENCES `MISSION` (`id`) ON DELETE CASCADE
+        FOREIGN KEY (`mission_id`) REFERENCES `MISSION` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_treasure_mission__location`
+        FOREIGN KEY (`location_id`) REFERENCES `LOCATION` (`id`) ON DELETE RESTRICT
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '보물 찾기 미션';
 
 CREATE TABLE `TREASURE_MISSION_PROGRESS` (
@@ -309,6 +327,9 @@ CREATE TABLE `TREASURE_MISSION_PROGRESS` (
     `current_found_item_idx` JSON        NOT NULL                COMMENT 'int[]',
     `current_step`           INT         NOT NULL DEFAULT 1      COMMENT '진행 단계. 1 | 2 | 3 (3 = 완료)',
     `mission_status`         VARCHAR(20) NOT NULL                COMMENT 'IN_PROGRESS | COMPLETED',
+    `ar_character_reward_granted` BOOLEAN NOT NULL DEFAULT FALSE COMMENT 'AR 캐릭터 보상 지급 여부',
+    `point_reward_granted`        BOOLEAN NOT NULL DEFAULT FALSE COMMENT '포인트 보상 지급 여부',
+    `coupon_reward_granted`       BOOLEAN NOT NULL DEFAULT FALSE COMMENT '쿠폰 보상 지급 여부',
     `completed_at`           DATETIME    NULL,
     `created_at`             DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`             DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -316,7 +337,7 @@ CREATE TABLE `TREASURE_MISSION_PROGRESS` (
     KEY `idx_treasure_progress__user` (`user_id`, `mission_status`),
     KEY `idx_treasure_progress__mission` (`treasure_mission_id`),
     CONSTRAINT `fk_treasure_progress__mission`
-        FOREIGN KEY (`treasure_mission_id`) REFERENCES `TREASURE_MISSION` (`mission_id`) ON DELETE CASCADE,
+        FOREIGN KEY (`treasure_mission_id`) REFERENCES `TREASURE_MISSION` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_treasure_progress__user`
         FOREIGN KEY (`user_id`) REFERENCES `USER` (`id`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '보물 찾기 진행도';

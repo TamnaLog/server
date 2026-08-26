@@ -55,6 +55,13 @@ class NotFoundError(AppError):
         super().__init__(status.HTTP_404_NOT_FOUND, code, detail)
 
 
+class ConflictError(AppError):
+    """409 - 각 API 명세에 정의된 코드를 사용한다."""
+
+    def __init__(self, code: str, detail: str = "") -> None:
+        super().__init__(status.HTTP_409_CONFLICT, code, detail)
+
+
 def _error_response(status_code: int, code: str) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,

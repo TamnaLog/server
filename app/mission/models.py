@@ -3,19 +3,25 @@
 docs/erd.md 기준으로 이 도메인이 담당하는 테이블:
 - MISSION
 
+MISSION 은 미션의 공통 정보(유형/이름/설명/단계)만 가진다.
+장소와 보상은 미션 유형별 테이블(CULTURE/COOPERATIVE/TREASURE_MISSION)이 각자 가진다.
+
 MISSION 과 미션 진행 상태 값은 문화/협동/보물 찾기 도메인이 함께 쓰므로
 여기서 한 번만 정의하고 다른 도메인은 import해서 사용한다.
+
+반대로 유형별 세부 미션 모델은 여기서 import하지 않는다.
+세 도메인이 모두 이 모듈을 import하므로 순환 참조가 되기 때문이다.
+미션 도메인에서 세부 미션이 필요하면 app/mission/service.py 처럼 각 소유 도메인에서 직접 import한다.
 """
 
 from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, String, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import JSON, BigInteger, DateTime, String, func
+from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.database import Base
-from app.map.models import Location
+from app.core.database import Base, BigIntPk
 
 
 class MissionType(str, Enum):
@@ -38,15 +44,10 @@ class Mission(Base):
 
     __tablename__ = "MISSION"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     mission_type: Mapped[str] = mapped_column(String(50), nullable=False)
     mission_title: Mapped[str] = mapped_column(String(50), nullable=False)
     description: Mapped[str] = mapped_column(String(200), nullable=False)
-    location_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("LOCATION.id", ondelete="SET NULL"), nullable=True
-    )
-    # {ar_character_id, point, coupon_location, coupon_price}
-    reward_detail: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     # [{step, step_title, description}]
     step_detail: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -55,8 +56,6 @@ class Mission(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
     )
-
-    location: Mapped[Location | None] = relationship(lazy="joined")
 
     @property
     def total_step(self) -> int:

@@ -14,7 +14,7 @@ from datetime import datetime
 from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.database import Base
+from app.core.database import Base, BigIntPk
 
 
 class Location(Base):
@@ -22,7 +22,7 @@ class Location(Base):
 
     __tablename__ = "LOCATION"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     content_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     location_title: Mapped[str] = mapped_column(String(20), nullable=False)
     location_address: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -45,7 +45,7 @@ class VisitedLocation(Base):
 
     __tablename__ = "VISITED_LOCATION"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("USER.id", ondelete="CASCADE"), nullable=False
     )
@@ -68,7 +68,7 @@ class Gps(Base):
 
     __tablename__ = "GPS"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("USER.id", ondelete="CASCADE"), nullable=False
     )

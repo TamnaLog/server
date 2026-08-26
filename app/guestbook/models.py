@@ -13,7 +13,7 @@ from datetime import date, datetime
 from sqlalchemy import JSON, BigInteger, Date, DateTime, Float, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.database import Base
+from app.core.database import Base, BigIntPk
 from app.map.models import Location
 from app.mission.models import Mission
 
@@ -26,7 +26,7 @@ class Guestbook(Base):
 
     __tablename__ = "GUESTBOOK"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("USER.id", ondelete="CASCADE"), nullable=False
     )
@@ -57,7 +57,7 @@ class RoadGuestbook(Base):
 
     __tablename__ = "ROAD_GUESTBOOK"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("USER.id", ondelete="CASCADE"), nullable=False
     )

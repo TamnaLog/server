@@ -33,7 +33,15 @@
 ## 2. Project Structure
 - 도메인별 패키지 구조: `app/<domain>/{router,service,schemas,models}.py`
 - 도메인 문서: `app/<domain>/docs/API_SPEC.md`, `app/<domain>/docs/BUSINESS_RULES.md`
-- 공통 코드: `app/core/` (`config.py`, `database.py`, `deps.py`, `errors.py`)
+- 공통 코드
+  - `app/core/`: 앱 인프라 (`config.py`, `database.py`, `deps.py`, `errors.py`, `models.py`)
+  - `app/common/`: 도메인이 공유하는 계산/유틸과 공용 응답 스키마
+    - `distance.py`: 좌표 거리·예상 소요 시간
+    - `rewards.py`: 미션 보상(`reward_detail`) 응답 스키마 + 조합 로직 (문화/협동/보물 공용)
+    - `next_location.py`: 미션 완료 후 다음 장소 추천 응답 스키마 + 추천 로직
+    - `datetimes.py`: KST 기준 현재 시각(`now_kst()`)
+  - 보상을 실제로 지급하는 규칙(지급 순서/개수)은 미션 유형마다 다르므로 도메인 안에 둔다.
+    (예: `app/culture_mission/reward_granter.py`)
 - 테스트: 루트 `conftest.py` + `app/<domain>/tests/` (공통 규칙 테스트는 `app/core/tests/`)
 - 라우터는 `app/main.py`의 `ROUTERS`에 등록한다.
 

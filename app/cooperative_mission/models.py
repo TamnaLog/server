@@ -7,16 +7,28 @@ docs/erd.md 기준으로 이 도메인이 담당하는 테이블:
 - COOPERATIVE_MISSION_PARTICIPANT
 - COOPERATIVE_ROLE_PROGRESS
 
-MISSION 은 app/mission/models.py 에서 한 번만 정의하고 여기서는 import해서 사용한다.
+MISSION 은 app/mission/models.py, LOCATION 은 app/map/models.py 에서 한 번만 정의하고
+여기서는 import해서 사용한다.
 """
 
 from datetime import datetime
 from enum import Enum
+from typing import Any
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    func,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.database import Base
+from app.core.database import Base, BigIntPk
+from app.map.models import Location
 from app.mission.models import Mission, MissionStatus
 
 
@@ -26,6 +38,7 @@ __all__ = [
     "CooperativeMissionProgress",
     "CooperativeRoleCard",
     "CooperativeRoleProgress",
+    "Location",
     "Mission",
     "MissionStatus",
     "ParticipantStatus",
@@ -48,20 +61,33 @@ class ParticipantStatus(str, Enum):
 
 
 class CooperativeMission(Base):
-    """COOPERATIVE_MISSION - 협동 미션. `mission_id` 가 MISSION 과 1:1로 이어진다."""
+    """COOPERATIVE_MISSION - 협동 미션.
+
+    자체 `id` 를 PK로 갖고, `mission_id` 로 공통 미션(MISSION)에 속한다. (MISSION 1 : N 협동 미션)
+    미션이 진행되는 장소는 이 테이블이 가진다.
+    """
 
     __tablename__ = "COOPERATIVE_MISSION"
 
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     mission_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("MISSION.id", ondelete="CASCADE"), primary_key=True
+        BigInteger, ForeignKey("MISSION.id", ondelete="CASCADE"), nullable=False
+    )
+    location_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("LOCATION.id", ondelete="RESTRICT"), nullable=False
     )
     role_total_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 미션 보상. {ar_character_id, point, coupon_location, coupon_price}
+    reward_detail: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
     )
+
+    mission: Mapped[Mission] = relationship(lazy="joined")
+    location: Mapped[Location] = relationship(lazy="joined")
 
 
 class CooperativeMissionProgress(Base):
@@ -72,10 +98,10 @@ class CooperativeMissionProgress(Base):
 
     __tablename__ = "COOPERATIVE_MISSION_PROGRESS"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     cooperative_mission_id: Mapped[int] = mapped_column(
         BigInteger,
-        ForeignKey("COOPERATIVE_MISSION.mission_id", ondelete="CASCADE"),
+        ForeignKey("COOPERATIVE_MISSION.id", ondelete="CASCADE"),
         nullable=False,
     )
     current_step: Mapped[int] = mapped_column(
@@ -83,6 +109,15 @@ class CooperativeMissionProgress(Base):
     )
     mission_status: Mapped[str] = mapped_column(String(20), nullable=False)
     team_token: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    ar_character_reward_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    point_reward_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    coupon_reward_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
@@ -97,7 +132,7 @@ class CooperativeRoleCard(Base):
 
     __tablename__ = "COOPERATIVE_ROLE_CARD"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     cooperative_mission_progress_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("COOPERATIVE_MISSION_PROGRESS.id", ondelete="CASCADE"),
@@ -127,7 +162,7 @@ class CooperativeMissionParticipant(Base):
 
     __tablename__ = "COOPERATIVE_MISSION_PARTICIPANT"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     cooperative_mission_progress_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("COOPERATIVE_MISSION_PROGRESS.id", ondelete="CASCADE"),
@@ -154,7 +189,7 @@ class CooperativeRoleProgress(Base):
 
     __tablename__ = "COOPERATIVE_ROLE_PROGRESS"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     participant_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("COOPERATIVE_MISSION_PARTICIPANT.id", ondelete="CASCADE"),
