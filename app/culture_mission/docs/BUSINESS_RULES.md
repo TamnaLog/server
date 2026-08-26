@@ -373,3 +373,107 @@ distance.calculate_distance_meter(
   "code": "CULTURE_MISSION_QUIZ_INDEX_MISMATCH"
 }
 ```
+
+
+
+# 문화 미션 중단 비즈니스 룰
+
+## 1. 요청 기준
+
+문화 미션을 끝까지 진행하지 않고 현재까지의 결과로 종료할 때 호출한다. 문화 미션 중단은 실패가 아닌 완료로 취급한다.
+
+- Path의 `cultureMissionProgressId`로 중단할 문화 미션 진행도를 식별한다.
+- Query의 `latitude`, `longitude`는 다음 장소까지의 거리를 계산하는 데 사용한다.
+- 별도의 Request Body는 받지 않는다.
+- 현재 사용자의 `IN_PROGRESS` 상태인 진행도만 중단할 수 있다.
+
+## 2. 처리 순서
+
+1. `cultureMissionProgressId`, `latitude`, `longitude`의 형식과 범위를 검증한다.
+2. `cultureMissionProgressId`에 해당하는 현재 사용자의 `IN_PROGRESS` 문화 미션 진행도를 조회한다.
+3. 진행도에 저장된 현재 `correct_number`를 기준으로 지급할 보상을 계산한다.
+4. 문화 미션 진행도 저장의 완료 처리와 동일한 방식으로 다음 장소를 추천한다.
+5. 진행도의 `mission_status`를 즉시 `COMPLETED`로 변경하고 `completed_at`을 현재 시각으로 저장한다.
+6. 이번 요청에서 실제 지급한 보상에 해당하는 지급 여부 컬럼을 갱신한다.
+7. 상태 변경과 보상 지급을 하나의 트랜잭션으로 저장한 뒤 응답을 반환한다.
+
+## 3. 진행도 완료 처리
+
+중단 요청이 유효하면 남은 퀴즈 수와 관계없이 진행도를 즉시 완료 처리한다.
+
+- `mission_status`: `COMPLETED`로 변경
+- `completed_at`: 중단 처리 시각으로 저장
+- `current_quiz_index`: 기존 값을 유지
+- `correct_number`: 기존 값을 유지
+
+중단 API는 `quizIndex`와 `isCorrect`를 받지 않는다. 따라서 퀴즈 인덱스와 정답 수를 증가시키지 않으며, DB에 이미 반영된 진행 결과만 사용한다.
+
+## 4. 보상 지급
+
+보상 지급 방식은 문화 미션 진행도 저장 API의 완료 처리와 동일하다. 별도의 중단 전용 보상 계산을 만들지 않고 `app/culture_mission/reward_granter.py`의 `grant_culture_mission_reward()`를 동일하게 사용한다.
+
+- 지급 개수는 DB에 저장된 현재 진행도의 `correct_number`를 기준으로 계산한다.
+- 정답 1개당 보상 아이템 1개를 지급한다.
+- 지급 순서는 AR 캐릭터, 포인트, 쿠폰 순서이다.
+- 같은 사용자와 같은 문화 미션의 모든 진행도 이력을 조회하여 이미 한 번이라도 지급된 보상 유형은 제외한다.
+- 중복 지급 여부는 모든 진행도의 `ar_character_reward_granted`, `point_reward_granted`, `coupon_reward_granted`를 기준으로 판단한다.
+- 해당 문화 미션의 `reward_detail`에 존재하지 않는 보상 유형은 지급 대상에서 제외한다.
+- 실제 지급 개수는 `min(correct_number, 아직 지급되지 않은 보상 개수)`이다.
+- 이번 요청에서 실제 지급한 보상에 대해서만 현재 진행도의 지급 여부 컬럼을 `true`로 변경한다.
+
+`correct_number`가 `0`이거나 지급 가능한 보상이 남아 있지 않아도 중단 처리는 정상 완료한다. 이 경우 `reward`는 객체로 반환하되 내부의 `arCharacter`, `point`, `coupon`을 모두 `null`로 반환한다.
+
+보상 지급과 진행도 완료 처리는 하나의 트랜잭션으로 처리한다. 보상 지급 중 오류가 발생하면 `mission_status` 변경을 포함한 중단 처리 전체를 롤백한다.
+
+## 5. 다음 장소 추천
+
+다음 장소 추천 방식은 문화 미션 진행도 저장 API의 완료 처리와 동일하다. 동일한 추천 함수와 거리 계산 함수를 사용한다.
+
+- 사용자 위치는 Query의 `latitude`, `longitude`를 사용한다.
+- `distanceMeter`는 `app/common/distance.py`의 `calculate_distance_meter()`로 계산한다.
+- 중단은 미션 완료로 처리되므로 `nextLocation`은 항상 객체로 반환한다.
+- 추천 장소에 연결된 미션이 없으면 `nextLocation.mission`은 `null`로 반환한다.
+- TourAPI 조회 실패 또는 이미지가 없는 경우 `nextLocation.locationImageUrl`만 `null`로 반환하고 중단 처리는 정상 완료한다.
+
+## 6. 응답 데이터 구성
+
+- `missionProgressStatus`: 항상 `COMPLETED`
+- `quizCount`: `CULTURE_MISSION.quiz_total_count`
+- `correctNumber`: 중단 시점에 진행도에 저장된 `correct_number`
+- `nextLocation`: 거리 정보를 포함한 다음 장소 추천 결과 객체
+- `reward`: 이번 중단 요청에서 실제 지급된 보상 정보. 지급된 보상이 없으면 내부 필드가 모두 `null`인 객체
+
+중단 응답에는 `currentQuizNumber`, `rewardDetail`, 보상 지급 여부 컬럼을 포함하지 않는다.
+
+## 7. 오류 응답
+
+### 400 `INVALID_REQUEST`
+
+요청 Path 또는 Query의 형식이나 값 자체가 유효하지 않은 경우 반환한다.
+
+- `cultureMissionProgressId`가 정수가 아니거나 `1`보다 작은 경우
+- `latitude` 또는 `longitude`가 누락되거나 숫자가 아닌 경우
+- `latitude`가 `-90~90` 범위를 벗어난 경우
+- `longitude`가 `-180~180` 범위를 벗어난 경우
+
+```json
+{
+  "code": "INVALID_REQUEST"
+}
+```
+
+### 404 `CULTURE_MISSION_PROGRESS_NOT_FOUND`
+
+요청한 진행도를 현재 사용자의 진행 중인 문화 미션 진행도로 사용할 수 없는 경우 반환한다.
+
+- `cultureMissionProgressId`에 해당하는 진행도가 없는 경우
+- 해당 진행도가 다른 사용자의 진행도인 경우
+- 해당 진행도가 이미 `COMPLETED` 상태인 경우
+
+이미 완료된 진행도도 외부에 존재 여부나 소유권을 구분해서 노출하지 않고 동일하게 `404 CULTURE_MISSION_PROGRESS_NOT_FOUND`로 처리한다. 별도의 `CULTURE_MISSION_ALREADY_COMPLETED` 오류는 사용하지 않는다.
+
+```json
+{
+  "code": "CULTURE_MISSION_PROGRESS_NOT_FOUND"
+}
+```

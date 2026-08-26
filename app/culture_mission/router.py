@@ -15,6 +15,7 @@ from app.culture_mission.schemas import (
     CultureMissionProgressSaveRequest,
     CultureMissionProgressSaveResponse,
     CultureMissionStartResponse,
+    CultureMissionStopResponse,
 )
 
 
@@ -100,6 +101,38 @@ def save_culture_mission_progress(
         current_user_id=current_user_id,
         culture_mission_progress_id=culture_mission_progress_id,
         request=request,
+        latitude=latitude,
+        longitude=longitude,
+    )
+
+
+@router.patch(
+    "/{culture_mission_progress_id}/progress/stop",
+    summary="문화 미션 중단",
+    status_code=status.HTTP_200_OK,
+    response_model=CultureMissionStopResponse,
+    response_model_by_alias=True,
+    responses={
+        status.HTTP_404_NOT_FOUND: _error_response(
+            "진행 중인 문화 미션 진행도를 찾을 수 없음",
+            service.CULTURE_MISSION_PROGRESS_NOT_FOUND,
+        ),
+    },
+)
+def stop_culture_mission_progress(
+    db: Annotated[Session, Depends(get_db)],
+    current_user_id: Annotated[int, Depends(get_current_user_id)],
+    culture_mission_progress_id: Annotated[
+        int, Path(ge=1, description="중단할 CULTURE_MISSION_PROGRESS.id")
+    ],
+    latitude: Annotated[float, Query(ge=-90, le=90, description="사용자 현재 위치의 위도")],
+    longitude: Annotated[float, Query(ge=-180, le=180, description="사용자 현재 위치의 경도")],
+) -> CultureMissionStopResponse:
+    """PATCH /api/v1/culture-missions/{cultureMissionProgressId}/progress/stop - 문화 미션 중단."""
+    return service.stop_culture_mission_progress(
+        db=db,
+        current_user_id=current_user_id,
+        culture_mission_progress_id=culture_mission_progress_id,
         latitude=latitude,
         longitude=longitude,
     )

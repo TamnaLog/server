@@ -315,3 +315,131 @@ Status Code : 409
   "code": "CULTURE_MISSION_QUIZ_INDEX_MISMATCH"
 }
 ```
+
+
+
+## 문화 미션 중단
+- http 메서드: patch
+- domain: culture-mission
+- endpoint: /api/v1/culture-missions/{cultureMissionProgressId}/progress/stop
+
+### API 설명
+
+사용자가 문화 미션을 끝까지 풀지 않고 중단할 때 호출한다.
+
+Path로 전달받은 `cultureMissionProgressId`를 사용하여 로그인한 사용자의 진행 중인 문화 미션 진행도를 조회한다. 진행 중인 문화 미션 진행도가 있으면 진행도 상태를 즉시 `COMPLETED`로 변경한다.
+
+중단한 문화 미션도 완료한 문화 미션처럼 취급한다. 따라서 중단 시점까지의 `correctNumber`를 기준으로 보상을 지급하고, 다음 추천 장소 정보를 함께 반환한다.
+
+보상 지급 로직은 문화 미션 진행도 저장 API의 완료 처리와 동일하다. 같은 사용자와 같은 문화 미션의 전체 진행도 이력을 보고 이미 지급된 보상 항목은 제외하며, AR 캐릭터, 포인트, 쿠폰 순서로 정답 1개당 보상 항목 1개를 지급한다. 남은 보상보다 더 많이 지급하지 않는다.
+
+`nextLocation`은 중단 완료 응답에서 항상 객체로 반환한다.
+
+---
+
+### 요청 Query
+
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `latitude` | number | O | 사용자 현재 위치의 위도. `-90` 이상 `90` 이하 |
+| `longitude` | number | O | 사용자 현재 위치의 경도. `-180` 이상 `180` 이하 |
+
+---
+
+### 요청 Path
+
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `cultureMissionProgressId` | number | O | 중단할 문화 미션 진행도 id. `CULTURE_MISSION_PROGRESS.id` |
+
+요청 예시
+
+```
+PATCH /api/v1/culture-missions/31/progress/stop?latitude=33.5572&longitude=126.7591
+```
+
+---
+
+### 요청 Body
+
+없음
+
+---
+
+### 정상 응답 데이터
+
+Status Code : 200
+
+문화 미션을 정상적으로 중단하고 완료 처리한 경우
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `missionProgressStatus` | string | 문화 미션 진행 상태. `COMPLETED` |
+| `quizCount` | number | 문화 미션의 전체 문제 수 |
+| `correctNumber` | number | 중단 시점까지 맞힌 문제 수 |
+| `nextLocation` | object | 다음 추천 장소 정보. 중단 완료 응답에서는 항상 객체로 반환 |
+| `nextLocation.id` | number | 다음 장소 id |
+| `nextLocation.locationTitle` | string | 다음 장소명 |
+| `nextLocation.locationImageUrl` | string | null | 다음 장소 이미지 URL. TourAPI에서 조회하지 못하면 `null` |
+| `nextLocation.distanceMeter` | number | 사용자 위치에서 다음 장소까지의 직선거리(m) |
+| `nextLocation.mission` | object | null | 다음 장소에서 수행할 미션. 연결된 미션이 없으면 `null` |
+| `nextLocation.mission.id` | number | 다음 미션 id |
+| `nextLocation.mission.missionType` | string | 다음 미션 유형. `CULTURE | COOPERATIVE | TREASURE` |
+| `reward` | object | 이번 중단 요청으로 실제 지급된 보상 정보. 중단은 완료 처리이므로 객체로 반환 |
+| `reward.arCharacter` | object | null | 이번 요청으로 지급된 AR 캐릭터. 지급되지 않았으면 `null` |
+| `reward.arCharacter.id` | number | AR 캐릭터 id |
+| `reward.arCharacter.name` | string | AR 캐릭터 이름 |
+| `reward.arCharacter.imageUrl` | string | AR 캐릭터 이미지 URL |
+| `reward.point` | number | null | 이번 요청으로 지급된 포인트. 지급되지 않았으면 `null` |
+| `reward.coupon` | object | null | 이번 요청으로 지급된 쿠폰. 지급되지 않았으면 `null` |
+| `reward.coupon.couponLocation` | string | 쿠폰 사용처 |
+| `reward.coupon.couponPrice` | number | 쿠폰 금액 |
+
+```json
+{
+  "missionProgressStatus": "COMPLETED",
+  "quizCount": 3,
+  "correctNumber": 1,
+  "nextLocation": {
+    "id": 39,
+    "locationTitle": "한담 해안 산책로",
+    "locationImageUrl": "<https://example.com/locations/handam.jpg>",
+    "distanceMeter": 4200,
+    "mission": {
+      "id": 342,
+      "missionType": "TREASURE"
+    }
+  },
+  "reward": {
+    "arCharacter": {
+      "id": 7,
+      "name": "돌담이",
+      "imageUrl": "<https://example.com/characters/stone-spirit.png>"
+    },
+    "point": null,
+    "coupon": null
+  }
+}
+```
+
+이번 중단 요청으로 지급되지 않은 보상 항목은 `null`로 반환한다. 예를 들어 이미 AR 캐릭터를 지급받은 상태에서 정답 1개로 중단하면 `reward.arCharacter`는 `null`, `reward.point`는 지급 포인트, `reward.coupon`은 `null`이 될 수 있다.
+
+다음 장소에 연결된 미션이 없으면 `nextLocation.mission`은 `null`로 반환한다.
+
+---
+
+### 오류 응답 데이터
+
+Status Code : 404
+
+`cultureMissionProgressId`에 해당하는 로그인한 사용자의 `IN_PROGRESS` 문화 미션 진행도가 존재하지 않는 경우
+
+- 진행도 id에 해당하는 데이터가 없는 경우
+- 해당 진행도가 다른 사용자의 진행도인 경우
+- 해당 진행도가 이미 `COMPLETED` 상태인 경우
+
+```json
+{
+  "code": "CULTURE_MISSION_PROGRESS_NOT_FOUND"
+}
+```

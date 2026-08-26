@@ -19,6 +19,7 @@ from app.culture_mission.schemas import (
     CultureMissionProgressSaveRequest,
     CultureMissionProgressSaveResponse,
     CultureMissionStartResponse,
+    CultureMissionStopResponse,
     QuizDetailResponse,
 )
 
@@ -194,6 +195,46 @@ def save_culture_mission_progress(
         mission_progress_status=MissionStatus(progress.mission_status),
         quiz_count=culture_mission.quiz_total_count,
         current_quiz_number=progress.current_quiz_index,
+        correct_number=progress.correct_number,
+        next_location=recommended_location,
+        reward=reward,
+    )
+
+
+# ---------------------------------------------------------------------
+# 진행도 중단
+# ---------------------------------------------------------------------
+
+
+def stop_culture_mission_progress(
+    db: Session,
+    current_user_id: int,
+    culture_mission_progress_id: int,
+    latitude: float,
+    longitude: float,
+) -> CultureMissionStopResponse:
+    """문화 미션 중단.
+
+    남은 퀴즈와 관계없이 진행도를 즉시 완료 처리한다. 중단은 실패가 아니라 완료로 취급하므로,
+    저장된 정답 수를 기준으로 진행도 저장의 완료 처리와 같은 방식으로 보상을 지급하고
+    다음 장소를 추천한다.
+
+    퀴즈 번호와 정답 수는 요청으로 받지 않으므로 DB에 이미 반영된 값을 그대로 사용한다.
+    """
+    progress = _get_in_progress_by_id(db, current_user_id, culture_mission_progress_id)
+    culture_mission = _get_culture_mission(db, progress.culture_mission_id)
+
+    progress.mission_status = MissionStatus.COMPLETED.value
+    progress.completed_at = now_kst()
+    reward = reward_granter.grant_culture_mission_reward(db, progress, culture_mission)
+    recommended_location = _recommend_next_location(db, latitude, longitude)
+
+    db.commit()
+    db.refresh(progress)
+
+    return CultureMissionStopResponse(
+        mission_progress_status=MissionStatus(progress.mission_status),
+        quiz_count=culture_mission.quiz_total_count,
         correct_number=progress.correct_number,
         next_location=recommended_location,
         reward=reward,

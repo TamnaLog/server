@@ -6,6 +6,7 @@
 | --- | --- |
 | `POST /api/v1/culture-missions/{cultureMissionId}/progress` (문화 미션 시작/이어하기) | `app/culture_mission/tests/test_start_culture_mission.py` |
 | `PATCH /api/v1/culture-missions/{cultureMissionProgressId}/progress` (문화 미션 진행도 저장) | `app/culture_mission/tests/test_save_culture_mission_progress.py` |
+| `PATCH /api/v1/culture-missions/{cultureMissionProgressId}/progress/stop` (문화 미션 중단) | `app/culture_mission/tests/test_stop_culture_mission_progress.py` |
 
 ## 시작/이어하기 테스트 의도
 
@@ -140,6 +141,63 @@
 - `isCorrect` 누락·boolean 아님
 - 진행도 id가 0 이하이거나 정수가 아님
 
+## 중단 테스트 의도
+
+중단은 **실패가 아니라 완료**다. 그래서 "그만두면 아무 일도 없어야 한다"가 아니라
+**진행도 저장의 완료 처리와 같은 결과가 나오는지**를 확인하는 게 핵심이다.
+
+진행도 저장과 다른 점은 두 가지뿐이다.
+
+- 요청으로 `quizIndex` / `isCorrect` 를 받지 않는다. 그래서 **퀴즈 번호와 정답 수를 건드리면 안 된다.**
+  (DB에 이미 저장된 값만 사용한다)
+- 응답에 `currentQuizNumber` 가 없고, `nextLocation` 과 `reward` 는 **항상 객체**다.
+  지급된 보상이 없으면 `reward` 를 `null` 로 두는 게 아니라 내부 항목 3개가 모두 `null` 인 객체다.
+
+보상 계산은 진행도 저장과 같은 모듈(`app/culture_mission/reward_granter.py`)을 쓰므로
+계산 규칙 전체를 다시 검증하지는 않고, **저장된 정답 수를 기준으로 지급되는지**와
+**과거 이력의 지급분이 제외되는지**를 중심으로 본다.
+
+중복 요청 방어도 같은 맥락이다. 이미 완료된 진행도로 중단을 다시 요청해도
+404로 막히고 보상이 두 번 나가지 않아야 한다.
+
+### 주요 검증 항목
+
+#### 1. 중단 처리
+
+- 응답 전체가 명세와 일치한다. (`missionProgressStatus`, `quizCount`, `correctNumber`,
+  `nextLocation`, `reward` / camelCase 확인) 응답에 `currentQuizNumber` 는 없다.
+- `mission_status` 가 `COMPLETED` 로 바뀌고 `completed_at` 이 기록된다.
+- **`current_quiz_index` 와 `correct_number` 는 그대로**다. (중단이 진행 결과를 바꾸면 안 된다)
+- 첫 퀴즈를 풀기 전(정답 0개)에 중단해도 완료로 처리한다.
+
+#### 2. 보상 지급
+
+- DB에 저장된 정답 수만큼 AR 캐릭터 → 포인트 → 쿠폰 순서로 지급하고,
+  지급한 항목만 진행도의 지급 여부 컬럼이 `true` 로 저장된다.
+- 정답이 0개면 아무것도 지급하지 않고 `reward` 항목 3개가 모두 `null` 이다.
+- 같은 미션의 과거 진행도에서 이미 지급된 항목은 제외한다.
+- 남은 보상보다 정답이 많아도 남은 보상만 지급한다.
+- 보상 지급 중 오류가 나면 **완료 처리(상태 변경)도 저장되지 않는다.** (한 트랜잭션인지 확인)
+
+#### 3. 다음 장소 추천
+
+- 연결된 미션이 있으면 **공통 `MISSION.id` 가 아니라 세부 미션 id** 와 유형을 반환한다.
+- 이미지 조회에 실패하면 `locationImageUrl` 만 `null` 이고 중단 처리는 정상 완료한다.
+- 추천할 장소 데이터가 하나도 없으면 중단 응답을 만들지 않고 **500 `INTERNAL_SERVER_ERROR`**,
+  상태 변경도 저장되지 않는다.
+
+#### 4. 404 `CULTURE_MISSION_PROGRESS_NOT_FOUND`
+
+- 진행도가 없는 경우
+- **다른 사용자의 진행도**인 경우 (남의 미션을 끝내면 안 된다)
+- **이미 완료된 진행도**인 경우. 이때 보상이 다시 지급되지 않는 것도 함께 확인한다.
+
+#### 5. 400 `INVALID_REQUEST`
+
+- 위치(`latitude` / `longitude`) 누락·범위 초과·숫자 아님
+- 진행도 id가 0 이하이거나 정수가 아님
+- 이 경우 진행도 상태가 그대로인지도 확인한다.
+
 ## 실행 방법
 
 ```bash
@@ -155,10 +213,11 @@ pytest app/culture_mission
 # 특정 테스트만
 pytest app/culture_mission/tests/test_start_culture_mission.py -k 재도전
 pytest app/culture_mission/tests/test_save_culture_mission_progress.py -k 마지막
+pytest app/culture_mission/tests/test_stop_culture_mission_progress.py -k 중단
 ```
 
 DB는 SQLite 인메모리를 사용하므로 MySQL이 떠 있지 않아도 실행된다.
 공통 픽스처(`client`, `db_session`)는 루트 `conftest.py`에 있고,
 캐릭터/공통 미션/문화 미션/사용자 목업 데이터는 각 테스트의 `culture_mission_data` 픽스처에서 만든다.
 진행 이력은 테스트마다 조합이 달라서 `_add_progress()` 헬퍼로 각 테스트에서 직접 만든다.
-진행도 저장 테스트는 `progress_data` 픽스처로 미션/장소를 만들고, TourAPI 호출은 픽스처로 막는다.
+진행도 저장/중단 테스트는 `progress_data` 픽스처로 미션/장소를 만들고, TourAPI 호출은 픽스처로 막는다.

@@ -17,6 +17,7 @@ __all__ = [
     "CultureMissionProgressSaveRequest",
     "CultureMissionProgressSaveResponse",
     "CultureMissionStartResponse",
+    "CultureMissionStopResponse",
     "GrantedRewardResponse",
     "MissionStatus",
     "MissionType",
@@ -82,3 +83,18 @@ class CultureMissionProgressSaveResponse(CamelModel):
     correct_number: int
     next_location: NextLocationResponse | None = None
     reward: GrantedRewardResponse | None = None
+
+
+class CultureMissionStopResponse(CamelModel):
+    """PATCH /api/v1/culture-missions/{cultureMissionProgressId}/progress/stop 정상 응답.
+
+    중단은 완료 처리이므로 `mission_progress_status` 는 항상 `COMPLETED` 이고
+    `next_location` 과 `reward` 는 항상 객체다. (지급된 보상이 없으면 `reward` 의 항목이 모두 `null`)
+    남은 퀴즈와 무관하게 끝내므로 `current_quiz_number` 는 응답에 넣지 않는다.
+    """
+
+    mission_progress_status: MissionStatus
+    quiz_count: int
+    correct_number: int
+    next_location: NextLocationResponse
+    reward: GrantedRewardResponse
