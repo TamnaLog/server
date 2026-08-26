@@ -11,13 +11,11 @@
 
 완료한 진행도가 있더라도 같은 문화 미션을 다시 시작할 수 있다. 이 경우 기존 완료 기록은 유지하고 새로운 진행도를 생성하여 Status Code `201`로 반환한다.
 
-`isRewarded`는 사용자가 해당 미션의 보상을 이미 받은 적이 있는지를 나타낸다. 동일한 사용자와 문화 미션에 `COMPLETED` 상태의 이전 진행도가 하나 이상 있으면 `true`, 없으면 `false`를 반환한다. 문화 미션의 최초 완료 처리와 보상 지급은 하나의 트랜잭션으로 처리하므로 완료된 진행도는 보상이 지급된 기록으로 간주한다. 재도전 완료 시에도 백엔드는 이전 완료 기록을 확인하여 보상을 중복 지급하지 않는다.
-
 `currentQuizNumber`에는 사용자가 다음에 풀 퀴즈 번호를 반환한다. 예를 들어 1번 퀴즈까지 풀었다면 `2`를 반환한다.
 
 프론트에서 이후 진행도 저장 요청에 사용할 수 있도록 현재 진행 중인 `CULTURE_MISSION_PROGRESS.id`를 `cultureMissionProgressId`로 반환한다. 신규 진행도를 생성한 경우에는 새로 생성된 진행도 id를, 기존 미션을 이어서 하는 경우에는 조회된 진행도 id를 반환한다.
 
-프론트에서 문화 미션 화면을 구성할 수 있도록 전체 문제 정보와 각 문제의 해설, 보상 정보를 함께 반환한다. 문제의 정답은 주관식과 객관식 모두 문자열로 반환한다.
+프론트에서 문화 미션 화면을 구성할 수 있도록 전체 문제 정보와 각 문제의 해설을 함께 반환한다. 문제의 정답은 주관식과 객관식 모두 문자열로 반환한다.
 
 ---
 
@@ -62,7 +60,6 @@ Status Code : 200
 | `cultureMissionProgressId` | number | 현재 진행 중인 문화 미션 진행도 id. `CULTURE_MISSION_PROGRESS.id` |
 | `quizCount` | number | 문화 미션의 전체 문제 수 |
 | `currentQuizNumber` | number | 사용자가 다음에 풀 퀴즈 번호. 신규 진행도는 `1` |
-| `isRewarded` | boolean | 동일한 사용자와 문화 미션에 보상 지급을 완료한 이전 `COMPLETED` 진행도가 있는지 여부 |
 | `quizDetails` | object[] | `quizIndex` 오름차순으로 정렬된 전체 문제 목록 |
 | `quizDetails[].quizIndex` | number | 문제 번호 |
 | `quizDetails[].imgUrl` | string \| null | 문제 이미지 URL. 이미지가 없으면 `null` |
@@ -71,15 +68,6 @@ Status Code : 200
 | `quizDetails[].answer` | string | 문제 정답. 객관식도 선택지 번호가 아닌 정답 문자열 |
 | `quizDetails[].hint` | string | 문제 힌트 |
 | `quizDetails[].explanation` | string | 문제 정답 해설 |
-| `rewardDetail` | object | 미션 완료 보상 정보 |
-| `rewardDetail.arCharacter` | object \| null | 보상으로 획득할 AR 캐릭터. 캐릭터 보상이 없으면 `null` |
-| `rewardDetail.arCharacter.id` | number | AR 캐릭터 id |
-| `rewardDetail.arCharacter.name` | string | AR 캐릭터 이름 |
-| `rewardDetail.arCharacter.imageUrl` | string | AR 캐릭터 이미지 URL |
-| `rewardDetail.point` | number | 보상 포인트. 포인트 보상이 없으면 `0` |
-| `rewardDetail.coupon` | object \| null | 쿠폰 보상 정보. 쿠폰 보상이 없으면 `null` |
-| `rewardDetail.coupon.couponLocation` | string | 쿠폰 사용처 |
-| `rewardDetail.coupon.couponPrice` | number | 쿠폰 금액 |
 
 
 ```json
@@ -87,7 +75,6 @@ Status Code : 200
   "cultureMissionProgressId": 1,
   "quizCount": 3,
   "currentQuizNumber": 1,
-  "isRewarded": true,
   "quizDetails": [
     {
       "quizIndex": 1,
@@ -116,19 +103,7 @@ Status Code : 200
       "hint": "수량이 넉넉하다는 의미로 사용해요.",
       "explanation": "하영은 제주 방언으로 많이라는 뜻입니다."
     }
-  ],
-  "rewardDetail": {
-    "arCharacter": {
-      "id": 7,
-      "name": "돌담이",
-      "imageUrl": "<https://example.com/characters/stone-spirit.png>"
-    },
-    "point": 100,
-    "coupon": {
-      "couponLocation": "종화네 막국수",
-      "couponPrice": 3000
-    }
-  }
+  ]
 }
 ```
 
@@ -167,9 +142,11 @@ Path로 전달받은 `cultureMissionProgressId`를 사용하여 로그인한 사
 
 Query로 전달받은 사용자의 위도와 경도는 미션 완료 후 추천된 다음 장소까지의 직선거리를 계산하는 데 사용한다. 거리는 미터 단위의 `distanceMeter`로 반환한다. 현재 다음 장소는 랜덤으로 추천하므로 사용자 좌표는 추천 장소 선정 기준으로 사용하지 않는다.
 
-문화 미션이 아직 진행 중이면 `nextLocation`은 `null`로 반환한다.
+문화 미션이 아직 진행 중이면 `nextLocation`과 `reward`는 `null`로 반환한다.
 
-마지막 퀴즈를 제출해 미션을 완료하면 보상을 지급한다. 포인트는 `USER.point`에 누적하고 AR 캐릭터는 획득 기록으로 저장한다. 쿠폰은 저장할 테이블이 없어 기록하지 않는다. 과거에 같은 문화 미션을 완료한 적이 있으면 보상을 다시 지급하지 않는다. 보상 지급 결과는 이 API의 응답에 포함하지 않는다.
+마지막 퀴즈를 제출해 미션을 완료하면 정답 개수에 따라 보상을 지급한다. 보상은 AR 캐릭터, 포인트, 쿠폰 순서로 지급하며, 같은 사용자와 같은 문화 미션에서는 각 보상 항목을 한 번만 지급할 수 있다. 이미 과거 진행도에서 지급된 보상 항목은 다시 지급하지 않는다.
+
+완료 응답의 `reward`에는 이번 요청으로 실제 지급된 보상만 포함한다. 미션을 완료했더라도 지급할 보상이 없거나 정답 개수보다 남은 보상 수가 적으면 각 보상 항목은 `null`일 수 있다.
 
 `nextLocation.locationImageUrl`은 `LOCATION.content_id`로 TourAPI를 조회해서 채운다. 이미지 URL은 부가 정보이므로, 인증키 미설정·통신 실패·이미지 없음 등으로 조회하지 못하면 미션 완료 응답 전체를 실패시키지 않고 `null`로 반환한다.
 
@@ -226,14 +203,23 @@ Status Code : 200
 | `quizCount` | number | 문화 미션의 전체 문제 수 |
 | `currentQuizNumber` | number | 현재 진행도에 저장된 퀴즈 번호 |
 | `correctNumber` | number | 현재까지 맞힌 문제 수 |
-| `nextLocation` | object | null | 다음 추천 장소 정보. 진행 중이면 `null` |
+| `nextLocation` | object \| null | 다음 추천 장소 정보. 진행 중이면 `null`, 완료되면 반드시 객체로 반환 |
 | `nextLocation.id` | number | 다음 장소 id |
 | `nextLocation.locationTitle` | string | 다음 장소명 |
 | `nextLocation.locationImageUrl` | string \| null | 다음 장소 이미지 URL. TourAPI 에서 조회하지 못하면 `null` |
 | `nextLocation.distanceMeter` | number | 사용자 위치에서 다음 장소까지의 직선거리(m) |
 | `nextLocation.mission` | object | null | 다음 장소에서 수행할 미션. 연결된 미션이 없으면 `null` |
 | `nextLocation.mission.id` | number | 다음 미션 id |
-| `nextLocation.mission.missionType` | string | 다음 미션 유형. `CULTURE | COOPERATIVE | TREASURE` |
+| `nextLocation.mission.missionType` | string | 다음 미션 유형. `CULTURE \| COOPERATIVE \| TREASURE` |
+| `reward` | object \| null | 이번 요청으로 실제 지급된 보상 정보. 진행 중이면 `null` |
+| `reward.arCharacter` | object \| null | 이번 요청으로 지급된 AR 캐릭터. 지급되지 않았으면 `null` |
+| `reward.arCharacter.id` | number | AR 캐릭터 id |
+| `reward.arCharacter.name` | string | AR 캐릭터 이름 |
+| `reward.arCharacter.imageUrl` | string | AR 캐릭터 이미지 URL |
+| `reward.point` | number \| null | 이번 요청으로 지급된 포인트. 지급되지 않았으면 `null` |
+| `reward.coupon` | object \| null | 이번 요청으로 지급된 쿠폰. 지급되지 않았으면 `null` |
+| `reward.coupon.couponLocation` | string | 쿠폰 사용처 |
+| `reward.coupon.couponPrice` | number | 쿠폰 금액 |
 
 ```json
 {
@@ -241,11 +227,14 @@ Status Code : 200
   "quizCount": 3,
   "currentQuizNumber": 3,
   "correctNumber": 2,
-  "nextLocation": null
+  "nextLocation": null,
+  "reward": null
 }
 ```
 
 마지막 퀴즈를 제출하여 문화 미션을 완료하면 `missionProgressStatus`는 `COMPLETED`로 반환한다. 이때 `current_quiz_index`는 증가시키지 않으며 `currentQuizNumber`에는 마지막 퀴즈 번호를 그대로 반환한다.
+
+아래 예시는 이번 완료 요청에서 정답 3개를 반영했고, 과거에 지급된 보상이 없어 AR 캐릭터, 포인트, 쿠폰이 모두 지급된 경우이다.
 
 ```json
 {
@@ -262,6 +251,41 @@ Status Code : 200
       "id": 342,
       "missionType": "TREASURE"
     }
+  },
+  "reward": {
+    "arCharacter": {
+      "id": 7,
+      "name": "돌담이",
+      "imageUrl": "<https://example.com/characters/stone-spirit.png>"
+    },
+    "point": 100,
+    "coupon": {
+      "couponLocation": "종화네 막국수",
+      "couponPrice": 3000
+    }
+  }
+}
+```
+
+이번 완료 요청에서 포인트만 지급된 경우처럼 지급되지 않은 보상 항목은 `null`로 반환한다.
+
+```json
+{
+  "missionProgressStatus": "COMPLETED",
+  "quizCount": 3,
+  "currentQuizNumber": 3,
+  "correctNumber": 1,
+  "nextLocation": {
+    "id": 39,
+    "locationTitle": "한담 해안 산책로",
+    "locationImageUrl": "<https://example.com/locations/handam.jpg>",
+    "distanceMeter": 4200,
+    "mission": null
+  },
+  "reward": {
+    "arCharacter": null,
+    "point": 100,
+    "coupon": null
   }
 }
 ```

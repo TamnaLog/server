@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from app.common.next_location import NextLocationMissionResponse, NextLocationResponse
-from app.common.rewards import RewardDetailResponse
+from app.common.rewards import GrantedRewardResponse
 from app.culture_mission.models import MissionStatus
 from app.mission.schemas import MissionType
 
@@ -17,12 +17,12 @@ __all__ = [
     "CultureMissionProgressSaveRequest",
     "CultureMissionProgressSaveResponse",
     "CultureMissionStartResponse",
+    "GrantedRewardResponse",
     "MissionStatus",
     "MissionType",
     "NextLocationMissionResponse",
     "NextLocationResponse",
     "QuizDetailResponse",
-    "RewardDetailResponse",
 ]
 
 
@@ -56,9 +56,7 @@ class CultureMissionStartResponse(CamelModel):
     culture_mission_progress_id: int
     quiz_count: int
     current_quiz_number: int
-    is_rewarded: bool
     quiz_details: list[QuizDetailResponse]
-    reward_detail: RewardDetailResponse
 
 
 class CultureMissionProgressSaveRequest(CamelModel):
@@ -74,7 +72,8 @@ class CultureMissionProgressSaveRequest(CamelModel):
 class CultureMissionProgressSaveResponse(CamelModel):
     """PATCH /api/v1/culture-missions/{cultureMissionProgressId}/progress 정상 응답.
 
-    미션이 아직 진행 중이면 `next_location` 은 `null` 이다.
+    미션이 아직 진행 중이면 `next_location` 과 `reward` 는 `null` 이다.
+    완료하면 `next_location` 은 반드시 객체이고, `reward` 에는 이번 요청으로 실제 지급된 보상만 담는다.
     """
 
     mission_progress_status: MissionStatus
@@ -82,3 +81,4 @@ class CultureMissionProgressSaveResponse(CamelModel):
     current_quiz_number: int
     correct_number: int
     next_location: NextLocationResponse | None = None
+    reward: GrantedRewardResponse | None = None

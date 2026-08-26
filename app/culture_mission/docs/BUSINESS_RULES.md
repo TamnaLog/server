@@ -9,24 +9,23 @@
 진행 이력은 상태에 따라 다음 두 종류로 구분한다.
 
 - `IN_PROGRESS`: 현재 이어서 진행할 수 있는 진행도
-- `COMPLETED`: 과거에 미션을 완료하고 보상을 받은 진행도
+- `COMPLETED`: 과거에 미션을 완료한 진행도
 
 ## 2. 처리 순서
 
 1. `cultureMissionId`에 해당하는 `CULTURE_MISSION`을 조회한다.
 2. 문화 미션이 존재하면 현재 사용자의 해당 문화 미션 진행 이력을 조회한다.
-3. `COMPLETED` 진행도의 존재 여부로 `isRewarded`를 결정한다.
-4. `IN_PROGRESS` 진행도가 있으면 기존 진행도를 반환한다.
-5. `IN_PROGRESS` 진행도가 없으면 새로운 진행도를 생성하여 반환한다.
+3. `IN_PROGRESS` 진행도가 있으면 기존 진행도를 반환한다.
+4. `IN_PROGRESS` 진행도가 없으면 새로운 진행도를 생성하여 반환한다.
 
 ## 3. 진행 이력에 따른 분기
 
-| `COMPLETED` 진행도 | `IN_PROGRESS` 진행도 | 처리 | `isRewarded` | Status Code |
-| --- | --- | --- | --- | --- |
-| 없음 | 없음 | 최초 진행도를 새로 생성 | `false` | `201` |
-| 없음 | 있음 | 기존 진행도를 이어서 반환 | `false` | `200` |
-| 있음 | 있음 | 기존 진행도를 이어서 반환 | `true` | `200` |
-| 있음 | 없음 | 재도전 진행도를 새로 생성 | `true` | `201` |
+| `COMPLETED` 진행도 | `IN_PROGRESS` 진행도 | 처리 | Status Code |
+| --- | --- | --- | --- |
+| 없음 | 없음 | 최초 진행도를 새로 생성 | `201` |
+| 없음 | 있음 | 기존 진행도를 이어서 반환 | `200` |
+| 있음 | 있음 | 기존 진행도를 이어서 반환 | `200` |
+| 있음 | 없음 | 재도전 진행도를 새로 생성 | `201` |
 
 ### 3.1 최초 시작
 
@@ -41,7 +40,7 @@
 - `correct_number`: `0`
 - `completed_at`: `null`
 
-새로 생성한 진행도의 id를 `cultureMissionProgressId`로 반환하고, `isRewarded`는 `false`로 반환한다.
+새로 생성한 진행도의 id를 `cultureMissionProgressId`로 반환한다.
 
 ### 3.2 최초 도전 이어하기
 
@@ -51,19 +50,17 @@
 
 - `cultureMissionProgressId`: 기존 `IN_PROGRESS` 진행도의 id
 - `currentQuizNumber`: 기존 진행도의 `current_quiz_index`
-- `isRewarded`: `false`
 
-### 3.3 보상을 받은 미션 이어하기
+### 3.3 완료 이력이 있는 미션 이어하기
 
-`COMPLETED` 진행도와 `IN_PROGRESS` 진행도가 모두 있으면 과거에 보상을 받은 후 다시 도전 중인 상태이다.
+`COMPLETED` 진행도와 `IN_PROGRESS` 진행도가 모두 있으면 과거에 완료한 미션을 다시 도전 중인 상태이다.
 
 새로운 진행도를 생성하지 않고 기존 `IN_PROGRESS` 진행도를 반환한다.
 
 - `cultureMissionProgressId`: 기존 `IN_PROGRESS` 진행도의 id
 - `currentQuizNumber`: 기존 진행도의 `current_quiz_index`
-- `isRewarded`: `true`
 
-### 3.4 보상을 받은 미션 다시 시작하기
+### 3.4 완료 이력이 있는 미션 다시 시작하기
 
 `COMPLETED` 진행도는 있지만 `IN_PROGRESS` 진행도가 없으면 과거에 완료한 미션을 다시 시작하는 것으로 판단한다.
 
@@ -71,7 +68,6 @@
 
 - `cultureMissionProgressId`: 새로 생성된 진행도의 id
 - `currentQuizNumber`: `1`
-- `isRewarded`: `true`
 
 ## 4. 퀴즈 진행 위치
 
@@ -89,32 +85,20 @@ currentQuizNumber = current_quiz_index
 
 따라서 신규 진행도의 `current_quiz_index`와 응답의 `currentQuizNumber`는 모두 `1`이다.
 
-## 5. 보상 여부
-
-`isRewarded`는 현재 진행도의 완료 여부가 아니라, 현재 사용자가 해당 문화 미션을 과거에 한 번이라도 완료하여 보상을 받은 적이 있는지를 나타낸다.
-
-현재 사용자와 문화 미션에 해당하는 `COMPLETED` 진행도가 하나 이상 존재하면 `true`, 하나도 없으면 `false`이다.
-
-서비스 정책상 `COMPLETED` 진행도가 존재하면 해당 문화 미션의 보상을 이미 받은 것으로 간주한다. 다만 문화 미션 진행도 저장 API는 보상을 직접 지급하지 않고 진행도 상태만 `COMPLETED`로 변경한다.
-
-재도전 진행도를 완료하더라도 `isRewarded=true`이면 동일한 미션 보상을 다시 지급하지 않는다.
-
-## 6. 진행도 생성 제한
+## 5. 진행도 생성 제한
 
 동일한 사용자와 동일한 문화 미션에는 이어서 사용할 `IN_PROGRESS` 진행도가 최대 하나만 존재해야 한다.
 
 기존 `IN_PROGRESS` 진행도가 있으면 시작 API를 다시 호출하더라도 새로운 진행도를 만들지 않고 기존 진행도를 반환한다.
 
-## 7. 응답 데이터 구성
+## 6. 응답 데이터 구성
 
 - `cultureMissionProgressId`: 반환 대상인 신규 또는 기존 `IN_PROGRESS` 진행도의 id
 - `quizCount`: `CULTURE_MISSION.quiz_total_count`
 - `currentQuizNumber`: 반환 대상 진행도의 `current_quiz_index`
-- `isRewarded`: `COMPLETED` 진행도 존재 여부
 - `quizDetails`: `CULTURE_MISSION.quiz_detail`을 `quizIndex` 오름차순으로 정렬한 목록
-- `rewardDetail`: `CULTURE_MISSION.reward_detail`과 연결된 AR 캐릭터 정보
 
-## 8. 오류 응답
+## 7. 오류 응답
 
 ### 404 `CULTURE_MISSION_NOT_FOUND`
 
@@ -204,6 +188,7 @@ quizIndex = current_quiz_index
 - `currentQuizNumber`: `1` 증가한 `current_quiz_index`
 - `correctNumber`: 정답 여부를 반영한 `correct_number`
 - `nextLocation`: `null`
+- `reward`: `null`
 
 ### 5.2 완료 처리
 
@@ -221,16 +206,17 @@ quizIndex = current_quiz_index
 - `currentQuizNumber`: 증가시키지 않은 마지막 퀴즈 번호
 - `correctNumber`: 마지막 정답 여부까지 반영한 `correct_number`
 - `nextLocation`: 다음 장소 추천 결과
+- `reward`: 이번 완료 요청으로 실제 지급된 보상 정보
 
-미션을 완료하면 `CULTURE_MISSION.reward_detail`의 보상을 실제 데이터에 반영한다.
+미션을 완료하면 정답 수에 따라 `CULTURE_MISSION.reward_detail`의 보상을 실제 데이터에 반영한다.
 
-보상 지급 로직은 문화 미션 진행도 저장 로직 안에 직접 작성하지 않고 공용 모듈 `app/common/reward_granter.py`의 `grant_mission_reward()`를 사용한다. 보상 형태는 미션 유형과 무관하게 같으므로 협동 미션과 보물찾기 미션도 같은 모듈을 사용한다.
+보상 지급 로직은 문화 미션 진행도 저장 로직 안에 직접 작성하지 않고 별도 모듈 `app/culture_mission/reward_granter.py`의 `grant_culture_mission_reward()`를 사용한다. 지급 순서와 개수 계산은 문화 미션의 정답 수 규칙을 따르므로 도메인 안에 둔다. 보상 응답 형식과 조합 규칙은 미션 유형과 무관하게 같으므로 공용 모듈 `app/common/rewards.py`를 사용한다.
 
 | 보상 | 저장 위치 |
 | --- | --- |
 | 포인트 | `USER.point`에 누적 |
 | AR 캐릭터 | `ACQUIRED_AR_CHARACTER`에 획득 기록 추가 |
-| 쿠폰 | 저장할 테이블이 없어 기록하지 않는다 |
+| 쿠폰 | 별도 보관 테이블이 없으므로 진행도 지급 여부만 기록하고 응답에 쿠폰 정보를 반환 |
 
 `ACQUIRED_AR_CHARACTER.acquired_mission_id`에는 유형별 세부 미션 id가 아니라 연결된 공통 `MISSION.id`를 저장한다.
 
@@ -238,13 +224,45 @@ quizIndex = current_quiz_index
 
 미션 완료 처리와 보상 지급은 하나의 트랜잭션으로 처리한다. 보상 지급 중 오류가 발생하면 완료 처리도 저장되지 않는다.
 
-### 5.3 보상 중복 지급 방지
+### 5.3 보상 지급 순서와 중복 지급 방지
 
-보상은 해당 사용자가 이 문화 미션을 **처음 완료할 때만** 지급한다.
+보상은 같은 사용자와 같은 문화 미션 기준으로 각 보상 항목을 한 번만 지급할 수 있다.
 
-이번 진행도를 완료 처리하기 전에 같은 사용자와 문화 미션의 `COMPLETED` 진행도가 이미 있는지 확인한다. 하나라도 있으면 과거에 보상을 받은 것이므로 재도전을 완료하더라도 보상을 지급하지 않는다.
+문화 미션은 여러 번 재시도할 수 있으므로, 보상 지급 여부는 현재 진행도 하나만 보지 않고 같은 사용자와 같은 문화 미션의 모든 진행도 이력을 기준으로 판단한다.
 
-이 판단은 진행 이력을 아는 문화 미션 도메인에서 하고, `grant_mission_reward()`는 호출되면 지급만 수행한다.
+보상 지급 전 같은 사용자와 같은 문화 미션의 모든 진행도에서 아래 컬럼을 조회한다.
+
+- `ar_character_reward_granted`
+- `point_reward_granted`
+- `coupon_reward_granted`
+
+각 컬럼 중 하나라도 `true`인 이력이 있으면 해당 보상 항목은 이미 지급된 것으로 보고 이번 요청에서 다시 지급하지 않는다.
+
+지급 가능한 보상은 아래 순서로 계산한다.
+
+1. AR 캐릭터
+2. 포인트
+3. 쿠폰
+
+이미 지급된 보상과 `reward_detail`에 존재하지 않는 보상은 지급 후보에서 제외한다.
+
+이번 요청에서 지급할 수 있는 보상 개수는 `correct_number`와 남은 지급 후보 수 중 더 작은 값이다. 즉 정답 1개당 보상 항목 1개를 지급하되, 남은 보상보다 더 많이 지급하지 않는다.
+
+예를 들어 전체 퀴즈 3개 중 첫 완료 시 정답이 1개이면 AR 캐릭터만 지급한다. 이후 같은 문화 미션을 다시 완료했고 정답이 1개이면 과거에 지급된 AR 캐릭터는 제외하고 포인트만 지급한다. 남은 보상이 포인트와 쿠폰 2개뿐인데 정답이 3개이면 포인트와 쿠폰 2개만 지급한다.
+
+이번 요청으로 실제 지급한 보상 항목은 현재 `CULTURE_MISSION_PROGRESS` row의 지급 여부 컬럼을 `true`로 변경한다. 지급하지 않은 항목은 `false`로 둔다.
+
+### 5.4 보상 응답 구성
+
+진행 중인 응답에서는 `reward`를 `null`로 반환한다.
+
+완료 응답에서는 `reward` 객체를 반환하고, 이번 요청으로 실제 지급된 보상만 채운다.
+
+- `reward.arCharacter`: 이번 요청으로 AR 캐릭터를 지급했으면 캐릭터 정보, 아니면 `null`
+- `reward.point`: 이번 요청으로 포인트를 지급했으면 지급 포인트, 아니면 `null`
+- `reward.coupon`: 이번 요청으로 쿠폰을 지급했으면 쿠폰 정보, 아니면 `null`
+
+미션을 완료했더라도 정답 수가 `0`이거나 모든 보상 항목이 이미 지급된 상태이면 `reward` 객체 안의 모든 항목을 `null`로 반환한다.
 
 ## 6. 다음 장소 추천
 
@@ -252,9 +270,9 @@ quizIndex = current_quiz_index
 
 현재는 실제 추천 기준이 정해지지 않았으므로 `LOCATION` 테이블에 존재하는 장소 중 하나를 무작위로 선택한다. 추후 추천 기준이 확정되면 별도 함수 내부의 무작위 선택 로직을 실제 추천 로직으로 교체한다.
 
-진행 중인 응답에서는 장소를 추천하지 않고 `nextLocation`을 `null`로 반환한다. 마지막 퀴즈를 제출하여 미션을 완료한 경우에만 다음 장소를 조회한다.
+진행 중인 응답에서는 장소를 추천하지 않고 `nextLocation`을 `null`로 반환한다. 마지막 퀴즈를 제출하여 미션을 완료한 경우에는 `nextLocation`을 반드시 객체로 반환한다.
 
-추천할 수 있는 장소가 없으면 `nextLocation`은 `null`로 반환한다.
+완료 응답을 만들기 위해 추천 가능한 장소 데이터는 최소 1개 이상 존재해야 한다. 추천 가능한 장소가 없는 상태는 정상 완료 응답으로 처리하지 않는다.
 
 장소 이미지 URL은 외부 API(TourAPI)에 의존하므로 조회 실패를 미션 완료 실패로 취급하지 않는다. 인증키 미설정, 통신 오류, 응답에 이미지가 없는 경우 모두 `locationImageUrl`을 `null`로 반환하고 나머지 응답은 정상으로 처리한다.
 
@@ -309,7 +327,8 @@ distance.calculate_distance_meter(
 - `quizCount`: `CULTURE_MISSION.quiz_total_count`
 - `currentQuizNumber`: 갱신 후 `current_quiz_index`
 - `correctNumber`: 요청의 정답 여부를 반영한 `correct_number`
-- `nextLocation`: 진행 중이면 `null`, 완료하면 거리 정보를 포함한 다음 장소 추천 결과
+- `nextLocation`: 진행 중이면 `null`, 완료하면 거리 정보를 포함한 다음 장소 추천 결과 객체
+- `reward`: 진행 중이면 `null`, 완료하면 이번 요청으로 실제 지급된 보상 정보
 
 ## 10. 오류 응답
 

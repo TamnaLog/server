@@ -9,7 +9,7 @@ from enum import Enum
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
-from app.common.rewards import ArCharacterResponse, CouponResponse, RewardDetailResponse
+from app.common.rewards import ArCharacterResponse, CouponResponse, RemainingRewardResponse
 
 
 __all__ = [
@@ -18,7 +18,7 @@ __all__ = [
     "MissionHomeResponse",
     "MissionStepResponse",
     "MissionType",
-    "RewardDetailResponse",
+    "RemainingRewardResponse",
 ]
 
 
@@ -54,5 +54,5 @@ class MissionHomeResponse(CamelModel):
     mission_type: MissionType
     mission_title: str
     description: str
-    reward_detail: RewardDetailResponse
+    remaining_reward: RemainingRewardResponse
     steps: list[MissionStepResponse]

@@ -224,9 +224,11 @@ VALUES
 
 INSERT INTO `CULTURE_MISSION_PROGRESS`
     (`id`, `culture_mission_id`, `user_id`, `mission_status`,
-     `current_quiz_index`, `correct_number`, `completed_at`)
+     `current_quiz_index`, `correct_number`,
+     `ar_character_reward_granted`, `point_reward_granted`, `coupon_reward_granted`,
+     `completed_at`)
 VALUES
-    (1, 1, 1, 'IN_PROGRESS', 2, 1, NULL);
+    (1, 1, 1, 'IN_PROGRESS', 2, 1, FALSE, FALSE, FALSE, NULL);
 
 
 -- ---------------------------------------------------------------------
@@ -236,9 +238,11 @@ VALUES
 
 INSERT INTO `COOPERATIVE_MISSION_PROGRESS`
     (`id`, `cooperative_mission_id`, `current_step`, `mission_status`,
-     `team_token`, `completed_at`)
+     `team_token`,
+     `ar_character_reward_granted`, `point_reward_granted`, `coupon_reward_granted`,
+     `completed_at`)
 VALUES
-    (1, 1, 2, 'IN_PROGRESS', 'mock-team-token-1', NULL);
+    (1, 1, 2, 'IN_PROGRESS', 'mock-team-token-1', FALSE, FALSE, FALSE, NULL);
 
 INSERT INTO `COOPERATIVE_MISSION_PARTICIPANT`
     (`id`, `cooperative_mission_progress_id`, `participant_type`, `user_id`,
@@ -254,9 +258,11 @@ VALUES
 -- current_step : 1 | 2 | 3 (3 = 완료)
 INSERT INTO `TREASURE_MISSION_PROGRESS`
     (`id`, `treasure_mission_id`, `user_id`, `current_found_item_idx`, `current_step`,
-     `mission_status`, `completed_at`)
+     `mission_status`,
+     `ar_character_reward_granted`, `point_reward_granted`, `coupon_reward_granted`,
+     `completed_at`)
 VALUES
-    (1, 1, 1, '[1, 2]', 2, 'IN_PROGRESS', NULL);
+    (1, 1, 1, '[1, 2]', 2, 'IN_PROGRESS', FALSE, FALSE, FALSE, NULL);
 
 
 -- ---------------------------------------------------------------------

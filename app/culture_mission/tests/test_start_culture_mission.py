@@ -178,7 +178,6 @@ def test_문화_미션을_처음_시작하면_명세의_필드를_모두_반환�
         "cultureMissionProgressId": progresses[0].id,
         "quizCount": 3,
         "currentQuizNumber": 1,
-        "isRewarded": False,
         "quizDetails": [
             {
                 "quizIndex": 1,
@@ -208,15 +207,6 @@ def test_문화_미션을_처음_시작하면_명세의_필드를_모두_반환�
                 "explanation": "하영은 제주 방언으로 많이라는 뜻입니다.",
             },
         ],
-        "rewardDetail": {
-            "arCharacter": {
-                "id": AR_CHARACTER_ID,
-                "name": "돌담이",
-                "imageUrl": CHARACTER_IMG_URL,
-            },
-            "point": 100,
-            "coupon": {"couponLocation": "종화네 막국수", "couponPrice": 3000},
-        },
     }
 
 
@@ -242,7 +232,6 @@ def test_진행_이력이_없으면_진행도를_새로_생성하고_201로_응�
     assert response.status_code == 201
     body = response.json()
     assert body["currentQuizNumber"] == 1
-    assert body["isRewarded"] is False
 
     progresses = _progresses(db_session)
     assert len(progresses) == 1
@@ -267,12 +256,11 @@ def test_진행_중인_기록이_있으면_새로_만들지_않고_200으로_이
     body = response.json()
     assert body["cultureMissionProgressId"] == 1
     assert body["currentQuizNumber"] == 2
-    assert body["isRewarded"] is False
     # 진행도가 새로 생기지 않아야 한다.
     assert len(_progresses(db_session)) == 1
 
 
-def test_완료_기록과_진행_중_기록이_모두_있으면_200에_isRewarded는_true다(
+def test_완료_기록과_진행_중_기록이_모두_있으면_200으로_이어서_반환한다(
     client: TestClient, db_session: Session, culture_mission_data: None
 ) -> None:
     _add_progress(db_session, progress_id=1, status=MissionStatus.COMPLETED, current_quiz_index=4)
@@ -286,11 +274,10 @@ def test_완료_기록과_진행_중_기록이_모두_있으면_200에_isRewarde
     body = response.json()
     assert body["cultureMissionProgressId"] == 2
     assert body["currentQuizNumber"] == 3
-    assert body["isRewarded"] is True
     assert len(_progresses(db_session)) == 2
 
 
-def test_완료_기록만_있으면_재도전_진행도를_새로_만들고_201에_isRewarded는_true다(
+def test_완료_기록만_있으면_재도전_진행도를_새로_만들고_201로_응답한다(
     client: TestClient, db_session: Session, culture_mission_data: None
 ) -> None:
     _add_progress(
@@ -306,7 +293,6 @@ def test_완료_기록만_있으면_재도전_진행도를_새로_만들고_201�
     assert response.status_code == 201
     body = response.json()
     assert body["currentQuizNumber"] == 1
-    assert body["isRewarded"] is True
 
     progresses = _progresses(db_session)
     assert len(progresses) == 2
@@ -362,7 +348,7 @@ def test_다른_사용자의_진행도는_이어받지_않는다(
     assert response.json()["cultureMissionProgressId"] != 1
 
 
-def test_다른_문화_미션의_완료_기록은_isRewarded에_영향을_주지_않는다(
+def test_다른_문화_미션의_완료_기록은_현재_미션_진행도에_영향을_주지_않는다(
     client: TestClient, db_session: Session, culture_mission_data: None
 ) -> None:
     _add_progress(
@@ -375,7 +361,10 @@ def test_다른_문화_미션의_완료_기록은_isRewarded에_영향을_주지
     response = client.post(_endpoint(CULTURE_MISSION_ID))
 
     assert response.status_code == 201
-    assert response.json()["isRewarded"] is False
+    # 다른 미션의 기록을 이어받지 않고, 요청한 미션의 진행도를 새로 만든다.
+    progresses = _progresses(db_session)
+    assert len(progresses) == 1
+    assert progresses[0].id == response.json()["cultureMissionProgressId"]
 
 
 # ---------------------------------------------------------------------

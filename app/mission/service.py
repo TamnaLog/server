@@ -15,6 +15,7 @@ from app.common import rewards
 from app.cooperative_mission.models import CooperativeMission
 from app.core.errors import NotFoundError
 from app.culture_mission.models import CultureMission
+from app.mission import reward_history
 from app.mission.schemas import MissionHomeResponse, MissionStepResponse, MissionType
 from app.treasure_mission.models import TreasureMission
 
@@ -31,12 +32,15 @@ _DETAIL_MISSION_MODELS: dict[MissionType, type[CultureMission | CooperativeMissi
 
 
 def get_mission_home(
-    db: Session, mission_type: MissionType, mission_id: int
+    db: Session, mission_type: MissionType, mission_id: int, current_user_id: int
 ) -> MissionHomeResponse:
     """미션 홈 조회.
 
     요청받은 유형의 세부 미션만 조회하고, 공통 미션(MISSION)에서 유형/제목/설명/단계를,
     세부 미션에서 보상 정보를 가져와 조합한다.
+
+    보상은 전체가 아니라 아직 한 번도 지급되지 않은 것만 반환한다. 같은 미션을 여러 번
+    진행할 수 있으므로 현재 사용자의 해당 미션 진행도 이력 전체를 기준으로 판단한다.
     """
     detail_mission = _get_detail_mission(db, mission_type, mission_id)
     mission = detail_mission.mission
@@ -51,12 +55,16 @@ def get_mission_home(
             ),
         )
 
+    granted = reward_history.get_granted_rewards(
+        db, mission_type=mission_type, mission_id=mission_id, current_user_id=current_user_id
+    )
+
     return MissionHomeResponse(
         id=detail_mission.id,
         mission_type=MissionType(mission.mission_type),
         mission_title=mission.mission_title,
         description=mission.description,
-        reward_detail=rewards.to_reward_detail(db, detail_mission.reward_detail),
+        remaining_reward=rewards.to_remaining_reward(db, detail_mission.reward_detail, granted),
         steps=_to_steps(mission.step_detail),
     )
 

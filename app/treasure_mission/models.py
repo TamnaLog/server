@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    Boolean,
     JSON,
     BigInteger,
     DateTime,
@@ -114,6 +115,15 @@ class TreasureMissionProgress(Base):
         Integer, nullable=False, default=1, server_default="1"
     )
     mission_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    ar_character_reward_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    point_reward_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    coupon_reward_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()

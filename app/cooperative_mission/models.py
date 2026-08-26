@@ -109,6 +109,15 @@ class CooperativeMissionProgress(Base):
     )
     mission_status: Mapped[str] = mapped_column(String(20), nullable=False)
     team_token: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    ar_character_reward_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    point_reward_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    coupon_reward_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()

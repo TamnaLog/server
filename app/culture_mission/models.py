@@ -11,7 +11,7 @@ MISSION 은 app/mission/models.py 에서 한 번만 정의하고 여기서는 im
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, JSON, BigInteger, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base, BigIntPk
@@ -66,6 +66,15 @@ class CultureMissionProgress(Base):
     )
     correct_number: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
+    )
+    ar_character_reward_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    point_reward_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    coupon_reward_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

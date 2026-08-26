@@ -42,13 +42,19 @@ OTHER_AR_CHARACTER_ID = 8
 REWARD_POINT = 100
 INITIAL_USER_POINT = 30
 
-# 완료 시 지급할 보상. 쿠폰은 저장할 테이블이 없어 기록되지 않는다.
+# 완료 시 지급할 보상. 정답 1개당 AR 캐릭터 -> 포인트 -> 쿠폰 순으로 하나씩 지급한다.
+COUPON_LOCATION = "종화네 막국수"
+COUPON_PRICE = 3000
+
 REWARD_DETAIL = {
     "ar_character_id": AR_CHARACTER_ID,
     "point": REWARD_POINT,
-    "coupon_location": "종화네 막국수",
-    "coupon_price": 3000,
+    "coupon_location": COUPON_LOCATION,
+    "coupon_price": COUPON_PRICE,
 }
+
+# 보상 3개를 모두 받으려면 정답도 3개여야 한다.
+ALL_REWARD_CORRECT_NUMBER = 3
 
 
 def _endpoint(progress_id: object) -> str:
@@ -141,6 +147,9 @@ def _add_progress(
     status: MissionStatus = MissionStatus.IN_PROGRESS,
     user_id: int = CURRENT_USER_ID,
     progress_id: int = PROGRESS_ID,
+    ar_character_granted: bool = False,
+    point_granted: bool = False,
+    coupon_granted: bool = False,
 ) -> None:
     db_session.add(
         CultureMissionProgress(
@@ -150,6 +159,9 @@ def _add_progress(
             mission_status=status.value,
             current_quiz_index=current_quiz_index,
             correct_number=correct_number,
+            ar_character_reward_granted=ar_character_granted,
+            point_reward_granted=point_granted,
+            coupon_reward_granted=coupon_granted,
             completed_at=(
                 datetime(2026, 8, 20, 12, 0, 0) if status is MissionStatus.COMPLETED else None
             ),
@@ -186,6 +198,7 @@ def test_마지막_퀴즈가_아니면_퀴즈_번호를_1_올리고_진행_중�
         "currentQuizNumber": 2,
         "correctNumber": 1,
         "nextLocation": None,
+        "reward": None,
     }
 
     saved = _saved(db_session)
@@ -296,9 +309,10 @@ def test_다음_장소에_연결된_미션이_있으면_유형과_세부_미션_
     assert mission["id"] != COOPERATIVE_TYPE_ID
 
 
-def test_추천할_장소가_없으면_nextLocation은_null이다(
+def test_추천할_장소가_없으면_완료_응답을_만들지_않고_500으로_응답한다(
     client: TestClient, db_session: Session, progress_data: None
 ) -> None:
+    # 완료 응답의 nextLocation 은 반드시 객체여야 하므로 정상 완료로 처리하지 않는다.
     db_session.query(Location).delete()
     db_session.commit()
     _add_progress(db_session, current_quiz_index=QUIZ_TOTAL_COUNT)
@@ -309,8 +323,11 @@ def test_추천할_장소가_없으면_nextLocation은_null이다(
         json={"quizIndex": QUIZ_TOTAL_COUNT, "isCorrect": True},
     )
 
-    assert response.status_code == 200
-    assert response.json()["nextLocation"] is None
+    assert response.status_code == 500
+    assert response.json() == {"code": "INTERNAL_SERVER_ERROR"}
+    # 완료 처리도 저장되지 않아야 한다.
+    saved = _saved(db_session)
+    assert saved.mission_status == MissionStatus.IN_PROGRESS.value
 
 
 def test_장소_이미지를_조회하지_못하면_locationImageUrl은_null이다(
@@ -393,22 +410,46 @@ def _acquired(db_session: Session) -> list[AcquiredArCharacter]:
     )
 
 
-def _complete(client: TestClient) -> None:
+def _complete(client: TestClient) -> dict:
+    """마지막 퀴즈를 정답으로 제출해 완료한다."""
     response = client.patch(
         _endpoint(PROGRESS_ID),
         params=_params(),
         json={"quizIndex": QUIZ_TOTAL_COUNT, "isCorrect": True},
     )
     assert response.status_code == 200
+    return response.json()
 
 
-def test_미션을_완료하면_포인트와_획득_캐릭터를_저장한다(
+def _ar_character_reward() -> dict[str, object]:
+    return {
+        "id": AR_CHARACTER_ID,
+        "name": "돌담이",
+        "imageUrl": "https://example.com/characters/stone-spirit.png",
+    }
+
+
+def _coupon_reward() -> dict[str, object]:
+    return {"couponLocation": COUPON_LOCATION, "couponPrice": COUPON_PRICE}
+
+
+def test_정답_수만큼_AR캐릭터_포인트_쿠폰_순으로_지급한다(
     client: TestClient, db_session: Session, progress_data: None
 ) -> None:
-    _add_progress(db_session, current_quiz_index=QUIZ_TOTAL_COUNT)
+    # 마지막 정답까지 반영하면 정답 3개 = 보상 3개
+    _add_progress(
+        db_session,
+        current_quiz_index=QUIZ_TOTAL_COUNT,
+        correct_number=ALL_REWARD_CORRECT_NUMBER - 1,
+    )
 
-    _complete(client)
+    body = _complete(client)
 
+    assert body["reward"] == {
+        "arCharacter": _ar_character_reward(),
+        "point": REWARD_POINT,
+        "coupon": _coupon_reward(),
+    }
     assert _user_point(db_session) == INITIAL_USER_POINT + REWARD_POINT
 
     acquired = _acquired(db_session)
@@ -417,8 +458,52 @@ def test_미션을_완료하면_포인트와_획득_캐릭터를_저장한다(
     # 획득 기록에는 세부 미션 id가 아니라 공통 MISSION.id 를 남긴다.
     assert acquired[0].acquired_mission_id == CULTURE_TYPE_ID
 
+    saved = _saved(db_session)
+    assert saved.ar_character_reward_granted is True
+    assert saved.point_reward_granted is True
+    assert saved.coupon_reward_granted is True
 
-def test_진행_중이면_보상을_지급하지_않는다(
+
+def test_정답이_1개면_지급_순서상_첫_보상인_AR_캐릭터만_지급한다(
+    client: TestClient, db_session: Session, progress_data: None
+) -> None:
+    _add_progress(db_session, current_quiz_index=QUIZ_TOTAL_COUNT, correct_number=0)
+
+    body = _complete(client)
+
+    assert body["reward"] == {
+        "arCharacter": _ar_character_reward(),
+        "point": None,
+        "coupon": None,
+    }
+    assert _user_point(db_session) == INITIAL_USER_POINT
+    assert len(_acquired(db_session)) == 1
+
+    saved = _saved(db_session)
+    assert saved.ar_character_reward_granted is True
+    assert saved.point_reward_granted is False
+    assert saved.coupon_reward_granted is False
+
+
+def test_정답이_0개면_완료해도_보상을_지급하지_않는다(
+    client: TestClient, db_session: Session, progress_data: None
+) -> None:
+    _add_progress(db_session, current_quiz_index=QUIZ_TOTAL_COUNT, correct_number=0)
+
+    response = client.patch(
+        _endpoint(PROGRESS_ID),
+        params=_params(),
+        json={"quizIndex": QUIZ_TOTAL_COUNT, "isCorrect": False},
+    )
+
+    body = response.json()
+    assert body["missionProgressStatus"] == "COMPLETED"
+    assert body["reward"] == {"arCharacter": None, "point": None, "coupon": None}
+    assert _user_point(db_session) == INITIAL_USER_POINT
+    assert _acquired(db_session) == []
+
+
+def test_진행_중이면_보상을_지급하지_않고_reward는_null이다(
     client: TestClient, db_session: Session, progress_data: None
 ) -> None:
     _add_progress(db_session, current_quiz_index=1)
@@ -428,24 +513,84 @@ def test_진행_중이면_보상을_지급하지_않는다(
     )
 
     assert response.status_code == 200
+    assert response.json()["reward"] is None
     assert _user_point(db_session) == INITIAL_USER_POINT
     assert _acquired(db_session) == []
 
 
-def test_이미_완료한_적_있는_미션을_재도전해_완료해도_보상을_다시_주지_않는다(
+def test_과거_진행도에서_지급된_보상은_다시_지급하지_않는다(
     client: TestClient, db_session: Session, progress_data: None
 ) -> None:
-    # 과거 완료 기록 + 재도전 진행도
+    # 과거 완료에서 AR 캐릭터를 이미 받았다. 재도전에서는 포인트/쿠폰만 남는다.
     _add_progress(
         db_session,
         progress_id=1,
         current_quiz_index=QUIZ_TOTAL_COUNT,
         status=MissionStatus.COMPLETED,
+        ar_character_granted=True,
     )
-    _add_progress(db_session, current_quiz_index=QUIZ_TOTAL_COUNT)
+    _add_progress(
+        db_session,
+        current_quiz_index=QUIZ_TOTAL_COUNT,
+        correct_number=ALL_REWARD_CORRECT_NUMBER - 1,
+    )
 
-    _complete(client)
+    body = _complete(client)
 
+    assert body["reward"] == {
+        "arCharacter": None,
+        "point": REWARD_POINT,
+        "coupon": _coupon_reward(),
+    }
+    assert _user_point(db_session) == INITIAL_USER_POINT + REWARD_POINT
+    assert _acquired(db_session) == []
+
+
+def test_남은_보상보다_정답이_많아도_남은_보상만_지급한다(
+    client: TestClient, db_session: Session, progress_data: None
+) -> None:
+    # 남은 보상은 쿠폰 하나뿐인데 정답은 3개다.
+    _add_progress(
+        db_session,
+        progress_id=1,
+        current_quiz_index=QUIZ_TOTAL_COUNT,
+        status=MissionStatus.COMPLETED,
+        ar_character_granted=True,
+        point_granted=True,
+    )
+    _add_progress(
+        db_session,
+        current_quiz_index=QUIZ_TOTAL_COUNT,
+        correct_number=ALL_REWARD_CORRECT_NUMBER - 1,
+    )
+
+    body = _complete(client)
+
+    assert body["reward"] == {"arCharacter": None, "point": None, "coupon": _coupon_reward()}
+    assert _user_point(db_session) == INITIAL_USER_POINT
+
+
+def test_보상을_모두_받은_미션을_다시_완료하면_아무것도_지급하지_않는다(
+    client: TestClient, db_session: Session, progress_data: None
+) -> None:
+    _add_progress(
+        db_session,
+        progress_id=1,
+        current_quiz_index=QUIZ_TOTAL_COUNT,
+        status=MissionStatus.COMPLETED,
+        ar_character_granted=True,
+        point_granted=True,
+        coupon_granted=True,
+    )
+    _add_progress(
+        db_session,
+        current_quiz_index=QUIZ_TOTAL_COUNT,
+        correct_number=ALL_REWARD_CORRECT_NUMBER - 1,
+    )
+
+    body = _complete(client)
+
+    assert body["reward"] == {"arCharacter": None, "point": None, "coupon": None}
     assert _user_point(db_session) == INITIAL_USER_POINT
     assert _acquired(db_session) == []
 
@@ -462,12 +607,19 @@ def test_다른_미션에서_이미_획득한_캐릭터는_기록을_또_남기�
         )
     )
     db_session.commit()
-    _add_progress(db_session, current_quiz_index=QUIZ_TOTAL_COUNT)
+    _add_progress(
+        db_session,
+        current_quiz_index=QUIZ_TOTAL_COUNT,
+        correct_number=ALL_REWARD_CORRECT_NUMBER - 1,
+    )
 
-    _complete(client)
+    body = _complete(client)
 
-    # 캐릭터 기록은 그대로 1건이지만 포인트는 정상 지급된다.
+    # 획득 기록은 그대로 1건이지만 이 미션의 캐릭터 보상은 지급된 것으로 보고, 포인트도 지급된다.
     assert len(_acquired(db_session)) == 1
+    assert body["reward"]["arCharacter"] == _ar_character_reward()
+    assert body["reward"]["point"] == REWARD_POINT
+    assert _saved(db_session).ar_character_reward_granted is True
     assert _user_point(db_session) == INITIAL_USER_POINT + REWARD_POINT
 
 
@@ -478,25 +630,36 @@ def test_보상이_없는_미션은_아무것도_지급하지_않는다(
     assert culture_mission is not None
     culture_mission.reward_detail = {}
     db_session.commit()
-    _add_progress(db_session, current_quiz_index=QUIZ_TOTAL_COUNT)
+    _add_progress(
+        db_session,
+        current_quiz_index=QUIZ_TOTAL_COUNT,
+        correct_number=ALL_REWARD_CORRECT_NUMBER - 1,
+    )
 
-    _complete(client)
+    body = _complete(client)
 
+    assert body["reward"] == {"arCharacter": None, "point": None, "coupon": None}
     assert _user_point(db_session) == INITIAL_USER_POINT
     assert _acquired(db_session) == []
 
 
-def test_쿠폰만_있는_보상은_저장할_곳이_없어_기록되지_않는다(
+def test_쿠폰만_있는_보상은_쿠폰_정보를_응답에_반환하고_지급_여부만_기록한다(
     client: TestClient, db_session: Session, progress_data: None
 ) -> None:
     culture_mission = db_session.get(CultureMission, CULTURE_MISSION_ID)
     assert culture_mission is not None
-    culture_mission.reward_detail = {"coupon_location": "종화네 막국수", "coupon_price": 3000}
+    culture_mission.reward_detail = {
+        "coupon_location": COUPON_LOCATION,
+        "coupon_price": COUPON_PRICE,
+    }
     db_session.commit()
-    _add_progress(db_session, current_quiz_index=QUIZ_TOTAL_COUNT)
+    _add_progress(db_session, current_quiz_index=QUIZ_TOTAL_COUNT, correct_number=0)
 
-    _complete(client)
+    body = _complete(client)
 
+    assert body["reward"] == {"arCharacter": None, "point": None, "coupon": _coupon_reward()}
+    # 쿠폰은 저장할 테이블이 없어 진행도의 지급 여부만 남는다.
+    assert _saved(db_session).coupon_reward_granted is True
     assert _user_point(db_session) == INITIAL_USER_POINT
     assert _acquired(db_session) == []
 
@@ -510,7 +673,7 @@ def test_보상_지급에_실패하면_완료_처리도_저장되지_않는다(
     def boom(*args: object, **kwargs: object) -> None:
         raise RuntimeError("보상 지급 실패")
 
-    monkeypatch.setattr(service.reward_granter, "grant_mission_reward", boom)
+    monkeypatch.setattr(service.reward_granter, "grant_culture_mission_reward", boom)
     _add_progress(db_session, current_quiz_index=QUIZ_TOTAL_COUNT)
 
     response = client.patch(

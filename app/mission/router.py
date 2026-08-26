@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Path, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.deps import get_current_user_id
 from app.mission import service
 from app.mission.schemas import MissionHomeResponse, MissionType
 
@@ -36,10 +37,16 @@ router = APIRouter(prefix="/api/v1/missions", tags=["mission"])
 )
 def get_mission_home(
     db: Annotated[Session, Depends(get_db)],
+    current_user_id: Annotated[int, Depends(get_current_user_id)],
     mission_type: Annotated[MissionType, Path(description="조회할 미션 유형")],
     mission_id: Annotated[
         int, Path(ge=1, description="missionType에 해당하는 유형별 세부 미션 id")
     ],
 ) -> MissionHomeResponse:
     """GET /api/v1/missions/{missionType}/{missionId} - 미션 홈 조회."""
-    return service.get_mission_home(db=db, mission_type=mission_type, mission_id=mission_id)
+    return service.get_mission_home(
+        db=db,
+        mission_type=mission_type,
+        mission_id=mission_id,
+        current_user_id=current_user_id,
+    )

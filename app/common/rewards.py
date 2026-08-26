@@ -6,8 +6,16 @@
 - `ar_character_id` 가 있으면 `AR_CHARACTER` 를 조회해 캐릭터 정보를 조합한다. 없으면 `null`
 - 포인트 보상이 없으면 `0`
 - 쿠폰 보상이 없으면 `null`
+
+보상 3종을 항목별로 `null` 로 내려주는 응답은 `RewardItemsResponse` 를 상속해서 쓴다.
+
+- `RemainingRewardResponse`: 아직 한 번도 지급되지 않은 보상 (미션 홈 조회)
+- `GrantedRewardResponse`: 이번 요청으로 실제 지급된 보상 (미션 완료)
+
+전체 보상(`RewardDetailResponse`)과 달리 두 응답은 해당 없는 항목이 포인트까지 `null` 이다.
 """
 
+from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
@@ -53,13 +61,13 @@ def to_reward_detail(db: Session, reward_detail: dict[str, Any] | None) -> Rewar
     """세부 미션의 `reward_detail` 을 응답 형식으로 바꾼다."""
     reward = reward_detail or {}
     return RewardDetailResponse(
-        ar_character=_to_ar_character(db, reward.get("ar_character_id")),
+        ar_character=to_ar_character(db, reward.get("ar_character_id")),
         point=reward.get("point") or 0,
-        coupon=_to_coupon(reward),
+        coupon=to_coupon(reward),
     )
 
 
-def _to_ar_character(db: Session, ar_character_id: int | None) -> ArCharacterResponse | None:
+def to_ar_character(db: Session, ar_character_id: int | None) -> ArCharacterResponse | None:
     """보상 캐릭터 정보를 조합한다. 캐릭터 보상이 없으면 `None`."""
     if not ar_character_id:
         return None
@@ -76,7 +84,7 @@ def _to_ar_character(db: Session, ar_character_id: int | None) -> ArCharacterRes
     )
 
 
-def _to_coupon(reward: dict[str, Any]) -> CouponResponse | None:
+def to_coupon(reward: dict[str, Any]) -> CouponResponse | None:
     """쿠폰 보상 정보를 조합한다. 쿠폰 보상이 없으면 `None`."""
     coupon_location = reward.get("coupon_location")
     coupon_price = reward.get("coupon_price")
@@ -84,3 +92,51 @@ def _to_coupon(reward: dict[str, Any]) -> CouponResponse | None:
         return None
 
     return CouponResponse(coupon_location=coupon_location, coupon_price=coupon_price)
+
+
+@dataclass(frozen=True)
+class GrantedRewards:
+    """미션의 과거 진행도 이력에서 한 번이라도 지급된 적이 있는 보상."""
+
+    ar_character: bool = False
+    point: bool = False
+    coupon: bool = False
+
+
+class RewardItemsResponse(CamelModel):
+    """보상 3종을 항목별로 담는 응답 형태. 해당 없는 항목은 `null` 이다."""
+
+    ar_character: ArCharacterResponse | None = None
+    point: int | None = None
+    coupon: CouponResponse | None = None
+
+
+class RemainingRewardResponse(RewardItemsResponse):
+    """아직 한 번도 지급되지 않은 미션 보상 정보.
+
+    보상이 없거나 과거 진행도에서 한 번이라도 지급된 항목은 모두 `null` 이다.
+    """
+
+
+class GrantedRewardResponse(RewardItemsResponse):
+    """이번 요청으로 실제 지급된 미션 보상 정보.
+
+    지급하지 않은 항목은 모두 `null` 이다.
+    """
+
+
+def to_remaining_reward(
+    db: Session,
+    reward_detail: dict[str, Any] | None,
+    granted: GrantedRewards,
+) -> RemainingRewardResponse:
+    """세부 미션의 `reward_detail` 에서 아직 지급되지 않은 보상만 응답 형식으로 바꾼다."""
+    reward = reward_detail or {}
+    point = reward.get("point") or 0
+    return RemainingRewardResponse(
+        ar_character=(
+            None if granted.ar_character else to_ar_character(db, reward.get("ar_character_id"))
+        ),
+        point=None if granted.point or point <= 0 else point,
+        coupon=None if granted.coupon else to_coupon(reward),
+    )

@@ -7,10 +7,17 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.cooperative_mission.models import CooperativeMission
-from app.culture_mission.models import CultureMission
+from app.cooperative_mission.models import (
+    CooperativeMission,
+    CooperativeMissionParticipant,
+    CooperativeMissionProgress,
+    ParticipantStatus,
+    ParticipantType,
+)
+from app.core.deps import CURRENT_USER_ID
+from app.culture_mission.models import CultureMission, CultureMissionProgress
 from app.map.models import Location
-from app.mission.models import Mission
+from app.mission.models import Mission, MissionStatus
 from app.treasure_mission.models import ArCharacter, TreasureMission
 
 
@@ -47,6 +54,63 @@ FULL_REWARD = {
     "coupon_location": "종화네 막국수",
     "coupon_price": 1000,
 }
+
+# 현재 사용자가 아닌 다른 사용자
+OTHER_USER_ID = CURRENT_USER_ID + 1
+
+
+def _culture_progress(
+    *,
+    id: int,
+    user_id: int = CURRENT_USER_ID,
+    ar_character: bool = False,
+    point: bool = False,
+    coupon: bool = False,
+) -> CultureMissionProgress:
+    """보상 지급 여부만 지정하는 문화 미션 진행도 이력."""
+    return CultureMissionProgress(
+        id=id,
+        culture_mission_id=SHARED_DETAIL_ID,
+        user_id=user_id,
+        mission_status=MissionStatus.COMPLETED.value,
+        current_quiz_index=3,
+        correct_number=3,
+        ar_character_reward_granted=ar_character,
+        point_reward_granted=point,
+        coupon_reward_granted=coupon,
+    )
+
+
+def _cooperative_progress(
+    *,
+    id: int,
+    team_token: str,
+    ar_character: bool = False,
+    point: bool = False,
+    coupon: bool = False,
+) -> CooperativeMissionProgress:
+    """보상 지급 여부만 지정하는 협동 미션 진행도 이력."""
+    return CooperativeMissionProgress(
+        id=id,
+        cooperative_mission_id=SHARED_DETAIL_ID,
+        current_step=3,
+        mission_status=MissionStatus.COMPLETED.value,
+        team_token=team_token,
+        ar_character_reward_granted=ar_character,
+        point_reward_granted=point,
+        coupon_reward_granted=coupon,
+    )
+
+
+def _participant(*, id: int, progress_id: int, user_id: int) -> CooperativeMissionParticipant:
+    """협동 미션 진행도에 사용자를 연결하는 참여자."""
+    return CooperativeMissionParticipant(
+        id=id,
+        cooperative_mission_progress_id=progress_id,
+        participant_type=ParticipantType.USER.value,
+        user_id=user_id,
+        participant_status=ParticipantStatus.ACCEPTED.value,
+    )
 
 
 @pytest.fixture
@@ -135,7 +199,7 @@ def test_미션_홈을_조회하면_명세의_필드를_모두_반환한다(
         "missionType": "CULTURE",
         "missionTitle": "오늘의 제주 퀴즈",
         "description": "제주의 퀴즈를 맞춰보세요.",
-        "rewardDetail": {
+        "remainingReward": {
             "arCharacter": {
                 "id": AR_CHARACTER_ID,
                 "name": "돌담이",
@@ -202,8 +266,8 @@ def test_보상은_공통_미션이_아니라_세부_미션의_값을_사용한�
     culture = client.get(_endpoint("CULTURE", SHARED_DETAIL_ID)).json()
     cooperative = client.get(_endpoint("COOPERATIVE", SHARED_DETAIL_ID)).json()
 
-    assert culture["rewardDetail"]["point"] == 100
-    assert cooperative["rewardDetail"]["point"] == 200
+    assert culture["remainingReward"]["point"] == 100
+    assert cooperative["remainingReward"]["point"] == 200
 
 
 # ---------------------------------------------------------------------
@@ -216,12 +280,12 @@ def test_캐릭터와_쿠폰_보상이_없으면_null로_반환한다(
 ) -> None:
     body = client.get(_endpoint("COOPERATIVE", SHARED_DETAIL_ID)).json()
 
-    assert body["rewardDetail"]["arCharacter"] is None
-    assert body["rewardDetail"]["coupon"] is None
-    assert body["rewardDetail"]["point"] == 200
+    assert body["remainingReward"]["arCharacter"] is None
+    assert body["remainingReward"]["coupon"] is None
+    assert body["remainingReward"]["point"] == 200
 
 
-def test_포인트_보상이_없으면_0으로_반환한다(
+def test_포인트_보상이_없으면_null로_반환한다(
     client: TestClient, db_session: Session, mission_data: None
 ) -> None:
     db_session.add(
@@ -238,7 +302,104 @@ def test_포인트_보상이_없으면_0으로_반환한다(
 
     body = client.get(_endpoint("TREASURE", 1)).json()
 
-    assert body["rewardDetail"] == {"arCharacter": None, "point": 0, "coupon": None}
+    assert body["remainingReward"] == {"arCharacter": None, "point": None, "coupon": None}
+
+
+# ---------------------------------------------------------------------
+# 남은 보상 (진행도 이력 기준)
+# ---------------------------------------------------------------------
+
+
+def test_진행도가_없으면_보상_3개를_모두_아직_지급되지_않은_것으로_본다(
+    client: TestClient, mission_data: None
+) -> None:
+    body = client.get(_endpoint("CULTURE", SHARED_DETAIL_ID)).json()
+
+    assert body["remainingReward"]["arCharacter"] is not None
+    assert body["remainingReward"]["point"] == 100
+    assert body["remainingReward"]["coupon"] is not None
+
+
+def test_과거_진행도에서_한_번이라도_지급된_보상은_null로_반환한다(
+    client: TestClient, db_session: Session, mission_data: None
+) -> None:
+    # 첫 시도에서 캐릭터를, 두 번째 시도에서 포인트를 받은 이력. 쿠폰만 아직 남아 있다.
+    db_session.add_all(
+        [
+            _culture_progress(id=1, ar_character=True),
+            _culture_progress(id=2, point=True),
+        ]
+    )
+    db_session.commit()
+
+    body = client.get(_endpoint("CULTURE", SHARED_DETAIL_ID)).json()
+
+    assert body["remainingReward"] == {
+        "arCharacter": None,
+        "point": None,
+        "coupon": {"couponLocation": "종화네 막국수", "couponPrice": 1000},
+    }
+
+
+def test_보상을_모두_지급받았으면_남은_보상이_전부_null이다(
+    client: TestClient, db_session: Session, mission_data: None
+) -> None:
+    db_session.add(
+        _culture_progress(id=1, ar_character=True, point=True, coupon=True)
+    )
+    db_session.commit()
+
+    body = client.get(_endpoint("CULTURE", SHARED_DETAIL_ID)).json()
+
+    assert body["remainingReward"] == {"arCharacter": None, "point": None, "coupon": None}
+
+
+def test_다른_사용자의_진행도는_남은_보상_판단에_포함하지_않는다(
+    client: TestClient, db_session: Session, mission_data: None
+) -> None:
+    db_session.add(
+        _culture_progress(id=1, user_id=OTHER_USER_ID, ar_character=True, point=True, coupon=True)
+    )
+    db_session.commit()
+
+    body = client.get(_endpoint("CULTURE", SHARED_DETAIL_ID)).json()
+
+    assert body["remainingReward"]["arCharacter"] is not None
+    assert body["remainingReward"]["point"] == 100
+    assert body["remainingReward"]["coupon"] is not None
+
+
+def test_협동_미션은_참여자로_연결된_진행도를_기준으로_판단한다(
+    client: TestClient, db_session: Session, mission_data: None
+) -> None:
+    # 협동 미션 진행도는 user_id 를 직접 갖지 않고 참여자 테이블로 연결된다.
+    db_session.add_all(
+        [
+            _cooperative_progress(id=1, team_token="team-1", point=True),
+            _cooperative_progress(id=2, team_token="team-2", point=True),
+        ]
+    )
+    db_session.flush()
+    db_session.add(_participant(id=1, progress_id=1, user_id=CURRENT_USER_ID))
+    db_session.add(_participant(id=2, progress_id=2, user_id=OTHER_USER_ID))
+    db_session.commit()
+
+    body = client.get(_endpoint("COOPERATIVE", SHARED_DETAIL_ID)).json()
+
+    assert body["remainingReward"]["point"] is None
+
+
+def test_협동_미션에서_참여하지_않은_진행도는_판단에_포함하지_않는다(
+    client: TestClient, db_session: Session, mission_data: None
+) -> None:
+    db_session.add(_cooperative_progress(id=1, team_token="team-1", point=True))
+    db_session.flush()
+    db_session.add(_participant(id=1, progress_id=1, user_id=OTHER_USER_ID))
+    db_session.commit()
+
+    body = client.get(_endpoint("COOPERATIVE", SHARED_DETAIL_ID)).json()
+
+    assert body["remainingReward"]["point"] == 200
 
 
 # ---------------------------------------------------------------------

@@ -9,9 +9,11 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.common import next_location, reward_granter, rewards
+from app.common import next_location
 from app.common.datetimes import now_kst
+from app.common.next_location import NextLocationResponse
 from app.core.errors import ConflictError, NotFoundError
+from app.culture_mission import reward_granter
 from app.culture_mission.models import CultureMission, CultureMissionProgress, MissionStatus
 from app.culture_mission.schemas import (
     CultureMissionProgressSaveRequest,
@@ -49,11 +51,9 @@ def start_culture_mission(
 
     - `IN_PROGRESS` 진행도가 있으면 새로 만들지 않고 그 진행도를 이어서 반환한다.
     - 없으면 새 진행도를 만든다. (최초 시작, 완료한 미션 재도전 모두 포함)
-    - `isRewarded` 는 현재 진행도가 아니라 과거 `COMPLETED` 진행도 존재 여부로 정한다.
     """
     culture_mission = _get_culture_mission(db, culture_mission_id)
 
-    is_rewarded = _has_completed_progress(db, current_user_id, culture_mission_id)
     progress = _find_in_progress(db, current_user_id, culture_mission_id)
 
     is_created = progress is None
@@ -67,9 +67,7 @@ def start_culture_mission(
             culture_mission_progress_id=progress.id,
             quiz_count=culture_mission.quiz_total_count,
             current_quiz_number=progress.current_quiz_index,
-            is_rewarded=is_rewarded,
             quiz_details=_to_quiz_details(culture_mission.quiz_detail),
-            reward_detail=rewards.to_reward_detail(db, culture_mission.reward_detail),
         ),
         is_created=is_created,
     )
@@ -84,20 +82,6 @@ def _get_culture_mission(db: Session, culture_mission_id: int) -> CultureMission
             detail=f"문화 미션 {culture_mission_id} 을(를) 찾을 수 없습니다.",
         )
     return culture_mission
-
-
-def _has_completed_progress(db: Session, current_user_id: int, culture_mission_id: int) -> bool:
-    """과거에 이 문화 미션을 완료(=보상 지급)한 기록이 있는지 확인한다."""
-    statement = (
-        select(CultureMissionProgress.id)
-        .where(
-            CultureMissionProgress.user_id == current_user_id,
-            CultureMissionProgress.culture_mission_id == culture_mission_id,
-            CultureMissionProgress.mission_status == MissionStatus.COMPLETED.value,
-        )
-        .limit(1)
-    )
-    return db.scalar(statement) is not None
 
 
 def _find_in_progress(
@@ -170,16 +154,13 @@ def save_culture_mission_progress(
 
     - 제출한 퀴즈 번호가 진행도의 현재 퀴즈 번호와 다르면 아무것도 바꾸지 않고 409.
     - 마지막 퀴즈가 아니면 퀴즈 번호를 1 올리고 `IN_PROGRESS` 를 유지한다.
-    - 마지막 퀴즈면 퀴즈 번호를 올리지 않고 `COMPLETED` 로 바꾼 뒤 다음 장소를 추천한다.
+    - 마지막 퀴즈면 퀴즈 번호를 올리지 않고 `COMPLETED` 로 바꾼 뒤
+      정답 수만큼 보상을 지급하고 다음 장소를 추천한다.
 
-    미션을 처음 완료하는 경우에만 보상을 지급하고, 완료 처리와 같은 트랜잭션으로 커밋한다.
-    과거에 완료한 적이 있으면(재도전) 보상을 다시 주지 않는다.
+    보상 지급과 완료 처리는 같은 트랜잭션으로 커밋한다.
     """
     progress = _get_in_progress_by_id(db, current_user_id, culture_mission_progress_id)
     culture_mission = _get_culture_mission(db, progress.culture_mission_id)
-
-    # 이번 진행도를 완료 처리하기 전에 확인해야 "과거에 받은 적이 있는지"를 알 수 있다.
-    is_already_rewarded = _has_completed_progress(db, current_user_id, progress.culture_mission_id)
 
     if request.quiz_index != progress.current_quiz_index:
         raise ConflictError(
@@ -198,15 +179,13 @@ def save_culture_mission_progress(
         # 마지막 퀴즈는 번호를 올리지 않고 그대로 두고 완료 처리한다.
         progress.mission_status = MissionStatus.COMPLETED.value
         progress.completed_at = now_kst()
-        if not is_already_rewarded:
-            reward_granter.grant_mission_reward(
-                db,
-                user_id=current_user_id,
-                mission_id=culture_mission.mission_id,
-                reward_detail=culture_mission.reward_detail,
-            )
+        # 정답 수 반영 이후에 지급해야 이번 요청의 정답까지 보상 개수에 들어간다.
+        reward = reward_granter.grant_culture_mission_reward(db, progress, culture_mission)
+        recommended_location = _recommend_next_location(db, latitude, longitude)
     else:
         progress.current_quiz_index += 1
+        reward = None
+        recommended_location = None
 
     db.commit()
     db.refresh(progress)
@@ -216,12 +195,23 @@ def save_culture_mission_progress(
         quiz_count=culture_mission.quiz_total_count,
         current_quiz_number=progress.current_quiz_index,
         correct_number=progress.correct_number,
-        next_location=(
-            next_location.recommend_next_location(db, latitude, longitude)
-            if is_last_quiz
-            else None
-        ),
+        next_location=recommended_location,
+        reward=reward,
     )
+
+
+def _recommend_next_location(
+    db: Session, latitude: float, longitude: float
+) -> NextLocationResponse:
+    """완료 응답에 넣을 다음 장소를 추천한다.
+
+    완료 응답의 `nextLocation` 은 반드시 객체여야 하므로, 추천할 장소 데이터가 하나도 없으면
+    정상 완료로 처리하지 않고 예외를 발생시킨다. (공통 처리기가 500 으로 응답)
+    """
+    recommended = next_location.recommend_next_location(db, latitude, longitude)
+    if recommended is None:
+        raise RuntimeError("추천할 수 있는 장소 데이터가 없어 미션 완료 응답을 만들 수 없습니다.")
+    return recommended
 
 
 def _get_in_progress_by_id(
