@@ -281,7 +281,7 @@ CREATE TABLE `COOPERATIVE_ROLE_PROGRESS` (
     `created_at`               DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`               DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_role_progress__participant` (`participant_id`),
+    KEY `idx_role_progress__participant` (`participant_id`),
     KEY `idx_role_progress__role_card` (`cooperative_role_card_id`),
     CONSTRAINT `fk_role_progress__participant`
         FOREIGN KEY (`participant_id`) REFERENCES `COOPERATIVE_MISSION_PARTICIPANT` (`id`) ON DELETE CASCADE,

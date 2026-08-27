@@ -129,6 +129,7 @@ COOPERATIVE_MISSION_PROGRESS {
     datetime completed_at "NULL"
     datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
     datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
+    datetime deleted_at "NULL"
 }
 
 COOPERATIVE_ROLE_CARD {
@@ -149,6 +150,7 @@ COOPERATIVE_MISSION_PARTICIPANT {
     datetime joined_at "NULL"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
     datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
+    datetime deleted_at "NULL"
 }
 
 COOPERATIVE_ROLE_PROGRESS {
@@ -160,6 +162,7 @@ COOPERATIVE_ROLE_PROGRESS {
     datetime completed_at "NULL"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
     datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
+    datetime deleted_at "NULL"
 }
 
 TREASURE_MISSION {

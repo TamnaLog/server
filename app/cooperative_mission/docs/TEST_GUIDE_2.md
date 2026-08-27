@@ -1,234 +1,267 @@
-# 협동 미션 도메인 테스트 가이드
+# 협동 미션 도메인 테스트 가이드 (2)
 
 ## 테스트 대상
 
 | API | 테스트 파일 |
 | --- | --- |
-| `POST /api/v1/cooperative-missions/{cooperativeMissionId}/progress` (협동 미션 시작하기/이어하기) | `app/cooperative_mission/tests/test_start_cooperative_mission.py` |
-| `POST /api/v1/cooperative-missions/join-requests` (URL로 참여 요청) | `app/cooperative_mission/tests/test_join_cooperative_mission.py` |
-| `PATCH /api/v1/cooperative-missions/{cooperativeMissionProgressId}/participants/{participantId}/accept` (참여 요청 수락) | `app/cooperative_mission/tests/test_accept_join_request.py` |
-| `DELETE /api/v1/cooperative-missions/{cooperativeMissionProgressId}/participants/{participantId}` (참여 요청 거절) | `app/cooperative_mission/tests/test_reject_join_request.py` |
+| `GET /api/v1/cooperative-missions/{cooperativeMissionProgressId}/progress` (협동 미션 상태 조회) | `app/cooperative_mission/tests/test_get_cooperative_mission_status.py` |
+| `PATCH /api/v1/cooperative-missions/{cooperativeMissionProgressId}/progress` (협동 미션 진행도 저장) | `app/cooperative_mission/tests/test_save_cooperative_mission_progress.py` |
+| `PUT /api/v1/cooperative-missions/{cooperativeMissionProgressId}/role-assignments/{roleCardId}` (협동 미션 역할 배정 저장) | `app/cooperative_mission/tests/test_save_role_assignment.py` |
+| `POST /api/v1/cooperative-missions/{cooperativeMissionProgressId}/role-progresses/{roleProgressId}/verification` (협동 미션 역할 진행도 저장) | `app/cooperative_mission/tests/test_verify_role_progress.py` |
 
-## 시작하기/이어하기 테스트 의도
+## 상태 조회 테스트 의도
 
-이 API의 핵심은 **"이 요청이 새 방을 만들 상황인가, 기존 방을 돌려줄 상황인가"** 를 정확히 가르는 것이다.
-같은 요청이라도 진행 이력에 따라 201과 200으로 갈리고, 잘못 판단하면
-**방이 중복 생성되거나 남의 방을 이어받는** 사고가 난다.
+이 API는 방장과 팀원이 **초대부터 완료까지 계속 폴링하는 하나의 창구**다.
+그래서 응답이 단계마다 완전히 다르고, 검증도 "이 단계에서 무엇을 주고 무엇을 `null` 로 두는가"가 중심이다.
 
-그래서 "이어하기 대상이 아닌 경우"를 하나씩 따로 만들어 검증한다.
+| 필드 | 1단계 | 2·3단계 | 4단계 |
+| --- | --- | --- | --- |
+| `currentParticipant` / `participants` | 값 | 값 | `null` |
+| `roleCards` | `null` | 값 | `null` |
+| `roleProgresses` / 역할 집계 | `null` | 값(없으면 빈 배열·0) | `null` |
+| `reward` / `nextLocation` | `null` | `null` | 값 |
 
-- 이미 **완료된** 방만 있는 경우 → 새 도전이므로 새 방
-- 그 방에 **`MEMBER`로만** 참여 중인 경우 → 방장이 아니므로 새 방
-- **다른 협동 미션**의 진행 중인 방 → 대상 아님
-- **다른 사용자가 방장**인 방 → 대상 아님
+특히 **키를 생략하지 않고 `null` 로 내려주는지**를 본다. 프론트가 폴링하며 같은 구조를 기대하기 때문이다.
+1단계 응답은 전체 body 를 통째로 비교해서 이 규칙이 깨지지 않는지 확인한다.
 
-두 번째 축은 **진행도와 방장 참여자가 항상 함께 존재하는 것**이다.
-방장 없는 방이나 방 없는 참여자가 남으면 이후 API가 전부 어긋나므로,
-저장이 실패하면 둘 다 저장되지 않아야 한다.
+두 번째 축은 **호출자에 따라 달라지는 값**이다. `currentParticipant` 는 Bearer 토큰으로 정해지므로,
+같은 방을 팀원이 조회하면 자신의 `PENDING/ACCEPTED` 상태가 나와야 한다.
+거절당한 팀원은 참가자 row 가 사라져 `404 COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND` 를 받고,
+프론트는 이 오류로 거절을 감지한다. 그래서 이 404 를 **정상 흐름의 일부로** 검증한다.
 
-세 번째는 **역할 카드가 방에 복사되지 않는 것**이다.
-역할 카드는 특정 미션에 속하지 않는 공통 마스터라, 방을 만들어도 카드 수가 늘면 안 된다.
+세 번째 축은 **4단계의 보상 정산**이다. 조회 API지만 4단계에서는 데이터를 바꾼다.
+
+- 보상 등급은 **완료된 역할 수**로 정해진다. (0 / 1~2 / 3~4 / 5~6)
+- 보상은 `ACCEPTED` 참가자 **전원**에게 지급한다. (`PENDING` 은 제외)
+- 정산이 끝나면 등급에 못 든 보상까지 포함해 지급 여부 세 개를 모두 `TRUE` 로 마감한다.
+- 여러 참가자가 동시에 폴링해도 **지급은 한 번뿐**이어야 한다.
+
+역할 진행도는 `COOPERATIVE_ROLE_PROGRESS` 를 직접 만들어 상황을 재현한다.
+한 참가자가 서로 다른 역할 카드를 여러 개 맡는 경우도 함께 만든다. (배정 규칙상 허용된다)
 
 ## 주요 검증 항목
 
-### 1. 신규 생성
+### 1. 1단계 (초대)
 
-- 처음 시작하면 **201**, 응답 필드가 명세와 일치한다.
-  (`missionProgressId`, `missionProgressStatus`, `currentStep`, `teamToken`,
-  `participants`, `roleCards`, `roleProgresses` / camelCase 확인)
-- DB에 진행도가 `current_step=1` / `IN_PROGRESS` / `completed_at=null` 로 저장된다.
-- 보상 지급 여부 3개 컬럼은 모두 `false` 로 남는다. (이 API는 보상을 다루지 않는다)
-- 방장 참여자가 `HOST` / `ACCEPTED` / `joined_at` 기록과 함께 **함께** 생성된다.
-- `roleProgresses` 는 `null` 이 아니라 **빈 배열**이다.
+- 응답 전체가 명세와 일치한다. 사용하지 않는 필드는 키를 지우지 않고 `null` 이다.
+- `participants` 는 방장을 먼저 두고 `PENDING` 팀원도 포함한다.
+- `currentParticipant` 는 토큰의 사용자 기준이다. 팀원이 조회하면 자기 `PENDING` 상태가 나온다.
 
-### 2. 팀 토큰
+### 2. 2·3단계 (역할 배정 / 수행)
 
-초대 URL 조합은 프론트 책임이라 백엔드는 토큰만 내려준다.
+- `roleCards` 는 공통 역할 카드 6종 전체를 id 오름차순으로 반환한다.
+- `roleProgresses` 는 생성된 역할 진행도만 반환하고 `itemImgUrl` 은 없으면 `null`.
+- 아직 배정이 없으면 `roleProgresses` 는 **`null` 이 아니라 빈 배열**, 집계는 둘 다 `0`.
+- `totalRoleCount` 는 생성된 역할 수, `completedRoleCount` 는 그중 인증 완료 수다.
+  (배정하지 않은 역할 카드는 집계에 넣지 않는다)
+- 2·3단계에서는 `reward` / `nextLocation` 이 `null` 이다.
 
-- `teamToken` 은 DB에 저장된 `team_token` 과 같다.
-- 응답에 URL 형태(`http`, `/cooperative-missions/invite`)가 섞여 나오지 않는다.
-- 방마다 다른 토큰이 생성된다.
+### 3. 4단계 (완료)
 
-### 3. 이어하기
+- 참가자·역할 정보는 모두 `null` 이고 `reward` / `nextLocation` 만 채운다.
+- 완료 역할 수별 보상 등급 7가지(0~6)를 각각 확인한다.
+- `ACCEPTED` 참가자 전원의 `USER.point` 와 `ACQUIRED_AR_CHARACTER` 가 갱신된다.
+- `PENDING` 참가자에게는 지급하지 않는다.
+- 정산 후 지급 여부 세 개가 모두 `TRUE` 다. (등급에 없어 소멸한 보상 포함)
+- 여러 번 폴링해도 포인트·획득 기록이 늘지 않고 같은 보상 정보를 반환한다.
+- `nextLocation` 에는 사용자 좌표를 받지 않으므로 **`distanceMeter` 가 없다.**
+- 추천할 장소가 하나도 없으면 `nextLocation` 만 `null` 이고 보상 정산은 정상 처리된다.
 
-- 방장으로 진행 중인 방이 있으면 **200**, 기존 `missionProgressId` / `currentStep` 을 반환하고
-  **진행도와 참여자가 늘지 않는다.**
-- 팀 토큰을 새로 만들지 않으므로 **프론트가 만드는 초대 링크도 그대로 유효**하다.
-- 시작 API를 **연속 두 번 호출**하면 201 → 200이고 같은 방을 반환한다.
+### 4. 404
 
-### 4. 목록 구성
+- 진행도가 없으면 `COOPERATIVE_MISSION_PROGRESS_NOT_FOUND`
+- 방의 참가자가 아니거나 **거절로 참가자 row 가 삭제된 경우**
+  → `COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`
+- 완료(4단계)된 방도 조회할 수 있어야 한다. (진행 중인 방으로 제한하면 완료 화면을 못 본다)
 
-- `participants` 는 **방장을 먼저** 두고 나머지는 참여한 순서로 정렬한다.
-  (방장을 일부러 마지막 id로 넣어 두어, id 순으로 정렬하면 실패한다)
-- 아직 수락 전인 `PENDING` 참여 요청도 목록에 포함한다.
-- `roleProgresses` 는 참여자·역할 카드를 조인해 닉네임과 역할 이름까지 채운다.
-- **다른 방의 역할 진행도는 포함하지 않는다.**
+### 5. 400 / 401
 
-### 5. 역할 카드
+- 진행도 id가 0 이하이거나 정수가 아니면 **400 `INVALID_REQUEST`**
+- 헤더의 사용자가 없으면 **401 `UNAUTHORIZED_USER`**
 
-- 공통 마스터 전체를 `id` 오름차순으로 반환한다.
-- **미션이 달라도 같은 목록**이 나온다.
-- 방을 만들어도 역할 카드가 복사되거나 늘지 않는다.
-- 역할 카드 마스터가 비어 있으면 응답을 만들 수 없으므로 **500 `INTERNAL_SERVER_ERROR`**.
+## 진행도 저장 테스트 의도
 
-### 6. 오류
+이 API는 **단계를 한 칸 올리는 것만** 한다. 역할을 배정하지도, 보상을 주지도, 상태를 돌려주지도 않는다.
+그래서 검증은 "언제 올릴 수 있고, 올릴 때 무엇이 바뀌는가" 두 가지에 집중한다.
 
-- 협동 미션이 없으면 **404 `COOPERATIVE_MISSION_NOT_FOUND`** 이고,
-  이때 **진행도와 참여자를 만들지 않는다.**
-- 저장이 실패하면 진행도도 참여자도 남지 않는다. (한 트랜잭션인지 확인)
-- `cooperativeMissionId` 가 정수가 아니거나 1보다 작으면 **400 `INVALID_REQUEST`**.
+첫째, **순차 이동만 허용**한다. 같은 단계·역행·건너뛰기는 전부 `409`다.
+특히 같은 요청이 두 번 들어오면 두 번째는 409여야 한다. (단계가 이미 올라갔으므로)
+이건 재전송 방어이기도 해서 별도 케이스로 확인한다.
 
-## URL로 참여 요청 테스트 의도
+둘째, **단계마다 통과 조건이 다르다.**
 
-이 API의 핵심은 **검증 순서**다.
-"이미 참여자인가"를 **단계·인원 검증보다 먼저** 확인해야 한다.
-순서를 뒤집으면 방장이 자기 초대 링크를 열었을 때, 또는 이미 요청한 사람이 링크를 다시 열었을 때
-멀쩡한 사용자에게 `409`가 나간다. 그래서 "정원이 찼는데 기존 참여자", "단계가 지났는데 기존 참여자"를
-따로 만들어 **200이 나오는지** 확인한다.
+- `1 → 2`: 수락도 거절도 안 된 `PENDING` 참여 요청이 남아 있으면 막는다.
+  이때 남은 요청을 자동으로 수락하거나 지우지 않는지도 확인한다.
+- `2 → 3`: `ACCEPTED` 참가자 전원이 역할을 하나 이상 받아야 한다.
+  반대로 **역할 카드가 남아 있거나 한 사람이 여러 역할을 맡은 것은 막지 않는다.**
+- `3 → 4`: 인증이 안 끝난 역할이 남아 있어도 방장이 끝낼 수 있다.
 
-두 번째는 **인원 계산에 수락 대기(`PENDING`)도 포함**하는 것이다.
-`ACCEPTED`만 세면 대기자가 쌓여 정원을 넘길 수 있다.
+셋째, **완료 처리 범위**다. `3 → 4`에서만 `mission_status`와 `completed_at`이 함께 바뀌고,
+보상은 여기서 지급하지 않는다(상태 조회 4단계가 정산). 지급 여부 세 개가 그대로 `false`인지 확인한다.
 
-세 번째는 **요청자를 Body가 아니라 헤더로 식별**하는 것이다.
-액세스 토큰을 바꾸면 저장되는 `user_id`도 따라 바뀌어야 한다.
+막아야 할 요청에서는 항상 `current_step`이 그대로인지 함께 본다.
 
 ### 주요 검증 항목
 
-#### 1. 신규 참여 요청
+#### 1. 단계 변경
 
-- **201**, 응답은 `missionProgressId` / `participantId` / `participantStatus` 세 필드다.
-- DB에 `PENDING` / `MEMBER` / `joined_at=null` 로 저장된다. (아직 수락 전이므로 참여 시각 없음)
-- 헤더의 사용자가 그대로 `user_id` 로 저장된다.
+- **204**이고 응답 본문이 비어 있다.
+- `1 → 2`, `2 → 3` 은 `current_step` 만 바꾸고 완료 정보는 건드리지 않는다.
+- `3 → 4` 는 `current_step=4` / `mission_status=COMPLETED` / `completed_at` 을 함께 저장한다.
+- 완료해도 보상 지급 여부와 사용자 포인트는 그대로다.
 
-#### 2. 기존 참여자
+#### 2. `1 → 2` 조건
 
-- 이미 요청한 사용자 → **200**, 같은 `participantId`, 참여자 수 그대로.
-- 이미 수락된 사용자 → **200**, `ACCEPTED` 로 반환하고 **상태를 되돌리지 않는다.**
-- **방장이 자기 링크를 열면** → 200, `HOST` 참여자 정보를 그대로 반환.
-- 같은 요청을 두 번 보내면 201 → 200이고 참여자는 하나만 생긴다.
-- **정원이 찼거나 단계가 지나도 기존 참여자는 409가 아니라 200**이다.
+- `PENDING` 참가자가 있으면 **409 `COOPERATIVE_MISSION_PENDING_PARTICIPANT_EXISTS`**,
+  참가자 상태도 그대로 남는다.
+- 방장 혼자여도 2단계로 올릴 수 있다.
 
-#### 3. 409 참여를 받을 수 없는 경우
+#### 3. `2 → 3` 조건
 
-- `current_step` 이 2 / 3 / 4 면 **`COOPERATIVE_MISSION_JOIN_CLOSED`**.
-- 참여자가 6명이면 **`COOPERATIVE_MISSION_FULL`**.
-- `PENDING` 참여자만으로 6명이어도 `FULL` 이다. (대기자도 인원에 포함)
-- 5명이면 한 자리 남으므로 정상 참여된다. (경계값)
-- 모두 참여자를 만들지 않는다.
+- `ACCEPTED` 참가자 전원이 역할을 받았으면 통과.
+- 한 명이라도 역할이 없거나 배정이 하나도 없으면 **409 `COOPERATIVE_PARTICIPANT_ROLE_REQUIRED`**.
+- 미배정 역할 카드가 남아 있어도, 한 참가자가 여러 역할을 맡아도 막지 않는다.
+- `PENDING` 참가자는 역할 검증 대상이 아니다.
 
-#### 4. 404 `INVALID_INVITE_TOKEN`
+#### 4. 409 순차/완료
 
-- 없는 팀 토큰
-- 토큰은 맞지만 이미 **완료된 방**인 경우
+- 건너뛰기 · 같은 단계 · 역행 5가지 조합 → **`COOPERATIVE_MISSION_STEP_NOT_ALLOWED`**
+- 같은 요청 재전송 → 두 번째는 409
+- 이미 완료된 방 → **`COOPERATIVE_MISSION_ALREADY_COMPLETED`**
+  (없는 방으로 감추지 않고 완료됐다고 알려준다)
+
+#### 5. 403 / 404 / 401
+
+- 팀원이나 방 밖 사용자가 요청하면 **403 `COOPERATIVE_MISSION_HOST_ONLY`**
+- 진행도가 없으면 **404 `COOPERATIVE_MISSION_PROGRESS_NOT_FOUND`**
+- 헤더의 사용자가 없으면 **401 `UNAUTHORIZED_USER`**
+
+#### 6. 400 `INVALID_REQUEST`
+
+- `currentStep` 누락 · `1` · `5` · `0` · 정수 아님 · `null`
+- 진행도 id가 0 이하이거나 정수가 아님
+
+## 역할 배정 저장 테스트 의도
+
+이 API는 **역할 카드 하나를 단위로 하는 upsert**다. 같은 엔드포인트가 처음엔 생성, 다음엔 담당자 변경으로
+동작하므로 검증의 중심은 "언제 새 row 를 만들고 언제 기존 row 를 고치는가"다.
+
+- 처음 배정 → 역할 진행도 **생성**
+- 이미 배정된 카드 → 새 row 없이 `participant_id` **만** 변경 (`roleProgressId`·역할 카드·인증 정보 유지)
+- 같은 참가자로 재요청 → 아무것도 바꾸지 않음 (`updated_at` 도 그대로)
+
+가장 틀리기 쉬운 지점은 **기존 배정을 찾는 범위**다. 역할 카드는 모든 방이 공유하는 마스터라
+카드 id 만으로 찾으면 다른 방의 배정을 잡아서 남의 방 데이터를 고치게 된다.
+그래서 다른 방에 같은 역할 카드가 배정된 상태를 만들어 두고, 그 row 를 건드리지 않는지 확인한다.
+
+두 번째는 **배정 대상 자격**이다. 방장도 역할을 맡을 수 있지만, 아직 수락 전(`PENDING`)이거나
+다른 방 참가자는 배정 대상이 아니다. 셋 다 `404 COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND` 로 통일된다.
+
+세 번째는 **단계 제한**이다. 역할 배정은 2단계에서만 가능하고, 1·3단계는 409,
+완료된 방은 `ALREADY_COMPLETED` 로 구분한다. 막히는 경우에는 역할 진행도가 하나도 안 생기는지 함께 본다.
+
+### 주요 검증 항목
+
+#### 1. 최초 배정
+
+- **204**이고 응답 본문이 비어 있다.
+- `participant_id` / `cooperative_role_card_id` 가 요청대로 저장되고,
+  `progress_status=IN_PROGRESS` / `item_img_url=null` / `completed_at=null` 로 시작한다.
+- 방장도 배정받을 수 있다.
+- 한 참가자가 서로 다른 역할 카드를 여러 개 맡을 수 있다. (row 2개, 같은 `participant_id`)
+- 요청하지 않은 역할 카드는 역할 진행도가 생기지 않는다.
+
+#### 2. 담당자 변경 / 멱등
+
+- 이미 배정된 카드에 다른 참가자를 요청하면 **row 수는 그대로**, 같은 `roleProgressId` 에서
+  `participant_id` 만 바뀐다.
+- 인증이 끝난 역할이어도 `item_img_url` / `progress_status` / `completed_at` 은 유지한다.
+- 같은 참가자로 다시 요청하면 `updated_at` 까지 그대로다.
+- **다른 방의 같은 역할 카드 배정은 건드리지 않는다.**
+
+#### 3. 403 / 409
+
+- 방장이 아니면 **403 `COOPERATIVE_MISSION_HOST_ONLY`**
+- 1단계·3단계면 **409 `COOPERATIVE_MISSION_STEP_NOT_ALLOWED`**
+- 완료된 방이면 **409 `COOPERATIVE_MISSION_ALREADY_COMPLETED`**
+- 모두 역할 진행도를 만들지 않는다.
+
+#### 4. 404
+
+- 진행도 없음 → `COOPERATIVE_MISSION_PROGRESS_NOT_FOUND`
+- 역할 카드 없음 → `COOPERATIVE_ROLE_CARD_NOT_FOUND`
+- 참가자 없음 / `PENDING` 참가자 / 다른 방 참가자 → `COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`
 
 #### 5. 400 / 401
 
-- `teamToken` 누락 · 빈 문자열 · `null` → **400 `INVALID_REQUEST`**
-- 헤더의 사용자가 없으면 **401 `UNAUTHORIZED_USER`** 이고 참여자도 생기지 않는다.
-
-## 참여 요청 수락 테스트 의도
-
-이 API는 응답 본문이 없다(`204`). 그래서 확인할 것은 응답 형식이 아니라 **DB가 어떻게 바뀌었는가**와
-**누가 이 요청을 할 수 있는가**다.
-
-첫째는 **방장 권한**이다. 방장 여부를 요청 값이 아니라 토큰으로 식별한 사용자의 참여자 row로 판단하므로,
-팀원 본인 / 방에 없는 사람 / 다른 방의 방장이 각각 `403`인지 본다.
-특히 권한 검증이 단계 검증보다 **앞**이어서, 남의 방에 요청해도 그 방의 진행 단계를 알 수 없어야 한다.
-
-둘째는 **두 Path id의 관계**다. `participantId`만 믿고 수락하면 다른 방 팀원을 수락할 수 있다.
-그래서 "참여자는 있는데 다른 방 소속", "대상이 방장" 같은 경우를 `404`로 확인한다.
-
-셋째는 **멱등성**이다. 프론트가 응답을 못 받아 재전송해도 상태와 `joined_at`이 다시 바뀌면 안 된다.
-이미 `ACCEPTED`인 참여자를 다시 수락해도 `204`이고 수락 시각이 그대로인지 본다.
-
-### 주요 검증 항목
-
-#### 1. 수락 처리
-
-- **204**이고 응답 본문이 비어 있다.
-- 대상 참여자가 `PENDING → ACCEPTED` 로 바뀌고 `joined_at` 이 기록된다.
-- 역할(`MEMBER`)과 소속 방은 그대로다.
-- **새 참여자 row를 만들지 않는다.** (기존 row 갱신)
-
-#### 2. 멱등 재요청
-
-- 이미 `ACCEPTED` 인 참여자를 다시 수락해도 **204**, `joined_at` 은 기존 값 유지.
-- 같은 요청을 연속 두 번 보내도 수락 시각과 참여자 수가 그대로다.
-
-#### 3. 403 `COOPERATIVE_MISSION_HOST_ONLY`
-
-- 수락 대기 중인 **팀원 본인**이 요청한 경우
-- 방에 참여하지 않은 사용자가 요청한 경우
-- **다른 방의 방장**이 요청한 경우 (자기 방에서만 방장이다)
-- 모두 참여자 상태를 바꾸지 않는다.
-- 단계가 지난 방이어도 방장이 아니면 **409보다 403이 먼저**다.
-
-#### 4. 404
-
-- 진행도가 없거나 **이미 완료된 방** → `COOPERATIVE_MISSION_PROGRESS_NOT_FOUND`
-  (없는 방과 끝난 방을 구분해서 노출하지 않는다)
-- 참여자가 없거나 **다른 방 소속**이거나 **대상이 방장**
-  → `COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`
-
-#### 5. 409 `COOPERATIVE_MISSION_JOIN_CLOSED`
-
-- `current_step` 이 2 / 3 이면 수락할 수 없고, 상태와 `joined_at` 도 그대로다.
-
-#### 6. 400 / 401
-
-- 두 Path id가 0 이하이거나 정수가 아니면 **400 `INVALID_REQUEST`**
-- 헤더의 사용자가 없으면 **401 `UNAUTHORIZED_USER`** 이고 참여자 상태도 그대로다.
-
-## 참여 요청 거절 테스트 의도
-
-거절은 수락과 **권한·단계·대상 검증이 똑같고 마지막 한 걸음만 다르다.**
-상태를 바꾸는 대신 참가자 row 를 **지운다.** 그래서 검증도 "무엇이 사라졌는가"에 맞춘다.
-
-첫째, **`REJECTED` 상태를 남기지 않는다.** 거절하면 row 자체가 없어야 하고,
-그 결과로 **자리가 하나 비어 거절당한 사용자가 같은 초대 URL 로 다시 요청**할 수 있어야 한다.
-그래서 거절 후 참여 요청 API 를 실제로 다시 호출해 201 이 나오는지까지 본다.
-
-둘째, **이미 수락된 팀원은 이 API 로 지울 수 없다.** 수락된 팀원 내보내기는 다른 동작이라
-`409 COOPERATIVE_MISSION_PARTICIPANT_ALREADY_ACCEPTED` 이고 row 도 그대로여야 한다.
-(수락이 먼저 커밋된 뒤 들어온 거절 요청이 이 경우다)
-
-셋째, 거절은 되돌릴 수 없으므로 **막아야 할 요청에서 정말 아무것도 지워지지 않는지**를
-모든 오류 케이스에서 참가자 목록으로 확인한다.
-
-### 주요 검증 항목
-
-#### 1. 거절 처리
-
-- **204**이고 응답 본문이 비어 있다.
-- 대상 참가자 row 가 삭제되고 방장은 그대로 남는다.
-- 거절당한 사용자는 같은 초대 URL 로 다시 요청해 새 `PENDING` 이 만들어진다.
-- 같은 `participantId` 로 다시 거절하면 **404** (삭제된 row 를 복원하지 않는다)
-
-#### 2. 409 `COOPERATIVE_MISSION_PARTICIPANT_ALREADY_ACCEPTED`
-
-- 이미 `ACCEPTED` 인 팀원은 삭제하지 않고 409.
-
-#### 3. 403 `COOPERATIVE_MISSION_HOST_ONLY`
-
-- 팀원 본인 / 방에 없는 사용자 / **다른 방의 방장**이 요청한 경우
-- 단계가 지난 방이어도 방장이 아니면 **409보다 403이 먼저**다.
-- 모두 참가자를 지우지 않는다.
-
-#### 4. 404
-
-- 진행도가 없거나 **이미 완료된 방** → `COOPERATIVE_MISSION_PROGRESS_NOT_FOUND`
-- 참여자가 없거나 **다른 방 소속**이거나 **대상이 방장**(방장은 자기 자신을 거절할 수 없다)
-  → `COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`
-
-#### 5. 409 `COOPERATIVE_MISSION_JOIN_CLOSED`
-
-- `current_step` 이 2 / 3 이면 거절할 수 없고 참가자도 그대로다.
-
-#### 6. 400 / 401
-
-- 두 Path id가 0 이하이거나 정수가 아니면 **400 `INVALID_REQUEST`**
+- `participantId` 누락 · 0 · 음수 · 정수 아님 · `null` → **400 `INVALID_REQUEST`**
+- 두 Path id가 0 이하이거나 정수가 아니면 **400**
 - 헤더의 사용자가 없으면 **401 `UNAUTHORIZED_USER`**
-- 두 경우 모두 참가자를 지우지 않는다.
+- 모두 역할 진행도를 만들지 않는다.
+
+## 역할 진행도 저장(사진 인증) 테스트 의도
+
+이 API는 **판정 → 업로드 → DB 저장** 세 단계가 이어져 있고, 각 단계가 실패했을 때 남는 흔적이 다르다.
+그래서 검증의 축은 "성공/실패에 따라 무엇이 남고 무엇이 남지 않는가"다.
+
+가장 중요한 건 **인증 실패가 오류가 아니라는 점**이다. `200` + `isVerified: false` 이고
+사진을 올리지도, `item_img_url` / `progress_status` / `completed_at` 을 건드리지도 않는다.
+지금은 임시 구현이 항상 `True` 라 실패 케이스는 `photo_verifier.verify_role_image` 를 가짜로 바꿔 만든다.
+(인증 방식이 바뀌어도 이 테스트는 그대로 쓸 수 있다)
+
+두 번째는 **권한이 방장이 아니라 담당자 기준**이라는 점이다. 방장이라도 남의 역할은 인증할 수 없고,
+담당자여도 참가 상태가 `ACCEPTED` 가 아니면 막힌다. 둘 다 `403`이다.
+
+세 번째는 **보상 작업(compensation)** 이다. Blob 업로드는 트랜잭션에 묶이지 않으므로
+DB 저장이 실패하면 올린 사진을 지워 DB가 참조하지 않는 파일이 남지 않아야 한다.
+Blob 호출은 실제 Azure 로 나가지 않도록 `uploads` / `deletes` 픽스처로 가로챈다.
+
+마지막으로 이 API는 **협동 미션 단계를 바꾸지 않는다.** 마지막 역할까지 인증해도
+`current_step` 은 3 그대로여야 한다. (4로 넘기는 건 방장의 진행도 저장 API)
+
+### 주요 검증 항목
+
+#### 1. 인증 성공
+
+- **200 / `isVerified: true`**
+- `item_img_url` / `progress_status=COMPLETED` / `completed_at` 이 저장된다.
+- Blob 경로는 `cooperative_mission_role/{progressId}/{roleProgressId}` 이고
+  확장자는 **파일 내용으로 판별한 실제 형식**을 따른다. 원본 파일명은 쓰지 않는다.
+- JPEG / PNG / WebP 모두 인증되고, 확장자·Content-Type 이 내용과 달라도 실제 형식을 따른다.
+- 팀원도 자기 역할을 인증할 수 있다.
+- 모든 역할을 인증해도 미션 단계·상태·완료 시각은 그대로다.
+
+#### 2. 인증 실패
+
+- **200 / `isVerified: false`** 이고 업로드·DB 변경이 전혀 없다.
+- 인증 모듈에는 이미지 bytes / MIME type 과 **역할 카드 정보**(이름·설명·찾을 장소)를 넘긴다.
+  (프론트가 보낸 값이 아니라 역할 진행도 관계로 조회한 값이다)
+
+#### 3. 실패 시 되돌리기
+
+- Blob 업로드 실패 → **500**, 역할 진행도 그대로.
+- DB 저장 실패 → **500**, 올린 Blob 을 삭제한다.
+
+#### 4. 403 / 409
+
+- 남의 역할을 인증하려 하면 **403 `COOPERATIVE_ROLE_PROGRESS_ACCESS_DENIED`** (방장도 예외 없음)
+- 담당자가 `PENDING` 이면 403
+- 이미 인증한 역할이면 **409 `COOPERATIVE_ROLE_PROGRESS_ALREADY_COMPLETED`**,
+  기존 사진을 덮어쓰지 않는다.
+- 1·2단계면 **409 `COOPERATIVE_MISSION_STEP_NOT_ALLOWED`**
+- 완료된 방이면 **409 `COOPERATIVE_MISSION_ALREADY_COMPLETED`**
+
+#### 5. 404 / 401
+
+- 진행도 없음 → `COOPERATIVE_MISSION_PROGRESS_NOT_FOUND`
+- 역할 진행도 없음 / **다른 방의 역할 진행도** → `COOPERATIVE_ROLE_PROGRESS_NOT_FOUND`
+- 헤더의 사용자가 없으면 **401 `UNAUTHORIZED_USER`**
+
+#### 6. 400 `INVALID_REQUEST`
+
+- `itemImage` 누락 · 허용하지 않는 형식(GIF) · 빈 파일 · 10MB 초과
+- 두 Path id가 0 이하이거나 정수가 아님
+- 모두 업로드하지 않고 역할 진행도도 그대로다.
 
 ## 실행 방법
 
@@ -243,21 +276,18 @@ pytest
 pytest app/cooperative_mission
 
 # 특정 테스트만
-pytest app/cooperative_mission/tests/test_start_cooperative_mission.py -k 이어하기
-pytest app/cooperative_mission/tests/test_join_cooperative_mission.py -k 기존
-pytest app/cooperative_mission/tests/test_accept_join_request.py -k 멱등
-pytest app/cooperative_mission/tests/test_reject_join_request.py -k 거절
+pytest app/cooperative_mission/tests/test_get_cooperative_mission_status.py -k 보상
+pytest app/cooperative_mission/tests/test_get_cooperative_mission_status.py -k 4단계
+pytest app/cooperative_mission/tests/test_save_cooperative_mission_progress.py -k 단계
+pytest app/cooperative_mission/tests/test_save_role_assignment.py -k 배정
+pytest app/cooperative_mission/tests/test_verify_role_progress.py -k 인증
 ```
 
 DB는 SQLite 인메모리를 사용하므로 MySQL이 떠 있지 않아도 실행된다.
 공통 픽스처(`client`, `db_session`)는 루트 `conftest.py`에 있고,
-협동 미션 / 역할 카드 6종 / 사용자 목업은 `cooperative_data` 픽스처에서 만든다.
-진행도와 참여자는 조합이 테스트마다 달라서 `_add_progress()` / `_add_participant()` 헬퍼로 직접 만든다.
-
-팀 토큰 충돌 재시도는 난수라 테스트로 재현하기 어렵다.
-`app/cooperative_mission/service.py`의 `MAX_TEAM_TOKEN_ATTEMPTS` 안에서
-중복이면 트랜잭션을 되돌리고 새 토큰으로 다시 시도하며, 계속 실패하면 공통 500으로 처리한다.
-
-참여 요청 테스트는 `join_data` 픽스처로 방장 1명이 있는 방 하나와 참여 가능한 사용자들을 만든다.
-동시 요청 시 인원 초과를 막는 진행도 행 잠금(`SELECT ... FOR UPDATE`)은 MySQL 에서만 걸리고
-테스트 DB인 SQLite 에서는 무시되므로, 잠금 자체는 테스트로 검증하지 않는다.
+미션/장소/역할 카드/사용자와 방장·팀원 참가자는 `status_data` 픽스처에서 만든다.
+단계 전환은 `_set_step()` / `_complete()`, 역할 진행도는 `_add_role_progress()` 헬퍼로 만든다.
+TourAPI 호출은 `stub_location_image` 픽스처(autouse)로 막는다.
+진행도 저장 테스트는 `progress_data` 픽스처로 초대 단계 방을 만들고, `_set_step()` / `_assign_role()` 로 각 단계 상황을 재현한다.
+역할 배정 테스트는 `assignment_data` 픽스처로 2단계 방(방장/수락 팀원/대기 팀원)을 만들고, `_add_other_progress()` 로 다른 방 상황을 만든다.
+사진 인증 테스트는 `verification_data` 픽스처로 3단계 방과 역할 배정을 만들고, Blob 호출은 `uploads` / `deletes` 픽스처로 가로챈다.

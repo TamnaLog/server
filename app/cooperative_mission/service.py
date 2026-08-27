@@ -6,13 +6,15 @@
 
 import secrets
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, BinaryIO
 
 from sqlalchemy import case, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.common import images, next_location
 from app.common.datetimes import now_kst
+from app.cooperative_mission import photo_verifier, reward_granter
 from app.cooperative_mission.models import (
     CooperativeMission,
     CooperativeMissionParticipant,
@@ -24,7 +26,12 @@ from app.cooperative_mission.models import (
     ParticipantStatus,
 )
 from app.cooperative_mission.schemas import (
+    CooperativeMissionProgressSaveRequest,
+    CooperativeRoleAssignmentSaveRequest,
+    RoleProgressVerificationResponse,
     CooperativeMissionStartResponse,
+    CooperativeMissionStatusResponse,
+    CurrentParticipantResponse,
     JoinCooperativeMissionRequest,
     JoinCooperativeMissionResponse,
     ParticipantResponse,
@@ -32,6 +39,7 @@ from app.cooperative_mission.schemas import (
     RoleProgressResponse,
 )
 from app.core.errors import ConflictError, ForbiddenError, NotFoundError
+from app.services import blob_storage
 from app.user.models import User
 
 
@@ -45,6 +53,18 @@ COOPERATIVE_MISSION_HOST_ONLY = "COOPERATIVE_MISSION_HOST_ONLY"
 COOPERATIVE_MISSION_PARTICIPANT_ALREADY_ACCEPTED = (
     "COOPERATIVE_MISSION_PARTICIPANT_ALREADY_ACCEPTED"
 )
+COOPERATIVE_MISSION_ALREADY_COMPLETED = "COOPERATIVE_MISSION_ALREADY_COMPLETED"
+COOPERATIVE_MISSION_STEP_NOT_ALLOWED = "COOPERATIVE_MISSION_STEP_NOT_ALLOWED"
+COOPERATIVE_MISSION_PENDING_PARTICIPANT_EXISTS = (
+    "COOPERATIVE_MISSION_PENDING_PARTICIPANT_EXISTS"
+)
+COOPERATIVE_PARTICIPANT_ROLE_REQUIRED = "COOPERATIVE_PARTICIPANT_ROLE_REQUIRED"
+COOPERATIVE_ROLE_CARD_NOT_FOUND = "COOPERATIVE_ROLE_CARD_NOT_FOUND"
+COOPERATIVE_ROLE_PROGRESS_NOT_FOUND = "COOPERATIVE_ROLE_PROGRESS_NOT_FOUND"
+COOPERATIVE_ROLE_PROGRESS_ALREADY_COMPLETED = (
+    "COOPERATIVE_ROLE_PROGRESS_ALREADY_COMPLETED"
+)
+COOPERATIVE_ROLE_PROGRESS_ACCESS_DENIED = "COOPERATIVE_ROLE_PROGRESS_ACCESS_DENIED"
 
 # 신규 진행도 초기값
 FIRST_STEP = 1
@@ -60,6 +80,21 @@ COOPERATIVE_MISSION_MAX_PARTICIPANTS = 6
 
 # 새 팀원을 받을 수 있는 단계 (초대 단계)
 JOIN_OPEN_STEP = 1
+
+# 역할 카드 배정 단계
+ROLE_ASSIGN_STEP = 2
+
+# 미션 수행(사진 인증) 단계
+MISSION_RUN_STEP = 3
+
+# 역할 카드/역할 진행도를 내려주는 단계 (역할 배정, 미션 수행)
+ROLE_STEPS = (ROLE_ASSIGN_STEP, MISSION_RUN_STEP)
+
+# 미션 완료 단계
+COMPLETED_STEP = 4
+
+# 역할 사진 인증 Blob 저장 경로의 최상위 prefix. 그 아래를 진행도/역할 진행도로 나눈다.
+ROLE_IMAGE_BLOB_PREFIX = "cooperative_mission_role"
 
 
 @dataclass(frozen=True)
@@ -551,27 +586,510 @@ def _check_not_accepted(participant: CooperativeMissionParticipant) -> None:
 
 
 # ---------------------------------------------------------------------
+# 상태 조회 (폴링)
+# ---------------------------------------------------------------------
+
+
+def get_cooperative_mission_status(
+    db: Session, current_user_id: int, mission_progress_id: int
+) -> CooperativeMissionStatusResponse:
+    """협동 미션 상태 조회.
+
+    방장과 팀원이 초대 단계부터 완료까지 폴링하는 API라 단계별로 필요한 값만 채운다.
+
+    - 1단계: 참가자 목록과 내 참여 상태 (수락/거절 결과 확인)
+    - 2·3단계: 역할 카드와 역할 진행도, 인증 집계
+    - 4단계: 보상과 다음 장소 (참가자/역할 정보는 내려주지 않는다)
+
+    1~3단계 조회는 데이터를 바꾸지 않는다. 4단계는 아직 정산 전이면 보상을 지급한다.
+    """
+    progress = _get_progress_for_status(db, mission_progress_id)
+    participant = _get_my_participant(db, progress.id, current_user_id)
+
+    cooperative_mission = _get_cooperative_mission(db, progress.cooperative_mission_id)
+    response = CooperativeMissionStatusResponse(
+        mission_progress_id=progress.id,
+        mission_id=cooperative_mission.id,
+        mission_title=cooperative_mission.mission.mission_title,
+        mission_progress_status=MissionStatus(progress.mission_status),
+        current_step=progress.current_step,
+    )
+
+    if progress.current_step == COMPLETED_STEP:
+        return _to_completed_status(db, response, progress, cooperative_mission)
+
+    response.current_participant = CurrentParticipantResponse(
+        participant_id=participant.id,
+        participant_role=ParticipantRole(participant.participant_role),
+        participant_status=ParticipantStatus(participant.participant_status),
+    )
+    response.participants = _find_participants(db, progress.id)
+
+    if progress.current_step in ROLE_STEPS:
+        role_progresses = _find_role_progresses(db, progress.id)
+        response.role_cards = _find_role_cards(db)
+        response.role_progresses = role_progresses
+        response.total_role_count = len(role_progresses)
+        response.completed_role_count = sum(
+            1
+            for role_progress in role_progresses
+            if role_progress.progress_status is MissionStatus.COMPLETED
+        )
+
+    return response
+
+
+def _get_progress_for_status(
+    db: Session, mission_progress_id: int
+) -> CooperativeMissionProgress:
+    """상태 조회 대상 진행도를 찾는다.
+
+    완료(4단계) 방도 조회해야 하므로 진행 중인 방으로 제한하지 않는다.
+    4단계에서는 보상 정산이 한 번만 일어나도록 행을 잠그고 읽는다.
+    (SQLite 는 행 잠금이 없어 무시되고, MySQL 에서만 실제로 걸린다)
+    """
+    statement = select(CooperativeMissionProgress).where(
+        CooperativeMissionProgress.id == mission_progress_id
+    )
+    progress = db.scalars(statement.with_for_update()).first()
+    if progress is None:
+        raise NotFoundError(
+            COOPERATIVE_MISSION_PROGRESS_NOT_FOUND,
+            detail=f"협동 미션 진행도 {mission_progress_id} 를 찾을 수 없습니다.",
+        )
+    return progress
+
+
+def _get_my_participant(
+    db: Session, progress_id: int, current_user_id: int
+) -> CooperativeMissionParticipant:
+    """현재 사용자의 참가자 row 를 찾는다.
+
+    참여 요청이 거절되면 참가자 row 가 지워지므로, 거절당한 팀원의 폴링도 여기서 404 가 된다.
+    """
+    participant = _find_participant(db, progress_id, current_user_id)
+    if participant is None:
+        raise NotFoundError(
+            COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND,
+            detail=(
+                f"사용자 {current_user_id} 는 진행도 {progress_id} 의 참가자가 아닙니다."
+            ),
+        )
+    return participant
+
+
+def _to_completed_status(
+    db: Session,
+    response: CooperativeMissionStatusResponse,
+    progress: CooperativeMissionProgress,
+    cooperative_mission: CooperativeMission,
+) -> CooperativeMissionStatusResponse:
+    """완료 화면 응답을 만든다. 참가자/역할 정보 대신 보상과 다음 장소를 채운다."""
+    response.reward = reward_granter.settle_cooperative_mission_reward(
+        db,
+        progress=progress,
+        cooperative_mission=cooperative_mission,
+        completed_role_count=reward_granter.count_completed_roles(db, progress.id),
+    )
+    response.next_location = next_location.recommend_next_location_summary(db)
+    return response
+
+
+# ---------------------------------------------------------------------
+# 진행도 저장 (단계 변경)
+# ---------------------------------------------------------------------
+
+
+def save_cooperative_mission_progress(
+    db: Session,
+    current_user_id: int,
+    mission_progress_id: int,
+    request: CooperativeMissionProgressSaveRequest,
+) -> None:
+    """방장이 협동 미션을 다음 단계로 넘긴다.
+
+    이 API 는 단계만 바꾼다. 역할 배정/보상/다음 장소는 각각 다른 API 가 담당한다.
+
+    - `1 → 2`: 아직 수락도 거절도 안 된 참여 요청이 남아 있으면 넘길 수 없다.
+    - `2 → 3`: 역할을 하나도 못 받은 `ACCEPTED` 참가자가 있으면 넘길 수 없다.
+    - `3 → 4`: 인증이 남아 있어도 방장이 끝낼 수 있다. 완료 상태와 완료 시각을 함께 저장한다.
+    """
+    progress = _get_progress_for_step_change(db, mission_progress_id)
+    _check_host(db, progress.id, current_user_id)
+    _check_sequential_step(progress, request.current_step)
+
+    if request.current_step == ROLE_ASSIGN_STEP:
+        _check_no_pending_participant(db, progress.id)
+    elif request.current_step == MISSION_RUN_STEP:
+        _check_every_participant_has_role(db, progress.id)
+
+    progress.current_step = request.current_step
+    if request.current_step == COMPLETED_STEP:
+        progress.mission_status = MissionStatus.COMPLETED.value
+        progress.completed_at = now_kst()
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+
+def _get_progress_for_step_change(
+    db: Session, mission_progress_id: int
+) -> CooperativeMissionProgress:
+    """단계를 바꿀 진행도를 찾는다.
+
+    완료된 방을 "없는 방"으로 감추지 않고 409 로 구분해서 알려준다.
+    같은 단계 변경 요청이 동시에 들어와도 한 번만 처리되도록 행을 잠그고 읽는다.
+    (SQLite 는 행 잠금이 없어 무시되고, MySQL 에서만 실제로 걸린다)
+    """
+    statement = (
+        select(CooperativeMissionProgress)
+        .where(CooperativeMissionProgress.id == mission_progress_id)
+        .with_for_update()
+    )
+    progress = db.scalars(statement).first()
+    if progress is None:
+        raise NotFoundError(
+            COOPERATIVE_MISSION_PROGRESS_NOT_FOUND,
+            detail=f"협동 미션 진행도 {mission_progress_id} 를 찾을 수 없습니다.",
+        )
+
+    if (
+        progress.mission_status == MissionStatus.COMPLETED.value
+        or progress.current_step == COMPLETED_STEP
+    ):
+        raise ConflictError(
+            COOPERATIVE_MISSION_ALREADY_COMPLETED,
+            detail=f"진행도 {progress.id} 는 이미 완료된 협동 미션입니다.",
+        )
+    return progress
+
+
+def _check_sequential_step(
+    progress: CooperativeMissionProgress, next_step: int
+) -> None:
+    """한 단계씩만 올릴 수 있다. 같은 단계/역행/건너뛰기는 모두 막는다."""
+    if next_step != progress.current_step + 1:
+        raise ConflictError(
+            COOPERATIVE_MISSION_STEP_NOT_ALLOWED,
+            detail=(
+                f"진행도 {progress.id} 의 현재 단계는 {progress.current_step} 이라 "
+                f"{next_step} 단계로 바꿀 수 없습니다."
+            ),
+        )
+
+
+def _check_no_pending_participant(db: Session, progress_id: int) -> None:
+    """수락 대기 중인 참여 요청이 남아 있는지 확인한다. (1 → 2)
+
+    남은 요청을 자동으로 수락하거나 지우지 않는다. 방장이 직접 정리해야 한다.
+    """
+    pending_id = db.scalar(
+        select(CooperativeMissionParticipant.id)
+        .where(
+            CooperativeMissionParticipant.cooperative_mission_progress_id == progress_id,
+            CooperativeMissionParticipant.participant_status
+            == ParticipantStatus.PENDING.value,
+        )
+        .limit(1)
+    )
+    if pending_id is not None:
+        raise ConflictError(
+            COOPERATIVE_MISSION_PENDING_PARTICIPANT_EXISTS,
+            detail=f"진행도 {progress_id} 에 아직 처리하지 않은 참여 요청이 있습니다.",
+        )
+
+
+def _check_every_participant_has_role(db: Session, progress_id: int) -> None:
+    """`ACCEPTED` 참가자 모두가 역할을 하나 이상 받았는지 확인한다. (2 → 3)
+
+    역할 카드가 남아 있거나 한 참가자가 여러 역할을 맡은 것은 막지 않는다.
+    역할 배정 자체의 유효성은 역할 배정 저장 API 가 검증한다.
+    """
+    statement = (
+        select(CooperativeMissionParticipant.id)
+        .outerjoin(
+            CooperativeRoleProgress,
+            CooperativeRoleProgress.participant_id == CooperativeMissionParticipant.id,
+        )
+        .where(
+            CooperativeMissionParticipant.cooperative_mission_progress_id == progress_id,
+            CooperativeMissionParticipant.participant_status
+            == ParticipantStatus.ACCEPTED.value,
+            CooperativeRoleProgress.id.is_(None),
+        )
+        .limit(1)
+    )
+    participant_id = db.scalar(statement)
+    if participant_id is not None:
+        raise ConflictError(
+            COOPERATIVE_PARTICIPANT_ROLE_REQUIRED,
+            detail=f"참가자 {participant_id} 는 아직 역할을 배정받지 않았습니다.",
+        )
+
+
+# ---------------------------------------------------------------------
+# 역할 배정 저장
+# ---------------------------------------------------------------------
+
+
+def save_role_assignment(
+    db: Session,
+    current_user_id: int,
+    mission_progress_id: int,
+    role_card_id: int,
+    request: CooperativeRoleAssignmentSaveRequest,
+) -> None:
+    """방장이 역할 카드 하나의 담당자를 저장한다. (역할 카드 기준 upsert)
+
+    - 이 방에서 그 역할 카드가 아직 배정되지 않았으면 역할 진행도를 새로 만든다.
+    - 이미 배정돼 있으면 새 row 를 만들지 않고 담당 참가자만 바꾼다.
+      (`roleProgressId` / 역할 카드 / 인증 정보는 그대로 둔다)
+    - 같은 참가자로 다시 요청하면 아무것도 바꾸지 않는다. (멱등)
+    """
+    progress = _get_progress_for_step_change(db, mission_progress_id)
+    _check_host(db, progress.id, current_user_id)
+    _check_role_assign_step(progress)
+    _get_role_card(db, role_card_id)
+
+    participant = _get_accepted_participant(db, progress.id, request.participant_id)
+    role_progress = _find_role_progress_by_role_card(db, progress.id, role_card_id)
+
+    if role_progress is None:
+        db.add(
+            CooperativeRoleProgress(
+                participant_id=participant.id,
+                cooperative_role_card_id=role_card_id,
+                item_img_url=None,
+                progress_status=MissionStatus.IN_PROGRESS.value,
+                completed_at=None,
+            )
+        )
+    elif role_progress.participant_id != participant.id:
+        # 담당자만 바꾼다. 역할 진행도 id 와 인증 데이터는 유지한다.
+        role_progress.participant_id = participant.id
+    else:
+        # 같은 배정을 다시 요청한 경우라 바꿀 것이 없다.
+        return
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+
+def _check_role_assign_step(progress: CooperativeMissionProgress) -> None:
+    """역할 배정은 2단계에서만 할 수 있다."""
+    if progress.current_step != ROLE_ASSIGN_STEP:
+        raise ConflictError(
+            COOPERATIVE_MISSION_STEP_NOT_ALLOWED,
+            detail=(
+                f"진행도 {progress.id} 의 현재 단계가 {progress.current_step} 이라 "
+                "역할을 배정할 수 없습니다."
+            ),
+        )
+
+
+def _get_role_card(db: Session, role_card_id: int) -> CooperativeRoleCard:
+    """역할 카드를 조회한다.
+
+    역할 카드는 모든 협동 미션이 함께 쓰는 마스터라 미션으로 더 좁히지 않는다.
+    """
+    role_card = db.get(CooperativeRoleCard, role_card_id)
+    if role_card is None:
+        raise NotFoundError(
+            COOPERATIVE_ROLE_CARD_NOT_FOUND,
+            detail=f"역할 카드 {role_card_id} 를 찾을 수 없습니다.",
+        )
+    return role_card
+
+
+def _get_accepted_participant(
+    db: Session, progress_id: int, participant_id: int
+) -> CooperativeMissionParticipant:
+    """역할을 맡을 참가자를 조회한다.
+
+    다른 방의 참가자이거나 아직 수락되지 않은 참가자는 배정 대상이 아니다.
+    방장도 역할을 맡을 수 있으므로 역할(`HOST`/`MEMBER`)은 따지지 않는다.
+    """
+    statement = (
+        select(CooperativeMissionParticipant)
+        .where(
+            CooperativeMissionParticipant.id == participant_id,
+            CooperativeMissionParticipant.cooperative_mission_progress_id == progress_id,
+            CooperativeMissionParticipant.participant_status
+            == ParticipantStatus.ACCEPTED.value,
+        )
+        .with_for_update()
+    )
+    participant = db.scalars(statement).first()
+    if participant is None:
+        raise NotFoundError(
+            COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND,
+            detail=(
+                f"진행도 {progress_id} 에서 역할을 맡을 참가자 {participant_id} 를 "
+                "찾을 수 없습니다."
+            ),
+        )
+    return participant
+
+
+def _find_role_progress_by_role_card(
+    db: Session, progress_id: int, role_card_id: int
+) -> CooperativeRoleProgress | None:
+    """이 방에서 해당 역할 카드에 이미 배정된 역할 진행도를 찾는다.
+
+    역할 진행도는 진행도 id를 직접 갖지 않아 참가자 테이블을 거쳐 방을 좁힌다.
+    (역할 카드는 공용 마스터라 카드 id 만으로 찾으면 다른 방의 배정까지 걸린다)
+    """
+    statement = (
+        select(CooperativeRoleProgress)
+        .join(
+            CooperativeMissionParticipant,
+            CooperativeMissionParticipant.id == CooperativeRoleProgress.participant_id,
+        )
+        .where(
+            CooperativeMissionParticipant.cooperative_mission_progress_id == progress_id,
+            CooperativeRoleProgress.cooperative_role_card_id == role_card_id,
+        )
+        .order_by(CooperativeRoleProgress.id)
+    )
+    return db.scalars(statement).first()
+
+
+# ---------------------------------------------------------------------
+# 역할 진행도 저장 (사진 인증)
+# ---------------------------------------------------------------------
+
+
+def verify_role_progress(
+    db: Session,
+    current_user_id: int,
+    mission_progress_id: int,
+    role_progress_id: int,
+    item_image: BinaryIO,
+) -> RoleProgressVerificationResponse:
+    """참가자가 자기 역할의 인증 사진을 올린다.
+
+    - 인증에 실패하면 아무것도 바꾸지 않고 `isVerified: false` 만 돌려준다. (오류가 아니다)
+    - 성공하면 사진을 Blob 에 올리고 역할 진행도를 `COMPLETED` 로 바꾼다.
+
+    이 API 는 협동 미션의 단계나 완료 상태를 바꾸지 않는다.
+    마지막 역할까지 인증돼도 `3 → 4` 는 방장이 진행도 저장 API 로 직접 넘겨야 한다.
+    """
+    data, image_format = images.read_and_detect(item_image)
+
+    progress = _get_progress_for_verification(db, mission_progress_id)
+    role_progress = _get_my_role_progress(
+        db, progress.id, role_progress_id, current_user_id
+    )
+    role_card = _get_role_card(db, role_progress.cooperative_role_card_id)
+
+    is_verified = photo_verifier.verify_role_image(
+        image_bytes=data,
+        content_type=image_format.content_type,
+        role_name=role_card.role_name,
+        role_description=role_card.role_description,
+        location_to_find=role_card.location_to_find,
+    )
+    if not is_verified:
+        # 판정 실패는 정상 응답이다. 사진을 올리지도, 진행도를 바꾸지도 않는다.
+        return RoleProgressVerificationResponse(is_verified=False)
+
+    item_img_url = blob_storage.upload_file(
+        data,
+        prefix=f"{ROLE_IMAGE_BLOB_PREFIX}/{progress.id}/{role_progress.id}",
+        content_type=image_format.content_type,
+        extension=image_format.extension,
+    )
+
+    try:
+        role_progress.item_img_url = item_img_url
+        role_progress.progress_status = MissionStatus.COMPLETED.value
+        role_progress.completed_at = now_kst()
+        db.commit()
+    except Exception:
+        # DB 가 참조하지 않는 파일이 남지 않도록 올린 사진을 되돌린다.
+        db.rollback()
+        blob_storage.delete_file(item_img_url)
+        raise
+
+    return RoleProgressVerificationResponse(is_verified=True)
+
+
+def _get_progress_for_verification(
+    db: Session, mission_progress_id: int
+) -> CooperativeMissionProgress:
+    """사진 인증이 가능한 진행도인지 확인한다. (미션 수행 단계에서만 가능)"""
+    progress = _get_progress_for_step_change(db, mission_progress_id)
+    if progress.current_step != MISSION_RUN_STEP:
+        raise ConflictError(
+            COOPERATIVE_MISSION_STEP_NOT_ALLOWED,
+            detail=(
+                f"진행도 {progress.id} 의 현재 단계가 {progress.current_step} 이라 "
+                "사진을 인증할 수 없습니다."
+            ),
+        )
+    return progress
+
+
+def _get_my_role_progress(
+    db: Session, progress_id: int, role_progress_id: int, current_user_id: int
+) -> CooperativeRoleProgress:
+    """인증할 역할 진행도를 찾는다.
+
+    같은 역할에 인증 요청이 동시에 들어와도 한 번만 완료되도록 행을 잠그고 읽는다.
+    방장이라도 자기에게 배정된 역할만 인증할 수 있다.
+    """
+    statement = (
+        select(CooperativeRoleProgress, CooperativeMissionParticipant)
+        .join(
+            CooperativeMissionParticipant,
+            CooperativeMissionParticipant.id == CooperativeRoleProgress.participant_id,
+        )
+        .where(
+            CooperativeRoleProgress.id == role_progress_id,
+            CooperativeMissionParticipant.cooperative_mission_progress_id == progress_id,
+        )
+        .with_for_update(of=CooperativeRoleProgress)
+    )
+    row = db.execute(statement).first()
+    if row is None:
+        raise NotFoundError(
+            COOPERATIVE_ROLE_PROGRESS_NOT_FOUND,
+            detail=(
+                f"진행도 {progress_id} 에서 역할 진행도 {role_progress_id} 를 찾을 수 없습니다."
+            ),
+        )
+
+    role_progress, participant = row
+    if (
+        participant.user_id != current_user_id
+        or participant.participant_status != ParticipantStatus.ACCEPTED.value
+    ):
+        raise ForbiddenError(
+            COOPERATIVE_ROLE_PROGRESS_ACCESS_DENIED,
+            detail=(
+                f"사용자 {current_user_id} 는 역할 진행도 {role_progress_id} 의 담당자가 아닙니다."
+            ),
+        )
+
+    if role_progress.progress_status == MissionStatus.COMPLETED.value:
+        raise ConflictError(
+            COOPERATIVE_ROLE_PROGRESS_ALREADY_COMPLETED,
+            detail=f"역할 진행도 {role_progress_id} 는 이미 인증을 마쳤습니다.",
+        )
+    return role_progress
+
+
+# ---------------------------------------------------------------------
 # 미구현 API
 # ---------------------------------------------------------------------
 
 
-def get_cooperative_mission_status(mission_progress_id: int, db: Session) -> dict[str, Any]:
-    """협동 미션 상태 조회."""
-    raise NotImplementedError
-
-
-def save_cooperative_mission_progress(mission_progress_id: int, db: Session) -> dict[str, Any]:
-    """협동 미션 진행도 저장."""
-    raise NotImplementedError
-
-
 def stop_cooperative_mission(mission_progress_id: int, db: Session) -> dict[str, Any]:
     """협동 미션 중단."""
-    raise NotImplementedError
-
-
-def save_role_progress(
-    mission_progress_id: int, role_progress_id: int, db: Session
-) -> dict[str, Any]:
-    """협동 미션 역할 진행도 저장."""
     raise NotImplementedError

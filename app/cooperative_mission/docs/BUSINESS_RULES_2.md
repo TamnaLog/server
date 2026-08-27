@@ -1,88 +1,161 @@
-# 협동 미션 시작하기/이어하기 비즈니스 룰
+# 협동 미션 상태 조회 비즈니스 룰
 
-## 1. 요청 및 식별 기준
+## 1. 요청 및 사용자 식별
 
-- HTTP 메서드: `POST`
-- 엔드포인트: `/api/v1/cooperative-missions/{cooperativeMissionId}/progress`
-- 요청 Path의 `cooperativeMissionId`는 공통 `MISSION.id`가 아니라 `COOPERATIVE_MISSION.id`를 의미한다.
-- 요청 Body와 Query는 사용하지 않는다.
-- 현재 로그인한 사용자는 협동 미션 방을 생성하거나 자신이 방장인 진행 중 방을 이어서 할 수 있다.
+- HTTP 메서드: `GET`
+- 엔드포인트: `/api/v1/cooperative-missions/{cooperativeMissionProgressId}/progress`
+- Path의 `cooperativeMissionProgressId`로 조회할 `COOPERATIVE_MISSION_PROGRESS`를 식별한다.
+- Request Query와 Body는 받지 않는다.
+- 현재 사용자는 Authorization Bearer 토큰의 `get_current_user_id()`로 식별한다.
 
-## 2. 처리 순서
+프론트는 현재 사용자의 참가자 id, 참가자 역할 또는 참여 상태를 요청으로 전달하지 않는다. 백엔드가 현재 사용자 id와 진행도 id로 `COOPERATIVE_MISSION_PARTICIPANT`를 조회하여 호출 권한과 현재 참가자 정보를 판단한다.
 
-1. `cooperativeMissionId`로 `COOPERATIVE_MISSION`을 조회한다.
-2. 현재 사용자가 `HOST`로 참여하고 있는 해당 협동 미션의 `IN_PROGRESS` 진행도를 조회한다.
-3. `IN_PROGRESS` 진행도가 없으면 새로운 진행도와 방장 참여자를 생성하고 `201 Created`를 반환한다.
-4. `IN_PROGRESS` 진행도가 있으면 새로운 데이터를 생성하지 않고 기존 방 상태를 조합하여 `200 OK`를 반환한다.
+## 2. API 용도와 폴링
 
-과거의 `COMPLETED` 진행도는 이어하기 대상으로 사용하지 않는다. `COMPLETED` 진행도만 존재하면 새로운 도전으로 판단하여 새 `IN_PROGRESS` 진행도를 생성한다.
+방장과 팀원은 초대 단계인 `current_step = 1`부터 이 API를 주기적으로 호출하여 협동 미션의 최신 상태를 확인한다.
 
-현재 사용자가 다른 방에 `MEMBER`로 참여하고 있는 기록은 이 API의 이어하기 대상으로 사용하지 않는다.
+상태 조회는 다음 변경 사항을 프론트에 전달한다.
 
-## 3. 신규 진행도 생성
+- 참여 요청 생성, 수락 및 거절 결과
+- 협동 미션 단계 변경
+- 역할 카드 배정 결과
+- 역할별 사진 인증 결과
+- 협동 미션 완료 결과
 
-현재 사용자가 방장인 해당 협동 미션의 `IN_PROGRESS` 진행도가 없으면 다음 값으로 `COOPERATIVE_MISSION_PROGRESS`를 생성한다.
+1~3단계 조회에서는 진행도, 참가자 또는 역할 진행도를 변경하지 않는다. 단, 4단계 조회에서는 아직 보상 정산이 수행되지 않았다면 보상 지급 로직을 실행할 수 있다.
 
-- `cooperative_mission_id`: 요청받은 `cooperativeMissionId`
-- `current_step`: `1`
-- `mission_status`: `IN_PROGRESS`
-- `team_token`: 새로 생성한 팀 토큰
-- `ar_character_reward_granted`: `FALSE`
-- `point_reward_granted`: `FALSE`
-- `coupon_reward_granted`: `FALSE`
-- `completed_at`: `NULL`
+## 3. 처리 순서
 
-진행도와 함께 현재 사용자를 다음 값으로 `COOPERATIVE_MISSION_PARTICIPANT`에 생성한다.
+1. `cooperativeMissionProgressId`의 형식과 범위를 검증한다.
+2. 진행도 id로 `COOPERATIVE_MISSION_PROGRESS`와 연결된 협동 미션 정보를 조회한다.
+3. 현재 사용자가 해당 진행도의 참가자인지 확인한다.
+4. 현재 사용자의 참가자 row로 `currentParticipant`를 구성한다.
+5. 진행도의 `current_step`에 따라 필요한 데이터만 조회한다.
+6. 4단계이면 보상 지급 여부를 확인하고 필요한 경우 보상 지급 로직을 실행한다.
+7. 4단계이면 `common`의 다음 장소 추천 로직을 현재 사용자 기준으로 실행한다.
+8. 단계별 응답 구조를 조합하여 `200 OK`를 반환한다.
 
-- `cooperative_mission_progress_id`: 새로 생성한 진행도 id
-- `user_id`: 현재 로그인한 사용자 id
-- `participant_status`: `ACCEPTED`
-- `participant_role`: `HOST`
-- `joined_at`: 현재 시각
+## 4. 진행도와 참가자 검증
 
-진행도 생성과 방장 참여자 생성은 하나의 트랜잭션으로 처리한다. 어느 한쪽이라도 저장에 실패하면 전체 작업을 롤백하여 방장 없는 진행도나 진행도 없는 참여자가 남지 않도록 한다.
+`COOPERATIVE_MISSION_PROGRESS.id = cooperativeMissionProgressId`인 진행도를 조회한다.
 
-신규 생성 응답은 다음 기준으로 구성한다.
+상태 조회는 진행 중인 진행도뿐 아니라 완료된 4단계 진행도도 조회해야 하므로 `mission_status = IN_PROGRESS` 조건만으로 제한하지 않는다.
 
-- `missionProgressId`: 새로 생성한 진행도 id
-- `missionProgressStatus`: `IN_PROGRESS`
-- `currentStep`: `1`
-- `teamToken`: 새로 생성하여 진행도에 저장한 팀 토큰
-- `participants`: 새로 생성한 방장 참여자 1명
-- `roleCards`: 공통 `COOPERATIVE_ROLE_CARD` 6종
-- `roleProgresses`: 역할을 아직 배정하지 않았으므로 빈 배열
+진행도가 존재하지 않으면 `404 COOPERATIVE_MISSION_PROGRESS_NOT_FOUND`를 반환한다.
 
-정상적으로 신규 생성한 경우 `201 Created`를 반환한다.
+현재 사용자가 다음 조건을 만족하는 참가자인지 조회한다.
 
-## 4. 진행 중인 미션 이어하기
+```text
+cooperative_mission_progress_id = cooperativeMissionProgressId
+user_id = current_user_id
+```
 
-현재 사용자가 `HOST`로 참여하고 있는 해당 협동 미션의 `IN_PROGRESS` 진행도가 있으면 새로운 진행도, 참여자 또는 팀 토큰을 생성하지 않는다.
+참가자 row가 없으면 `404 COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`를 반환한다. 참여 요청 거절로 `PENDING` 참가자 row가 삭제된 경우도 이 오류에 포함한다.
 
-기존 진행도에서 다음 값을 그대로 사용한다.
+## 5. 단계 정의
 
-- `missionProgressId`: 기존 진행도 id
-- `missionProgressStatus`: 기존 `mission_status`
-- `currentStep`: 기존 `current_step`
-- `teamToken`: 기존 진행도에 저장된 `team_token`
+`current_step`은 다음 네 단계만 사용한다.
 
-기존 진행도의 id로 `COOPERATIVE_MISSION_PARTICIPANT`를 조회하여 참여자와 참여 요청을 반환한다.
+| 단계 | 의미 | 진행 상태 |
+| --- | --- | --- |
+| `1` | 초대 | `IN_PROGRESS` |
+| `2` | 역할 카드 배정 | `IN_PROGRESS` |
+| `3` | 미션 수행 및 사진 인증 | `IN_PROGRESS` |
+| `4` | 미션 완료 | `COMPLETED` |
 
-- `PENDING`: 초대 URL을 통해 참여를 요청했지만 방장이 아직 수락하지 않은 사용자
-- `ACCEPTED`: 방장이거나 참여 요청이 수락된 사용자
+미션이 완료되는 순간 다음 값을 함께 변경한다.
 
-`COOPERATIVE_ROLE_PROGRESS`는 해당 진행도의 참여자를 통해 조회한다. 역할 진행도가 존재하면 역할 카드와 참여자 정보를 조인하여 반환하고, 존재하지 않으면 빈 배열을 반환한다.
+- `current_step`: `4`
+- `mission_status`: `COMPLETED`
+- `completed_at`: 완료 처리 시각
 
-이어하기 응답은 현재 단계와 관계없이 전체 상태를 동일한 구조로 반환한다. 프론트는 `currentStep`을 기준으로 필요한 화면을 구성한다.
+완료 상태를 `current_step = 3`으로 유지하지 않는다.
 
-정상적으로 기존 진행도를 반환한 경우 `200 OK`를 반환한다.
+## 6. 공통 응답 데이터
 
-## 5. 역할 카드 반환
+모든 단계에서 다음 값을 반환한다.
 
-`COOPERATIVE_ROLE_CARD`는 특정 협동 미션에 속하지 않고 모든 협동 미션에서 공통으로 사용하는 마스터 데이터이다.
+| 응답 필드 | 데이터 출처 |
+| --- | --- |
+| `missionProgressId` | `COOPERATIVE_MISSION_PROGRESS.id` |
+| `missionId` | `COOPERATIVE_MISSION.id` |
+| `missionTitle` | 협동 미션과 연결된 `MISSION.title` |
+| `missionProgressStatus` | `COOPERATIVE_MISSION_PROGRESS.mission_status` |
+| `currentStep` | `COOPERATIVE_MISSION_PROGRESS.current_step` |
 
-시작하기와 이어하기 모두 역할 카드 6종 전체를 `roleCards`에 반환한다.
+그 밖의 필드는 현재 단계에 필요한 데이터만 반환하고 사용하지 않는 필드는 키를 생략하지 않고 `null`로 반환한다.
 
-역할 카드는 `id` 오름차순으로 정렬하며 다음 값을 조합한다.
+## 7. 1단계 응답
+
+1단계는 초대 및 참여 요청 처리 화면이다.
+
+- `currentParticipant`: 현재 호출자의 참가자 정보
+- `participants`: 해당 진행도의 `PENDING`, `ACCEPTED` 참가자 목록
+- `roleCards`: `null`
+- `roleProgresses`: `null`
+- `completedRoleCount`: `null`
+- `totalRoleCount`: `null`
+- `reward`: `null`
+- `nextLocation`: `null`
+
+`currentParticipant`는 다음 값으로 구성한다.
+
+| 응답 필드 | 데이터 출처 |
+| --- | --- |
+| `participantId` | 현재 사용자의 참가자 `id` |
+| `participantRole` | `participant_role`. `HOST \| MEMBER` |
+| `participantStatus` | `participant_status`. `PENDING \| ACCEPTED` |
+
+참여 요청을 보낸 팀원은 `PENDING`으로 반환한다. 방장이 수락한 뒤 다음 폴링부터 `ACCEPTED`로 반환한다.
+
+방장이 참여 요청을 거절하면 참가자 row가 삭제되므로 이후 폴링에는 `404 COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`를 반환한다. 프론트는 1단계 대기 화면에서 이 오류를 받으면 참여 요청이 거절된 것으로 처리한다.
+
+## 8. 2단계와 3단계 응답
+
+2단계와 3단계에서는 다음 값을 반환한다.
+
+- `currentParticipant`: 현재 호출자의 참가자 정보
+- `participants`: 참가자 목록
+- `roleCards`: 공통 역할 카드 6종 전체
+- `roleProgresses`: 현재까지 생성된 역할 진행도 목록
+- `completedRoleCount`: 완료된 역할 진행도 수
+- `totalRoleCount`: 실제 생성된 역할 진행도 수
+- `reward`: `null`
+- `nextLocation`: `null`
+
+2단계에서 역할 카드 하나를 배정할 때마다 별도의 역할 배정 저장 API를 호출한다. 저장이 완료되면 다음 상태 조회 폴링부터 생성된 역할 진행도를 `roleProgresses`에 반영한다.
+
+2단계에서 아직 역할이 하나도 배정되지 않았다면 `roleProgresses`는 `null`이 아니라 빈 배열을 반환하고 역할 집계값은 모두 `0`을 반환한다.
+
+## 9. 참가자 목록 구성
+
+`participants`에는 해당 진행도에 존재하는 `PENDING`, `ACCEPTED` 참가자를 반환한다.
+
+방장을 먼저 배치하고 나머지 참가자는 `created_at` 오름차순으로 정렬한다.
+
+| 응답 필드 | 데이터 출처 |
+| --- | --- |
+| `participantId` | `COOPERATIVE_MISSION_PARTICIPANT.id` |
+| `name` | 참가자와 연결된 `USER.nickname` |
+| `participantRole` | `COOPERATIVE_MISSION_PARTICIPANT.participant_role` |
+| `participantStatus` | `COOPERATIVE_MISSION_PARTICIPANT.participant_status` |
+
+## 10. 역할 카드 배정 규칙
+
+`COOPERATIVE_ROLE_CARD`에는 모든 협동 미션이 공통으로 사용하는 역할 카드 6종이 존재한다.
+
+역할 배정에는 다음 규칙을 적용한다.
+
+- 하나의 역할 카드는 최대 한 명의 참가자에게만 배정한다.
+- 같은 역할 카드를 여러 참가자에게 중복 배정하지 않는다.
+- 한 참가자는 서로 다른 여러 역할 카드를 배정받을 수 있다.
+- 역할 카드 6종을 모두 배정할 필요는 없다.
+- 참여 인원이 적으면 일부 역할 카드는 미배정 상태로 남길 수 있다.
+- 미배정 역할 카드는 `COOPERATIVE_ROLE_PROGRESS`를 생성하지 않는다.
+
+따라서 역할 진행도 수는 `0` 이상 `6` 이하이다.
+
+`roleCards`는 `COOPERATIVE_ROLE_CARD.id` 오름차순으로 정렬하며 다음 값을 반환한다.
 
 | 응답 필드 | 데이터 출처 |
 | --- | --- |
@@ -91,108 +164,130 @@
 | `roleDescription` | `COOPERATIVE_ROLE_CARD.role_description` |
 | `locationToFind` | `COOPERATIVE_ROLE_CARD.location_to_find` |
 
-역할 카드는 진행도 생성 시 복사하거나 새로 생성하지 않는다. 역할을 참여자에게 배정할 때만 별도의 `COOPERATIVE_ROLE_PROGRESS`를 생성하여 공통 역할 카드를 참조한다.
+## 11. 역할 진행도와 집계
 
-## 6. 팀 토큰 생성
-
-팀 토큰은 예측하기 어려운 암호학적 난수로 생성한다.
-
-Python에서는 `secrets.token_urlsafe(32)`를 사용한다.
-
-```python
-import secrets
-
-team_token = secrets.token_urlsafe(32)
-```
-
-이 방식은 32바이트의 난수를 URL-safe Base64 문자열로 변환하며, 생성된 문자열은 약 43자이므로 `VARCHAR(100)` 범위에 들어간다.
-
-`COOPERATIVE_MISSION_PROGRESS.team_token`의 `UNIQUE` 제약으로 토큰 중복을 방지한다. 매우 낮은 확률로 중복이 발생하여 저장에 실패하면 새로운 토큰을 생성하여 다시 시도한다. 정해진 재시도 횟수 안에 저장하지 못하면 트랜잭션을 롤백하고 공통 `500 INTERNAL_SERVER_ERROR`로 처리한다.
-
-토큰은 로그에 원문으로 출력하지 않는다. 팀 토큰을 알면 해당 방의 참여 요청 화면에 접근할 수 있으므로 외부 노출에 주의한다.
-
-## 7. 팀 토큰 반환 및 초대 URL 생성 책임
-
-DB에는 완성된 초대 URL을 저장하지 않고 `team_token`만 저장한다.
-
-백엔드는 시작하기와 이어하기 응답의 `teamToken`에 진행도의 `team_token`을 그대로 반환한다. 백엔드는 클라이언트 서버 기본 주소를 관리하거나 완성된 초대 URL을 조합하지 않는다.
-
-신규 진행도를 생성한 경우 새 팀 토큰을 생성하여 DB에 저장하고 응답으로 반환한다.
-
-기존 진행도를 이어서 하는 경우 기존 `team_token`을 새로 만들거나 변경하지 않고 그대로 반환한다. 따라서 프론트가 이전과 같은 클라이언트 주소에서 URL을 생성하면 기존에 공유한 초대 링크와 같은 URL이 만들어진다.
-
-프론트는 현재 실행 중인 클라이언트 주소와 응답의 `teamToken`을 사용하여 다음 형식의 초대 URL을 생성한다.
-
-```text
-{현재 클라이언트 주소}/cooperative-missions/invite?token={URL 인코딩한 teamToken}
-```
-
-웹 클라이언트에서는 `window.location.origin`으로 현재 클라이언트 주소를 구하고 `encodeURIComponent(teamToken)`으로 토큰을 URL에 안전하게 넣을 수 있다.
-
-```typescript
-const inviteUrl =
-  `${window.location.origin}/cooperative-missions/invite?token=${encodeURIComponent(teamToken)}`;
-```
-
-따라서 백엔드에는 초대 URL 생성을 위한 `CLIENT_BASE_URL` 환경변수가 필요하지 않다.
-
-## 8. 응답 목록 구성
-
-### 8.1 참여자 목록
-
-`participants`에는 해당 진행도에 연결된 `PENDING`, `ACCEPTED` 참여자를 반환한다.
-
-방장을 먼저 배치하고, 나머지 참여자는 `created_at` 오름차순으로 정렬한다.
-
-| 응답 필드 | 데이터 출처 |
-| --- | --- |
-| `participantId` | `COOPERATIVE_MISSION_PARTICIPANT.id` |
-| `name` | 연결된 `USER.nickname` |
-| `participantRole` | `COOPERATIVE_MISSION_PARTICIPANT.participant_role` |
-| `participantStatus` | `COOPERATIVE_MISSION_PARTICIPANT.participant_status` |
-
-### 8.2 역할 진행도 목록
-
-`roleProgresses`는 해당 진행도의 참여자에게 연결된 역할 진행도를 반환한다.
-
-역할 진행도가 없으면 `null`이 아니라 빈 배열을 반환한다.
+`roleProgresses`는 해당 협동 미션 진행도의 `COOPERATIVE_ROLE_PROGRESS`를 `id` 오름차순으로 반환한다.
 
 | 응답 필드 | 데이터 출처 |
 | --- | --- |
 | `roleProgressId` | `COOPERATIVE_ROLE_PROGRESS.id` |
 | `participantId` | `COOPERATIVE_ROLE_PROGRESS.participant_id` |
-| `participantName` | 참여자와 연결된 `USER.nickname` |
+| `participantName` | 참가자와 연결된 `USER.nickname` |
 | `roleCardId` | `COOPERATIVE_ROLE_PROGRESS.cooperative_role_card_id` |
 | `roleName` | 연결된 `COOPERATIVE_ROLE_CARD.role_name` |
 | `progressStatus` | `COOPERATIVE_ROLE_PROGRESS.progress_status` |
 | `itemImgUrl` | `COOPERATIVE_ROLE_PROGRESS.item_img_url` |
 
-역할 진행도는 `roleProgressId` 오름차순으로 정렬한다.
+집계값은 다음 기준으로 계산한다.
 
-## 9. 중복 생성 방지
+```text
+totalRoleCount = 현재 진행도에 생성된 전체 역할 진행도 row 수
+completedRoleCount = progress_status가 COMPLETED인 역할 진행도 row 수
+```
 
-동일한 사용자와 동일한 협동 미션에는 그 사용자가 방장인 `IN_PROGRESS` 진행도가 최대 하나만 존재해야 한다.
+미배정 역할 카드는 두 집계값에 포함하지 않는다. 역할 카드 중복 배정을 허용하지 않으므로 각 역할 진행도는 서로 다른 역할 카드를 참조한다.
 
-같은 요청이 반복되면 첫 번째 요청만 진행도를 생성하고, 이후 요청은 생성된 진행도를 이어서 반환해야 한다.
+## 12. 4단계 응답
 
-진행도 조회, 중복 여부 재확인, 팀 토큰 생성, 진행도 생성과 방장 참여자 생성을 하나의 트랜잭션 범위에서 처리한다. 동시에 여러 요청이 들어온 경우에도 가능한 한 기존 진행도를 다시 조회하여 중복 방 생성을 방지한다.
+4단계는 협동 미션 완료 화면이다.
 
-현재 ERD에 사용자·협동 미션·상태를 묶은 `UNIQUE` 제약이 없으므로 최종적인 중복 방지 책임은 서비스 로직에 있다.
+- `currentParticipant`: `null`
+- `participants`: `null`
+- `roleCards`: `null`
+- `roleProgresses`: `null`
+- `completedRoleCount`: `null`
+- `totalRoleCount`: `null`
+- `reward`: 현재 사용자에게 제공할 보상 정보
+- `nextLocation`: 현재 사용자에게 추천할 다음 장소 정보
 
-## 10. 보상 처리
+4단계 응답을 구성할 때 내부적으로 현재 사용자의 참가자 row는 권한과 보상 대상을 확인하는 데 사용하지만 응답의 `currentParticipant`에는 포함하지 않는다.
 
-이 API는 보상을 조회하거나 지급하지 않는다.
+## 13. 완료 역할 수에 따른 보상
 
-응답에도 `rewardDetail`이나 보상 지급 여부를 포함하지 않는다.
+보상 등급은 진행도에 생성된 역할 진행도 중 `COMPLETED` 상태인 개수로 결정한다.
 
-## 11. 오류 처리
+| 완료 역할 수 | 지급 대상 보상 |
+| --- | --- |
+| `0` | 없음 |
+| `1~2` | AR 캐릭터 |
+| `3~4` | AR 캐릭터, 포인트 |
+| `5~6` | AR 캐릭터, 포인트, 쿠폰 |
+
+역할 카드는 최대 한 번만 배정되므로 완료 역할 수는 최대 6이다.
+
+협동 미션 보상은 완료 시점에 `ACCEPTED` 상태인 참가자 전원에게 같은 등급으로 지급한다. 최초로 4단계 상태 조회가 호출되었을 때 아직 보상 정산이 끝나지 않았다면 보상 지급 로직을 실행한다.
+
+## 14. 보상 정산과 지급 여부 마감
+
+보상 정산은 다음 순서로 처리한다.
+
+1. 완료된 진행도 row를 잠금 조회한다.
+2. 완료된 역할 진행도 수로 보상 등급을 계산한다.
+3. 보상 정산이 아직 수행되지 않았다면 `ACCEPTED` 참가자 전원에게 해당 등급의 보상을 지급한다.
+4. 지급 등급에 포함되지 않아 받지 못한 보상은 소멸 처리한다.
+5. 지급 대상 보상이 정상적으로 처리되면, 등급에 포함되지 않아 소멸한 보상까지 포함하여 진행도의 세 보상 지급 여부를 모두 `TRUE`로 변경한다.
+6. 참가자 전원의 보상 처리와 지급 여부 변경을 하나의 트랜잭션으로 커밋한다.
+
+정산 완료 후 저장값은 다음과 같다.
+
+```text
+ar_character_reward_granted = TRUE
+point_reward_granted = TRUE
+coupon_reward_granted = TRUE
+```
+
+예를 들어 완료 역할이 2개이면 AR 캐릭터만 지급한다. 포인트와 쿠폰은 지급하지 않고 소멸시키지만 세 지급 여부는 모두 `TRUE`로 변경한다.
+
+세 지급 여부가 이미 모두 `TRUE`이면 이후 폴링에서는 사용자 보상을 추가 지급하지 않는다. 응답의 `reward`는 완료 역할 수에 해당하는 보상 정보를 조합하여 반환한다.
+
+`reward` 객체의 각 항목은 실제 보상 구성에 따라 `null`일 수 있다.
+
+- `reward.arCharacter`: AR 캐릭터 보상이 없으면 `null`
+- `reward.point`: 포인트 보상이 없으면 `null`
+- `reward.coupon`: 쿠폰 보상이 없으면 `null`
+
+## 15. 다음 장소 추천
+
+4단계 상태 조회에서는 `common`에 존재하는 다음 장소 추천 로직을 호출한다.
+
+- 현재 호출 사용자를 기준으로 추천 로직을 실행한다.
+- 참가자마다 서로 다른 장소가 추천될 수 있다.
+- 이전 폴링에서 반환한 장소와 같은 장소를 유지할 의무는 없다.
+- 상태 조회 API는 별도의 다음 장소 추천 로직을 중복 구현하지 않는다.
+- 추천 결과는 명세의 `nextLocation` 형식으로 변환하여 반환한다.
+
+1~3단계에서는 추천 로직을 실행하지 않고 `nextLocation: null`을 반환한다.
+
+## 16. 조회와 동시 요청 처리
+
+1~3단계의 일반 상태 조회는 읽기 작업으로 처리하며 DB 데이터를 변경하지 않는다.
+
+4단계에서 보상 정산이 필요한 경우에는 진행도 row를 잠그고 지급 여부를 다시 확인한다. 여러 참가자가 동시에 폴링하더라도 한 요청만 보상 정산을 수행하고 나머지 요청은 정산 완료 상태를 조회하도록 한다.
+
+보상 지급 중 일부 참가자 처리에 실패하면 참가자 보상과 세 지급 여부 변경을 모두 롤백한다. 일부 참가자에게만 보상이 지급된 상태로 지급 여부가 마감되지 않도록 한다.
+
+## 17. 정상 응답
+
+현재 사용자가 해당 진행도의 참가자이고 단계별 상태를 정상적으로 조회한 경우 `200 OK`를 반환한다.
+
+응답 필드는 단계에 따라 다음과 같이 구성한다.
+
+| 필드 | 1단계 | 2단계 | 3단계 | 4단계 |
+| --- | --- | --- | --- | --- |
+| 공통 미션 정보 | 값 | 값 | 값 | 값 |
+| `currentParticipant` | 값 | 값 | 값 | `null` |
+| `participants` | 값 | 값 | 값 | `null` |
+| `roleCards` | `null` | 값 | 값 | `null` |
+| `roleProgresses` | `null` | 배열 | 배열 | `null` |
+| 역할 집계 | `null` | 값 | 값 | `null` |
+| `reward` | `null` | `null` | `null` | 값 |
+| `nextLocation` | `null` | `null` | `null` | 값 |
+
+## 18. 오류 처리
 
 ### 400 `INVALID_REQUEST`
 
-다음과 같이 요청 Path가 유효하지 않으면 진행도를 조회하거나 생성하지 않고 공통 `400` 오류를 반환한다.
-
-- `cooperativeMissionId`가 정수가 아닌 경우
-- `cooperativeMissionId`가 `1`보다 작은 경우
+`cooperativeMissionProgressId`가 정수가 아니거나 `1`보다 작으면 공통 요청 오류를 반환한다.
 
 ```json
 {
@@ -200,24 +295,29 @@ const inviteUrl =
 }
 ```
 
-### 404 `COOPERATIVE_MISSION_NOT_FOUND`
+### 404 `COOPERATIVE_MISSION_PROGRESS_NOT_FOUND`
 
-`cooperativeMissionId`에 해당하는 `COOPERATIVE_MISSION`이 존재하지 않으면 진행도와 참여자를 생성하지 않고 `404`를 반환한다.
+`cooperativeMissionProgressId`에 해당하는 진행도가 존재하지 않으면 반환한다.
 
 ```json
 {
-  "code": "COOPERATIVE_MISSION_NOT_FOUND"
+  "code": "COOPERATIVE_MISSION_PROGRESS_NOT_FOUND"
+}
+```
+
+### 404 `COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`
+
+현재 사용자가 해당 진행도의 참가자가 아니면 반환한다. 참여 요청 거절로 참가자 row가 삭제된 경우도 포함한다.
+
+```json
+{
+  "code": "COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND"
 }
 ```
 
 ### 500 `INTERNAL_SERVER_ERROR`
 
-다음 오류는 진행도와 참여자 생성을 롤백하고 공통 `500` 오류로 처리한다.
-
-- 팀 토큰 생성 또는 저장에 반복해서 실패한 경우
-- 진행도는 생성됐지만 방장 참여자 생성에 실패한 경우
-- 역할 카드 마스터 데이터가 정상적으로 구성되지 않아 응답을 만들 수 없는 경우
-- 그 밖의 예상하지 못한 DB 또는 서버 오류
+상태 조회, 보상 정산 또는 다음 장소 추천 처리 중 예상하지 못한 서버 오류가 발생하면 공통 `500` 오류를 반환한다. 보상 정산 트랜잭션이 진행 중이었다면 전체 작업을 롤백한다.
 
 ```json
 {
@@ -225,134 +325,217 @@ const inviteUrl =
 }
 ```
 
-# 참여 요청 수락 비즈니스 룰
+# 협동 미션 역할 배정 저장 비즈니스 룰
 
 ## 1. 요청 및 사용자 식별
 
-방장이 협동 미션에 들어온 참여 요청을 수락할 때 호출한다.
+- HTTP 메서드: `PUT`
+- 엔드포인트: `/api/v1/cooperative-missions/{cooperativeMissionProgressId}/role-assignments/{roleCardId}`
+- Path의 `cooperativeMissionProgressId`로 역할을 배정할 `COOPERATIVE_MISSION_PROGRESS`를 식별한다.
+- Path의 `roleCardId`로 배정하거나 담당자를 변경할 `COOPERATIVE_ROLE_CARD`를 식별한다.
+- Request Body의 `participantId`로 역할 카드를 맡을 참가자를 식별한다.
+- Request Query는 받지 않는다.
+- 현재 사용자는 Authorization Bearer 토큰의 `get_current_user_id()`로 식별한다.
 
-- Path의 `cooperativeMissionProgressId`로 협동 미션 진행도를 식별한다.
-- Path의 `participantId`로 수락할 참여 요청을 식별한다.
-- Request Query와 Body는 받지 않는다.
-- 현재 사용자는 Authorization Bearer 토큰을 사용하는 `get_current_user_id()`로 식별한다.
+프론트에서 방장 id, 역할 진행도 id 또는 현재 담당자 id를 전달받지 않는다. 방장 여부와 기존 역할 진행도는 백엔드가 DB를 기준으로 판단한다.
 
-프론트에서 방장 사용자 id나 수락 상태를 전달받지 않는다. 방장 여부와 변경할 상태는 백엔드가 DB를 기준으로 결정한다.
+## 2. API 책임
 
-## 2. 처리 순서
+이 API는 협동 미션 2단계에서 역할 카드 하나의 담당자를 저장한다.
 
-1. Path 값의 형식을 검증한다.
-2. `cooperativeMissionProgressId`에 해당하는 `IN_PROGRESS` 협동 미션 진행도를 잠금 조회한다.
-3. 현재 사용자가 해당 진행도의 `HOST`이자 `ACCEPTED` 참여자인지 확인한다.
-4. 진행도의 `current_step`이 초대 단계인 `1`인지 확인한다.
-5. `participantId`에 해당하는 같은 진행도의 참여자를 잠금 조회한다.
-6. 대상 참여자의 역할과 현재 상태를 확인한다.
-7. `PENDING` 참여자를 `ACCEPTED`로 변경하고 `joined_at`을 저장한다.
-8. 트랜잭션을 커밋하고 `204 No Content`를 반환한다.
+역할 카드 기준 upsert 방식으로 처리한다.
 
-## 3. 진행도 조회
+- 해당 역할 카드의 역할 진행도가 없으면 새 역할 진행도를 생성한다.
+- 해당 역할 카드의 역할 진행도가 이미 있으면 기존 row의 참가자만 변경한다.
+- 역할 진행도 id를 새로 발급하지 않고 기존 `roleProgressId`를 유지한다.
+- 역할 카드 id도 변경하지 않는다.
+- 같은 배정 요청이 반복되면 추가 변경 없이 정상 처리한다.
+
+역할 배정 결과는 이 API에서 반환하지 않는다. 프론트는 협동 미션 상태 조회 API의 다음 polling 응답에서 갱신된 `roleProgresses`를 확인한다.
+
+정상 처리 시 응답 Body 없이 `204 No Content`를 반환한다.
+
+## 3. 처리 순서
+
+1. Path와 Request Body의 형식 및 범위를 검증한다.
+2. `cooperativeMissionProgressId`에 해당하는 진행도를 잠금 조회한다.
+3. 진행도가 이미 완료되었는지 확인한다.
+4. 현재 사용자가 해당 진행도의 `HOST`이자 `ACCEPTED` 참가자인지 확인한다.
+5. 진행도의 `current_step`이 역할 배정 단계인 `2`인지 확인한다.
+6. `roleCardId`에 해당하는 역할 카드를 조회한다.
+7. `participantId`에 해당하는 같은 진행도의 `ACCEPTED` 참가자를 조회한다.
+8. 해당 진행도와 역할 카드에 연결된 기존 역할 진행도를 조회한다.
+9. 기존 역할 진행도가 없으면 새로 생성하고, 존재하면 담당 참가자를 변경한다.
+10. 트랜잭션을 커밋하고 `204 No Content`를 반환한다.
+
+## 4. 진행도 조회
 
 다음 조건으로 `COOPERATIVE_MISSION_PROGRESS`를 조회한다.
 
-- `id = cooperativeMissionProgressId`
-- `mission_status = IN_PROGRESS`
+```text
+id = cooperativeMissionProgressId
+```
 
-조건을 만족하는 진행도가 없으면 `404 COOPERATIVE_MISSION_PROGRESS_NOT_FOUND`를 반환한다. 존재하지 않는 진행도와 이미 `COMPLETED`인 진행도를 별도 오류로 구분하지 않는다.
+진행도가 존재하지 않으면 `404 COOPERATIVE_MISSION_PROGRESS_NOT_FOUND`를 반환한다.
 
-## 4. 방장 권한 검증
+진행도를 id로 조회한 뒤 완료 상태를 별도로 확인한다. `mission_status = COMPLETED`이거나 `current_step = 4`이면 `409 COOPERATIVE_MISSION_ALREADY_COMPLETED`를 반환한다.
 
-현재 사용자가 다음 조건을 모두 만족하는 `COOPERATIVE_MISSION_PARTICIPANT`인지 확인한다.
+## 5. 방장 권한과 단계 검증
+
+현재 사용자가 다음 조건을 모두 만족하는 참가자인지 확인한다.
 
 - `cooperative_mission_progress_id = cooperativeMissionProgressId`
 - `user_id = current_user_id`
 - `participant_role = HOST`
 - `participant_status = ACCEPTED`
 
-조건을 만족하지 않으면 참여 요청을 변경하지 않고 `403 COOPERATIVE_MISSION_HOST_ONLY`를 반환한다.
+조건을 만족하지 않으면 `403 COOPERATIVE_MISSION_HOST_ONLY`를 반환한다.
 
-방장 여부는 요청 Body나 대상 `participantId`로 판단하지 않는다. 반드시 Bearer 토큰으로 식별한 현재 사용자의 참가자 row를 조회하여 판단한다.
-
-## 5. 수락 가능 단계
-
-참여 요청 수락은 초대 단계에서만 가능하다.
+역할 배정은 다음 단계에서만 허용한다.
 
 ```text
-COOPERATIVE_MISSION_PROGRESS.current_step = 1
+COOPERATIVE_MISSION_PROGRESS.current_step = 2
 ```
 
-`current_step`이 `2` 또는 `3`이면 역할 정하기나 미션 수행 단계가 이미 시작된 것이므로 `409 COOPERATIVE_MISSION_JOIN_CLOSED`를 반환한다.
+현재 단계가 `1`, `3` 또는 `4`이면 역할 진행도를 생성하거나 변경하지 않고 `409 COOPERATIVE_MISSION_STEP_NOT_ALLOWED`를 반환한다.
 
-## 6. 대상 참여자 조회
+## 6. 역할 카드 검증
 
-다음 조건으로 수락 대상 `COOPERATIVE_MISSION_PARTICIPANT`를 조회한다.
+`COOPERATIVE_ROLE_CARD.id = roleCardId`인 역할 카드를 조회한다.
+
+역할 카드는 모든 협동 미션이 공통으로 사용하는 마스터 데이터이므로 특정 협동 미션 id로 추가 필터링하지 않는다.
+
+역할 카드가 존재하지 않으면 `404 COOPERATIVE_ROLE_CARD_NOT_FOUND`를 반환한다.
+
+## 7. 배정 대상 참가자 검증
+
+다음 조건으로 배정 대상 참가자를 조회한다.
 
 - `id = participantId`
 - `cooperative_mission_progress_id = cooperativeMissionProgressId`
-- `participant_role = MEMBER`
+- `participant_status = ACCEPTED`
 
-대상 참여자가 존재하지 않거나 다른 진행도에 속하거나 `HOST`인 경우 `404 COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`를 반환한다.
+다음 경우에는 `404 COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`를 반환한다.
 
-`participantId`만으로 참여자를 조회한 뒤 진행도 관계를 별도로 신뢰하지 않는다. 반드시 Path의 두 id가 같은 관계에 속하는지 함께 검증한다.
+- `participantId`에 해당하는 참가자가 없는 경우
+- 참가자가 다른 협동 미션 진행도에 속하는 경우
+- 참가자가 아직 `PENDING` 상태인 경우
 
-## 7. PENDING 참여자 수락
+방장과 팀원 모두 역할 카드를 배정받을 수 있다. `participant_role`은 `HOST | MEMBER`를 모두 허용한다.
 
-대상 참여자의 `participant_status`가 `PENDING`이면 다음과 같이 변경한다.
+## 8. 기존 역할 진행도 조회 기준
 
-- `participant_status`: `ACCEPTED`
-- `joined_at`: `now_kst()`로 구한 수락 처리 시각
+기존 역할 진행도는 역할 카드 id만으로 전역 조회하지 않는다. 반드시 요청한 협동 미션 진행도 범위에서 조회한다.
 
-`joined_at`은 프로젝트 시간 정책에 따라 KST 기준 offset 없는 `DATETIME`으로 저장한다.
+`COOPERATIVE_ROLE_PROGRESS`에는 진행도 id가 직접 존재하지 않으므로 참가자 테이블을 통해 다음 관계를 확인한다.
 
-수락 처리에서는 새로운 참가자 row를 생성하지 않는다. URL로 참여 요청 API가 생성한 기존 `PENDING` row를 갱신한다.
+```text
+COOPERATIVE_ROLE_PROGRESS.cooperative_role_card_id = roleCardId
+COOPERATIVE_ROLE_PROGRESS.participant_id = COOPERATIVE_MISSION_PARTICIPANT.id
+COOPERATIVE_MISSION_PARTICIPANT.cooperative_mission_progress_id = cooperativeMissionProgressId
+```
 
-## 8. 이미 수락된 참여자 재요청
+이 조건으로 해당 방에서 같은 역할 카드를 참조하는 역할 진행도가 존재하는지 조회한다.
 
-같은 진행도의 동일 참여자가 이미 `ACCEPTED` 상태이면 멱등 요청으로 처리한다.
+## 9. 최초 역할 배정
 
-- 참가자 데이터를 추가로 변경하지 않는다.
-- 기존 `joined_at`을 유지한다.
-- 새로운 참가자 row를 생성하지 않는다.
-- 오류 대신 `204 No Content`를 반환한다.
+해당 진행도에 `roleCardId`를 참조하는 역할 진행도가 없으면 다음 값으로 `COOPERATIVE_ROLE_PROGRESS`를 생성한다.
 
-프론트가 정상 응답을 받지 못해 수락 요청을 재전송하더라도 상태나 수락 시각이 중복 변경되지 않아야 한다.
+- `participant_id`: Request Body의 `participantId`
+- `cooperative_role_card_id`: Path의 `roleCardId`
+- `progress_status`: `IN_PROGRESS`
+- `item_img_url`: `NULL`
+- `completed_at`: `NULL`
 
-## 9. 인원 계산
+역할 진행도 생성 이후 해당 역할 카드는 요청한 참가자에게 배정된 것으로 처리한다.
 
-URL로 참여 요청을 생성할 때 `PENDING`과 `ACCEPTED` 참여자를 모두 최대 인원에 포함하므로, 수락 시에는 최대 인원을 다시 증가시키거나 새로운 자리를 차지하지 않는다.
+## 10. 기존 역할 담당자 변경
 
-수락은 기존 `PENDING` row의 상태만 변경하므로 별도의 `COOPERATIVE_MISSION_FULL` 검증을 수행하지 않는다.
+해당 진행도와 `roleCardId`에 연결된 역할 진행도가 이미 존재하면 새로운 row를 생성하지 않는다.
 
-## 10. 트랜잭션과 동시 요청
+기존 역할 진행도에서 다음 값만 변경한다.
 
-진행도 조회, 방장 검증, 대상 참여자 조회와 상태 변경을 하나의 트랜잭션으로 처리한다.
+```text
+participant_id = 요청받은 participantId
+```
 
-- 진행도 row를 잠가 단계 변경 및 미션 완료 요청과 충돌하지 않게 한다.
-- 대상 참여자 row를 잠가 수락 재요청이나 거절 요청과 충돌하지 않게 한다.
-- 수락 처리 중 오류가 발생하면 상태와 `joined_at` 변경을 모두 롤백한다.
+다음 값은 그대로 유지한다.
 
-수락과 거절 요청이 동시에 들어오면 먼저 잠금을 획득하여 커밋한 요청의 결과를 기준으로 나중 요청을 처리한다. 거절로 참가자 row가 먼저 삭제되었다면 수락 요청은 `404 COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`를 반환한다.
+- `COOPERATIVE_ROLE_PROGRESS.id`
+- `cooperative_role_card_id`
+- `progress_status`
+- `item_img_url`
+- `completed_at`
 
-## 11. 폴링 반영
+역할 배정은 2단계에서만 변경할 수 있으므로 정상 흐름에서는 기존 역할 진행도가 아직 `IN_PROGRESS`이고 인증 데이터가 존재하지 않는다.
 
-수락 트랜잭션이 커밋된 뒤 협동 미션 상태 조회 API는 해당 참여자를 `participantStatus: ACCEPTED`로 반환해야 한다.
+예를 들어 역할 카드 1이 종화에게 배정된 상태에서 같은 역할 카드 1과 지민의 참가자 id로 요청하면 기존 역할 진행도의 `participant_id`만 지민으로 변경한다.
 
-수락 API 자체는 갱신된 참여자 정보를 응답하지 않는다. 방장과 팀원의 화면 갱신은 협동 미션 상태 조회 API 폴링 결과를 사용한다.
+## 11. 동일 배정 재요청
 
-## 12. 정상 응답
+기존 역할 진행도의 `participant_id`가 요청받은 `participantId`와 이미 같으면 멱등 요청으로 처리한다.
+
+- 역할 진행도를 새로 생성하지 않는다.
+- `updated_at`을 불필요하게 변경하지 않는다.
+- 기존 역할 배정 데이터를 그대로 유지한다.
+- 오류 없이 `204 No Content`를 반환한다.
+
+네트워크 재시도나 중복 버튼 입력으로 같은 요청이 반복되어도 역할 진행도가 중복 생성되지 않아야 한다.
+
+## 12. 역할 배정 관계 규칙
+
+하나의 협동 미션 진행도에서는 역할 카드 하나에 참가자 한 명만 배정할 수 있다.
+
+```text
+진행도 + roleCardId당 COOPERATIVE_ROLE_PROGRESS 최대 1개
+```
+
+한 참가자는 서로 다른 여러 역할 카드를 배정받을 수 있다. 따라서 `participant_id`는 역할 진행도 전체에서 고유값이 아니다.
+
+예를 들어 지민이 역할 카드 1과 역할 카드 2를 모두 맡으면 서로 다른 두 역할 진행도가 같은 `participant_id`를 참조한다.
+
+역할 카드 6종을 모두 배정할 필요는 없다. 한 번도 요청하지 않은 역할 카드는 역할 진행도가 생성되지 않은 미배정 상태로 남는다.
+
+## 13. 상태 조회 반영
+
+역할 진행도 생성 또는 담당자 변경 트랜잭션이 커밋된 뒤 협동 미션 상태 조회 API는 변경된 역할 배정을 `roleProgresses`에 반환해야 한다.
+
+- 최초 배정이면 새 `roleProgressId`가 목록에 추가된다.
+- 담당자 변경이면 같은 `roleProgressId`에서 `participantId`와 `participantName`이 변경된다.
+- 역할 카드 id와 역할 이름은 그대로 유지된다.
+
+역할 배정 저장 API 자체는 갱신된 역할 진행도를 응답하지 않는다.
+
+## 14. 트랜잭션과 동시 요청
+
+진행도 조회, 방장 검증, 역할 카드와 참가자 검증, 기존 역할 진행도 조회 및 upsert를 하나의 트랜잭션으로 처리한다.
+
+- 진행도 row를 잠가 같은 방의 역할 배정 요청을 직렬화한다.
+- 잠금을 획득한 뒤 같은 진행도와 역할 카드의 기존 역할 진행도를 다시 조회한다.
+- 기존 row가 없을 때만 새 역할 진행도를 생성한다.
+- 동시에 같은 역할 카드 배정 요청이 들어와도 역할 진행도는 하나만 남아야 한다.
+- 처리 중 오류가 발생하면 생성 또는 담당자 변경을 롤백한다.
+
+현재 `COOPERATIVE_ROLE_PROGRESS`에는 `cooperative_mission_progress_id`가 직접 없으므로 진행도와 역할 카드의 복합 `UNIQUE` 제약을 단순하게 걸 수 없다. 최종적인 중복 방지 책임은 진행도 잠금과 서비스 로직에 있다.
+
+## 15. 정상 응답
 
 다음 경우 모두 `204 No Content`를 반환한다.
 
-- `PENDING` 참여자를 정상적으로 `ACCEPTED`로 변경한 경우
-- 동일 참여자가 이미 `ACCEPTED` 상태인 경우
+- 역할 카드를 참가자에게 처음 배정하여 역할 진행도를 생성한 경우
+- 이미 배정된 역할 카드의 담당 참가자를 변경한 경우
+- 같은 역할 카드와 같은 참가자의 배정을 다시 요청한 경우
 
 응답 Body는 반환하지 않는다.
 
-## 13. 오류 처리
+## 16. 오류 처리
 
 ### 400 `INVALID_REQUEST`
 
-Path 값의 형식이나 범위가 유효하지 않은 경우 공통 요청 오류를 반환한다.
+다음과 같이 Path 또는 Request Body가 유효하지 않으면 반환한다.
 
 - `cooperativeMissionProgressId`가 정수가 아니거나 `1`보다 작은 경우
+- `roleCardId`가 정수가 아니거나 `1`보다 작은 경우
 - `participantId`가 정수가 아니거나 `1`보다 작은 경우
 
 ```json
@@ -363,7 +546,7 @@ Path 값의 형식이나 범위가 유효하지 않은 경우 공통 요청 오�
 
 ### 403 `COOPERATIVE_MISSION_HOST_ONLY`
 
-현재 사용자가 해당 진행도의 `HOST`이자 `ACCEPTED` 참여자가 아닌 경우 반환한다.
+현재 사용자가 해당 진행도의 `HOST`이자 `ACCEPTED` 참가자가 아니면 반환한다.
 
 ```json
 {
@@ -373,7 +556,7 @@ Path 값의 형식이나 범위가 유효하지 않은 경우 공통 요청 오�
 
 ### 404 `COOPERATIVE_MISSION_PROGRESS_NOT_FOUND`
 
-`cooperativeMissionProgressId`에 해당하는 `IN_PROGRESS` 진행도가 존재하지 않는 경우 반환한다.
+`cooperativeMissionProgressId`에 해당하는 진행도가 존재하지 않으면 반환한다.
 
 ```json
 {
@@ -383,12 +566,7 @@ Path 값의 형식이나 범위가 유효하지 않은 경우 공통 요청 오�
 
 ### 404 `COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`
 
-다음 경우 반환한다.
-
-- `participantId`에 해당하는 참여자가 없는 경우
-- 대상 참여자가 다른 협동 미션 진행도에 속하는 경우
-- 대상 참여자의 역할이 `MEMBER`가 아닌 경우
-- 거절 처리로 대상 참여자 row가 이미 삭제된 경우
+`participantId`에 해당하는 같은 진행도의 `ACCEPTED` 참가자가 존재하지 않으면 반환한다.
 
 ```json
 {
@@ -396,19 +574,39 @@ Path 값의 형식이나 범위가 유효하지 않은 경우 공통 요청 오�
 }
 ```
 
-### 409 `COOPERATIVE_MISSION_JOIN_CLOSED`
+### 404 `COOPERATIVE_ROLE_CARD_NOT_FOUND`
 
-진행도의 `current_step`이 초대 단계인 `1`이 아닌 경우 반환한다.
+`roleCardId`에 해당하는 역할 카드가 존재하지 않으면 반환한다.
 
 ```json
 {
-  "code": "COOPERATIVE_MISSION_JOIN_CLOSED"
+  "code": "COOPERATIVE_ROLE_CARD_NOT_FOUND"
+}
+```
+
+### 409 `COOPERATIVE_MISSION_ALREADY_COMPLETED`
+
+진행도가 이미 `COMPLETED` 상태이거나 `current_step = 4`이면 반환한다.
+
+```json
+{
+  "code": "COOPERATIVE_MISSION_ALREADY_COMPLETED"
+}
+```
+
+### 409 `COOPERATIVE_MISSION_STEP_NOT_ALLOWED`
+
+진행도의 `current_step`이 역할 배정 단계인 `2`가 아니면 반환한다.
+
+```json
+{
+  "code": "COOPERATIVE_MISSION_STEP_NOT_ALLOWED"
 }
 ```
 
 ### 500 `INTERNAL_SERVER_ERROR`
 
-참여자 상태 변경 또는 DB 처리 중 예상하지 못한 오류가 발생하면 트랜잭션을 롤백하고 공통 `500` 오류를 반환한다.
+역할 진행도 생성, 담당자 변경 또는 DB 처리 중 예상하지 못한 오류가 발생하면 변경 사항을 롤백하고 공통 `500` 오류를 반환한다.
 
 ```json
 {
@@ -416,133 +614,179 @@ Path 값의 형식이나 범위가 유효하지 않은 경우 공통 요청 오�
 }
 ```
 
-
-# 참여 요청 거절 비즈니스 룰
+# 협동 미션 진행도 저장 비즈니스 룰
 
 ## 1. 요청 및 사용자 식별
 
-방장이 협동 미션에 들어온 참여 요청을 거절할 때 호출한다.
+- HTTP 메서드: `PATCH`
+- 엔드포인트: `/api/v1/cooperative-missions/{cooperativeMissionProgressId}/progress`
+- Path의 `cooperativeMissionProgressId`로 단계를 변경할 `COOPERATIVE_MISSION_PROGRESS`를 식별한다.
+- 요청 Body의 `currentStep`으로 변경할 다음 단계를 전달받는다.
+- Request Query는 받지 않는다.
+- 현재 사용자는 Authorization Bearer 토큰의 `get_current_user_id()`로 식별한다.
 
-- HTTP 메서드: `DELETE`
-- 엔드포인트: `/api/v1/cooperative-missions/{cooperativeMissionProgressId}/participants/{participantId}`
-- Path의 `cooperativeMissionProgressId`로 협동 미션 진행도를 식별한다.
-- Path의 `participantId`로 거절할 참여 요청을 식별한다.
-- Request Query와 Body는 받지 않는다.
-- 현재 사용자는 Authorization Bearer 토큰을 사용하는 `get_current_user_id()`로 식별한다.
+프론트에서 방장 id, 현재 단계 또는 역할 배정 정보를 전달받지 않는다. 현재 단계와 방장 여부는 DB를 기준으로 검증한다.
 
-프론트에서 방장 사용자 id나 거절 상태를 전달받지 않는다. 방장 여부와 삭제 가능 여부는 백엔드가 DB를 기준으로 판단한다.
+## 2. API 책임
 
-## 2. 처리 순서
+이 API는 협동 미션의 단계를 다음 단계로 변경하는 역할만 담당한다.
 
-1. Path 값의 형식을 검증한다.
-2. `cooperativeMissionProgressId`에 해당하는 `IN_PROGRESS` 협동 미션 진행도를 잠금 조회한다.
-3. 현재 사용자가 해당 진행도의 `HOST`이자 `ACCEPTED` 참여자인지 확인한다.
-4. 진행도의 `current_step`이 초대 단계인 `1`인지 확인한다.
-5. `participantId`에 해당하는 같은 진행도의 참여자를 잠금 조회한다.
-6. 대상 참여자가 `MEMBER`이자 `PENDING` 상태인지 확인한다.
-7. 대상 `COOPERATIVE_MISSION_PARTICIPANT` row를 삭제한다.
-8. 트랜잭션을 커밋하고 `204 No Content`를 반환한다.
+- 역할 카드를 배정하거나 `COOPERATIVE_ROLE_PROGRESS`를 생성하지 않는다.
+- 역할 배정 목록을 Request Body로 받지 않는다.
+- 보상을 지급하거나 다음 장소를 추천하지 않는다.
+- 변경된 협동 미션 전체 상태를 응답하지 않는다.
+- 단계 변경 이후 화면 갱신은 협동 미션 상태 조회 API의 polling 결과를 사용한다.
 
-## 3. 진행도 조회
+정상적으로 단계를 변경하면 응답 Body 없이 `204 No Content`를 반환한다.
+
+## 3. 처리 순서
+
+1. Path와 Request Body의 형식 및 범위를 검증한다.
+2. `cooperativeMissionProgressId`에 해당하는 진행도를 잠금 조회한다.
+3. 진행도가 이미 완료되었는지 확인한다.
+4. 현재 사용자가 해당 진행도의 `HOST`이자 `ACCEPTED` 참가자인지 확인한다.
+5. 현재 단계와 요청한 `currentStep`이 순차적인 다음 단계인지 확인한다.
+6. 단계별 추가 조건을 검증한다.
+7. 진행도의 `current_step`을 요청한 단계로 변경한다.
+8. `3 → 4`이면 완료 상태와 완료 시각을 함께 저장한다.
+9. 트랜잭션을 커밋하고 `204 No Content`를 반환한다.
+
+## 4. 진행도 조회
 
 다음 조건으로 `COOPERATIVE_MISSION_PROGRESS`를 조회한다.
 
-- `id = cooperativeMissionProgressId`
-- `mission_status = IN_PROGRESS`
+```text
+id = cooperativeMissionProgressId
+```
 
-조건을 만족하는 진행도가 없으면 `404 COOPERATIVE_MISSION_PROGRESS_NOT_FOUND`를 반환한다. 존재하지 않는 진행도와 이미 `COMPLETED`인 진행도를 별도 오류로 구분하지 않는다.
+진행도가 존재하지 않으면 `404 COOPERATIVE_MISSION_PROGRESS_NOT_FOUND`를 반환한다.
 
-## 4. 방장 권한 검증
+진행도 조회 시 `mission_status = IN_PROGRESS` 조건을 먼저 적용하여 완료된 진행도를 찾을 수 없는 진행도로 처리하지 않는다. 진행도를 id로 조회한 뒤 완료 상태를 별도로 확인하여 `409 COOPERATIVE_MISSION_ALREADY_COMPLETED`를 반환한다.
 
-현재 사용자가 다음 조건을 모두 만족하는 `COOPERATIVE_MISSION_PARTICIPANT`인지 확인한다.
+## 5. 방장 권한 검증
+
+현재 사용자가 다음 조건을 모두 만족하는 참가자인지 확인한다.
 
 - `cooperative_mission_progress_id = cooperativeMissionProgressId`
 - `user_id = current_user_id`
 - `participant_role = HOST`
 - `participant_status = ACCEPTED`
 
-조건을 만족하지 않으면 참여 요청을 삭제하지 않고 `403 COOPERATIVE_MISSION_HOST_ONLY`를 반환한다.
+조건을 만족하지 않으면 진행도를 변경하지 않고 `403 COOPERATIVE_MISSION_HOST_ONLY`를 반환한다.
 
-방장 여부는 요청 Path의 `participantId`로 판단하지 않는다. 반드시 Bearer 토큰으로 식별한 현재 사용자의 참가자 row를 조회하여 판단한다.
+방장 권한은 Request Body나 Path의 별도 사용자 id로 판단하지 않는다. 반드시 Bearer 토큰으로 식별한 현재 사용자의 참가자 row를 조회하여 판단한다.
 
-## 5. 거절 가능 단계
+## 6. 순차 단계 변경
 
-참여 요청 거절은 초대 단계에서만 가능하다.
+단계는 다음 순서로 한 단계씩만 변경할 수 있다.
 
 ```text
-COOPERATIVE_MISSION_PROGRESS.current_step = 1
+1 → 2 → 3 → 4
 ```
 
-`current_step`이 `2` 또는 `3`이면 역할 정하기나 미션 수행 단계가 이미 시작된 것이므로 `409 COOPERATIVE_MISSION_JOIN_CLOSED`를 반환한다.
+허용되는 요청은 다음과 같다.
 
-## 6. 대상 참여자 조회
+| 현재 단계 | 요청 `currentStep` | 처리 |
+| --- | --- | --- |
+| `1` | `2` | 초대 단계 종료 |
+| `2` | `3` | 역할 카드 배정 단계 종료 |
+| `3` | `4` | 협동 미션 완료 |
 
-다음 조건으로 거절 대상 `COOPERATIVE_MISSION_PARTICIPANT`를 조회한다.
+다음 요청은 `409 COOPERATIVE_MISSION_STEP_NOT_ALLOWED`로 처리한다.
 
-- `id = participantId`
-- `cooperative_mission_progress_id = cooperativeMissionProgressId`
-- `participant_role = MEMBER`
+- 현재 단계와 같은 단계 요청
+- 이전 단계로 돌아가는 요청
+- 두 단계 이상 건너뛰는 요청
+- `currentStep`이 `2 | 3 | 4`가 아닌 요청
 
-대상 참여자가 존재하지 않거나 다른 진행도에 속하거나 `HOST`인 경우 `404 COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`를 반환한다.
+## 7. 1단계에서 2단계 변경
 
-`participantId`만으로 참여자를 조회한 뒤 진행도 관계를 별도로 신뢰하지 않는다. 반드시 Path의 두 id가 같은 관계에 속하는지 함께 검증한다.
+`1 → 2`에서는 해당 진행도에 `PENDING` 상태인 참가자가 남아 있는지 확인한다.
 
-## 7. PENDING 참여자 거절
+```text
+cooperative_mission_progress_id = cooperativeMissionProgressId
+participant_status = PENDING
+```
 
-대상 참여자의 `participant_status`가 `PENDING`이면 별도의 `REJECTED` 상태를 저장하지 않고 해당 참가자 row를 삭제한다.
+`PENDING` 참가자가 한 명이라도 존재하면 `409 COOPERATIVE_MISSION_PENDING_PARTICIPANT_EXISTS`를 반환한다.
 
-참가자 row가 삭제되면 다음 결과가 반영된다.
+방장은 모든 참여 요청을 수락하거나 거절한 뒤 다시 단계 변경을 요청해야 한다. `PENDING` 참가자를 자동으로 수락하거나 삭제하지 않는다.
 
-- 해당 참여 요청은 참가자 목록에서 제거된다.
-- `PENDING` 참여자도 포함하던 현재 참여 인원이 1명 감소한다.
-- 최대 참여 인원에 새로운 사용자가 참여 요청을 보낼 수 있는 자리가 생긴다.
-- 거절된 사용자는 동일한 초대 URL을 통해 새로운 `PENDING` 참여 요청을 생성할 수 있다.
+검증을 통과하면 `current_step`만 `2`로 변경한다.
 
-## 8. ACCEPTED 참여자 보호
+## 8. 2단계에서 3단계 변경
 
-대상 참여자가 이미 `ACCEPTED` 상태이면 이 API로 삭제하지 않는다.
+`2 → 3`에서는 해당 진행도의 모든 `ACCEPTED` 참가자가 역할 카드를 최소 1개 이상 배정받았는지 확인한다.
 
-수락된 팀원 제거는 참여 요청 거절과 다른 행위이므로 `409 COOPERATIVE_MISSION_PARTICIPANT_ALREADY_ACCEPTED`를 반환한다. 이 API는 초대 단계의 `PENDING` 참여 요청만 삭제할 수 있다.
+검증 대상에는 다음 참가자를 포함한다.
 
-## 9. 반복 요청 처리
+- `HOST`, `ACCEPTED` 상태인 방장
+- `MEMBER`, `ACCEPTED` 상태인 팀원
 
-거절이 완료된 참여자 row는 DB에서 삭제되므로 같은 `participantId`로 다시 요청하면 `404 COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`를 반환한다.
+`PENDING` 참가자는 검증 대상에 포함하지 않는다. 정상 흐름에서는 `1 → 2` 검증으로 `PENDING` 참가자가 남아 있지 않아야 한다.
 
-거절 API는 삭제된 row를 복원하거나 새로운 참여자 row를 생성하지 않는다. 거절된 사용자가 다시 참여하려면 초대 URL을 통해 URL로 참여 요청 API를 다시 호출해야 한다.
+역할 진행도가 하나도 연결되지 않은 `ACCEPTED` 참가자가 존재하면 `409 COOPERATIVE_PARTICIPANT_ROLE_REQUIRED`를 반환한다.
 
-## 10. 트랜잭션과 동시 요청
+다음 상황은 단계 변경을 막지 않는다.
 
-진행도 조회, 방장 검증, 대상 참여자 조회와 삭제를 하나의 트랜잭션으로 처리한다.
+- 역할 카드 6종 중 일부가 미배정으로 남아 있는 경우
+- 한 참가자가 서로 다른 여러 역할 카드를 배정받은 경우
 
-- 진행도 row를 잠가 단계 변경 및 미션 완료 요청과 충돌하지 않게 한다.
-- 대상 참여자 row를 잠가 수락 요청 및 중복 거절 요청과 충돌하지 않게 한다.
-- 거절 처리 중 오류가 발생하면 참가자 삭제를 롤백한다.
+검증을 통과하면 `current_step`만 `3`으로 변경한다. 역할 진행도를 새로 만들거나 기존 역할 배정을 수정하지 않는다.
 
-수락과 거절 요청이 동시에 들어오면 먼저 잠금을 획득하여 커밋한 요청의 결과를 기준으로 나중 요청을 처리한다.
+## 9. 3단계에서 4단계 변경
 
-- 거절이 먼저 커밋되면 이후 수락 요청은 `404 COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`를 반환한다.
-- 수락이 먼저 커밋되면 이후 거절 요청은 참가자를 삭제하지 않고 `409 COOPERATIVE_MISSION_PARTICIPANT_ALREADY_ACCEPTED`를 반환한다.
+`3 → 4`는 방장이 협동 미션을 현재 인증 결과대로 종료할 때 사용한다.
 
-## 11. 폴링 반영
+인증하지 않은 역할 진행도가 남아 있거나 완료 역할 수가 `0`이어도 단계 변경을 허용한다.
 
-거절 트랜잭션이 커밋된 뒤 협동 미션 상태 조회 API의 `participants`에는 삭제된 `participantId`를 포함하지 않는다.
+다음 값을 하나의 트랜잭션에서 변경한다.
 
-거절 API 자체는 삭제 결과를 응답하지 않는다. 게스트 프론트는 협동 미션 상태 조회 API를 폴링하면서 기존에 저장한 자신의 `participantId`가 `participants`에서 사라지면 참여 요청이 거절된 것으로 처리한다.
+- `current_step`: `4`
+- `mission_status`: `COMPLETED`
+- `completed_at`: `now_kst()`로 구한 완료 처리 시각
+
+이 API에서는 보상 지급과 다음 장소 추천을 수행하지 않는다. 완료 후 참가자들이 호출하는 협동 미션 상태 조회 API의 4단계 처리에서 보상과 다음 장소 정보를 구성한다.
+
+## 10. 역할 배정 데이터 검증 범위
+
+이 API는 `2 → 3` 변경 시 참가자별 역할 보유 여부만 검증한다.
+
+역할 카드 하나가 최대 한 명에게만 배정되는지, 요청한 참가자와 역할 카드가 유효한지 등의 저장 검증은 별도의 협동 미션 역할 배정 저장 API가 담당한다.
+
+진행도 저장 API는 이미 저장된 `COOPERATIVE_ROLE_PROGRESS`를 조회하여 다음 조건만 확인한다.
+
+```text
+모든 ACCEPTED 참가자에 대해 연결된 역할 진행도 수 >= 1
+```
+
+## 11. 트랜잭션과 동시 요청
+
+진행도 조회, 권한 검증, 단계별 조건 검증과 단계 변경을 하나의 트랜잭션으로 처리한다.
+
+- 진행도 row를 잠가 동일한 단계 변경 요청이 동시에 처리되지 않도록 한다.
+- 잠금을 획득한 뒤 현재 단계와 완료 상태를 다시 확인한다.
+- `1 → 2`에서는 잠금 범위 안에서 `PENDING` 참가자 존재 여부를 확인한다.
+- `2 → 3`에서는 잠금 범위 안에서 `ACCEPTED` 참가자와 역할 진행도를 다시 조회한다.
+- 처리 중 오류가 발생하면 단계, 상태 및 완료 시각 변경을 모두 롤백한다.
+
+첫 번째 요청이 단계를 변경한 뒤 같은 요청이 다시 처리되면 현재 단계와 요청 단계가 일치하므로 `409 COOPERATIVE_MISSION_STEP_NOT_ALLOWED`를 반환한다.
 
 ## 12. 정상 응답
 
-`PENDING` 참여자 row를 정상적으로 삭제하면 `204 No Content`를 반환한다.
+단계별 검증을 통과하고 진행도를 정상적으로 변경하면 `204 No Content`를 반환한다.
 
-응답 Body는 반환하지 않는다.
+응답 Body는 반환하지 않는다. 프론트는 다음 polling 응답에서 변경된 `currentStep`과 협동 미션 상태를 확인한다.
 
 ## 13. 오류 처리
 
 ### 400 `INVALID_REQUEST`
 
-Path 값의 형식이나 범위가 유효하지 않은 경우 공통 요청 오류를 반환한다.
+다음과 같이 Path 또는 Request Body가 유효하지 않으면 반환한다.
 
 - `cooperativeMissionProgressId`가 정수가 아니거나 `1`보다 작은 경우
-- `participantId`가 정수가 아니거나 `1`보다 작은 경우
+- `currentStep`이 정수가 아닌 경우
+- `currentStep`이 `2 | 3 | 4`가 아닌 경우
 
 ```json
 {
@@ -552,7 +796,7 @@ Path 값의 형식이나 범위가 유효하지 않은 경우 공통 요청 오�
 
 ### 403 `COOPERATIVE_MISSION_HOST_ONLY`
 
-현재 사용자가 해당 진행도의 `HOST`이자 `ACCEPTED` 참여자가 아닌 경우 반환한다.
+현재 사용자가 해당 진행도의 `HOST`이자 `ACCEPTED` 참가자가 아니면 반환한다.
 
 ```json
 {
@@ -562,7 +806,7 @@ Path 값의 형식이나 범위가 유효하지 않은 경우 공통 요청 오�
 
 ### 404 `COOPERATIVE_MISSION_PROGRESS_NOT_FOUND`
 
-`cooperativeMissionProgressId`에 해당하는 `IN_PROGRESS` 진행도가 존재하지 않는 경우 반환한다.
+`cooperativeMissionProgressId`에 해당하는 진행도가 존재하지 않으면 반환한다.
 
 ```json
 {
@@ -570,44 +814,49 @@ Path 값의 형식이나 범위가 유효하지 않은 경우 공통 요청 오�
 }
 ```
 
-### 404 `COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`
+### 409 `COOPERATIVE_MISSION_ALREADY_COMPLETED`
 
-다음 경우 반환한다.
-
-- `participantId`에 해당하는 참여자가 없는 경우
-- 대상 참여자가 다른 협동 미션 진행도에 속하는 경우
-- 대상 참여자의 역할이 `MEMBER`가 아닌 경우
-- 거절 처리로 대상 참여자 row가 이미 삭제된 경우
+진행도의 `mission_status`가 이미 `COMPLETED`이거나 `current_step`이 이미 `4`이면 반환한다.
 
 ```json
 {
-  "code": "COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND"
+  "code": "COOPERATIVE_MISSION_ALREADY_COMPLETED"
 }
 ```
 
-### 409 `COOPERATIVE_MISSION_JOIN_CLOSED`
+### 409 `COOPERATIVE_MISSION_STEP_NOT_ALLOWED`
 
-진행도의 `current_step`이 초대 단계인 `1`이 아닌 경우 반환한다.
+현재 단계에서 요청한 `currentStep`으로 순차 변경할 수 없으면 반환한다.
 
 ```json
 {
-  "code": "COOPERATIVE_MISSION_JOIN_CLOSED"
+  "code": "COOPERATIVE_MISSION_STEP_NOT_ALLOWED"
 }
 ```
 
-### 409 `COOPERATIVE_MISSION_PARTICIPANT_ALREADY_ACCEPTED`
+### 409 `COOPERATIVE_MISSION_PENDING_PARTICIPANT_EXISTS`
 
-대상 참여자가 이미 `ACCEPTED` 상태인 경우 반환한다. 수락된 참가자 row는 삭제하지 않는다.
+`1 → 2` 변경 시 `PENDING` 참가자가 한 명 이상 존재하면 반환한다.
 
 ```json
 {
-  "code": "COOPERATIVE_MISSION_PARTICIPANT_ALREADY_ACCEPTED"
+  "code": "COOPERATIVE_MISSION_PENDING_PARTICIPANT_EXISTS"
+}
+```
+
+### 409 `COOPERATIVE_PARTICIPANT_ROLE_REQUIRED`
+
+`2 → 3` 변경 시 역할 진행도가 하나도 없는 `ACCEPTED` 참가자가 존재하면 반환한다.
+
+```json
+{
+  "code": "COOPERATIVE_PARTICIPANT_ROLE_REQUIRED"
 }
 ```
 
 ### 500 `INTERNAL_SERVER_ERROR`
 
-참여자 삭제 또는 DB 처리 중 예상하지 못한 오류가 발생하면 트랜잭션을 롤백하고 공통 `500` 오류를 반환한다.
+진행도 조회, 검증 또는 저장 중 예상하지 못한 오류가 발생하면 변경 사항을 롤백하고 공통 `500` 오류를 반환한다.
 
 ```json
 {
@@ -615,128 +864,275 @@ Path 값의 형식이나 범위가 유효하지 않은 경우 공통 요청 오�
 }
 ```
 
-# URL로 참여 요청 비즈니스 룰
+# 협동 미션 역할 진행도 저장 비즈니스 룰
 
 ## 1. 요청 및 사용자 식별
 
 - HTTP 메서드: `POST`
-- 엔드포인트: `/api/v1/cooperative-missions/join-requests`
-- 요청 Body의 `teamToken`으로 참여할 협동 미션 방을 식별한다.
-- 참여를 요청하는 사용자는 요청 Body로 받지 않고 공통 `Authorization: Bearer {accessToken}` 헤더로 식별한다.
-- `get_current_user_id()`에서 토큰에 해당하는 `USER`가 실제로 존재하는지 먼저 검증한다.
+- 엔드포인트: `/api/v1/cooperative-missions/{cooperativeMissionProgressId}/role-progresses/{roleProgressId}/verification`
+- Path의 `cooperativeMissionProgressId`로 `COOPERATIVE_MISSION_PROGRESS`를 식별한다.
+- Path의 `roleProgressId`로 사진을 인증할 `COOPERATIVE_ROLE_PROGRESS`를 식별한다.
+- Request Body는 `multipart/form-data` 형식으로 받는다.
+- 현재 사용자는 Authorization Bearer 토큰의 `get_current_user_id()`로 식별한다.
 
-## 2. 진행도 조회
+프론트에서 참가자 id, 역할 카드 id, 인증 성공 여부 또는 변경할 진행 상태를 전달받지 않는다. 역할 담당자와 역할 카드 정보는 역할 진행도 관계를 통해 백엔드가 조회하고, 인증 성공 여부도 백엔드가 결정한다.
 
-요청받은 `teamToken`과 `COOPERATIVE_MISSION_PROGRESS.team_token`이 일치하고 `mission_status = IN_PROGRESS`인 진행도를 조회한다.
+## 2. 요청 이미지
 
-조회된 진행도의 `id`는 신규 또는 기존 참여 정보를 반환할 때 응답의 `missionProgressId`로 사용한다.
+프론트는 다음 필드로 사진 파일을 전송한다.
 
-다음 경우에는 유효한 초대 링크가 아닌 것으로 판단한다.
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `itemImage` | file | O | 역할 카드 조건에 맞는지 인증할 이미지 |
 
-- `teamToken`과 일치하는 진행도가 없는 경우
-- 일치하는 진행도는 있지만 이미 `COMPLETED` 상태인 경우
+이미지는 AR 캐릭터와 사진 저장 API와 동일한 정책을 사용한다.
 
-## 3. 처리 순서
+- 허용 형식: JPEG, PNG, WebP
+- 최대 크기: 10MB
+- HEIC/HEIF는 직접 받지 않고 프론트에서 JPEG로 변환한 후 전송한다.
+- 파일 확장자만 신뢰하지 않고 실제 파일의 MIME type과 이미지 형식을 검증한다.
+- 원본 파일명은 Blob 경로 생성에 사용하지 않는다.
+- 실제 이미지 형식에 맞는 확장자로 정규화한다.
 
-1. `teamToken`으로 진행 중인 협동 미션 진행도를 조회한다.
-2. 진행도 id와 현재 사용자 id로 기존 참여자를 조회한다.
-3. 기존 참여자가 있으면 새로운 참여자를 만들지 않고 기존 정보를 반환한다.
-4. 기존 참여자가 없으면 현재 단계와 최대 인원을 검증한다.
-5. 검증을 통과하면 현재 사용자를 `PENDING` 상태의 팀원으로 생성한다.
+`itemImage`가 누락되거나 허용하지 않는 이미지이거나 10MB를 초과하면 사진 인증과 Blob 업로드를 수행하지 않고 `400 INVALID_REQUEST`를 반환한다.
 
-기존 참여자 조회를 새로운 참여 요청 검증보다 먼저 수행한다. 따라서 방장이나 이미 참여 요청을 보낸 사용자가 같은 링크를 다시 열어도 중복 데이터가 생성되지 않는다.
+## 3. API 책임
 
-## 4. 기존 참여자가 있는 경우
+이 API는 현재 사용자가 자신에게 배정된 역할의 사진을 제출했을 때 다음 작업을 수행한다.
 
-다음 조건으로 `COOPERATIVE_MISSION_PARTICIPANT`를 조회한다.
+1. 진행도, 역할 진행도, 담당 참가자와 현재 단계를 검증한다.
+2. 별도 사진 인증 모듈을 호출하여 인증 성공 여부를 판단한다.
+3. 인증에 실패하면 DB를 변경하지 않고 `isVerified: false`를 반환한다.
+4. 인증에 성공하면 사진을 Azure Blob Storage에 저장한다.
+5. Blob URL과 역할 진행도 완료 상태를 DB에 저장한다.
+6. `isVerified: true`를 반환한다.
+
+이 API는 협동 미션 전체의 `current_step`과 `mission_status`를 변경하지 않는다. 마지막 역할 인증이 완료되어도 방장이 협동 미션 진행도 저장 API를 호출하여 `3 → 4`로 변경해야 한다.
+
+## 4. 처리 순서
+
+1. Path와 `itemImage`의 형식 및 크기를 검증한다.
+2. `cooperativeMissionProgressId`에 해당하는 진행도를 조회한다.
+3. 진행도가 이미 완료되었는지 확인한다.
+4. 진행도의 `current_step`이 미션 수행 단계인 `3`인지 확인한다.
+5. `roleProgressId`에 해당하며 요청한 진행도에 속하는 역할 진행도를 잠금 조회한다.
+6. 현재 사용자가 해당 역할 진행도의 담당자이면서 `ACCEPTED` 참가자인지 확인한다.
+7. 역할 진행도가 이미 완료되었는지 확인한다.
+8. 연결된 역할 카드 정보를 조회한다.
+9. 사진 인증 모듈을 호출한다.
+10. 인증 성공 시 Blob 업로드와 역할 진행도 갱신을 수행한다.
+11. 인증 결과를 `200 OK`로 반환한다.
+
+## 5. 진행도와 단계 검증
+
+`COOPERATIVE_MISSION_PROGRESS.id = cooperativeMissionProgressId`인 진행도를 조회한다.
+
+진행도가 존재하지 않으면 `404 COOPERATIVE_MISSION_PROGRESS_NOT_FOUND`를 반환한다.
+
+진행도의 `mission_status`가 이미 `COMPLETED`이거나 `current_step = 4`이면 `409 COOPERATIVE_MISSION_ALREADY_COMPLETED`를 반환한다.
+
+사진 인증은 다음 단계에서만 허용한다.
 
 ```text
-cooperative_mission_progress_id = 조회한 진행도 id
-user_id = 현재 사용자 id
+COOPERATIVE_MISSION_PROGRESS.current_step = 3
 ```
 
-기존 참여자의 상태가 `PENDING`이면 참여 요청을 새로 생성하지 않고 기존 참여 정보를 `200 OK`로 반환한다.
+현재 단계가 `1` 또는 `2`이면 `409 COOPERATIVE_MISSION_STEP_NOT_ALLOWED`를 반환한다.
 
-기존 참여자의 상태가 `ACCEPTED`이면 참여자를 새로 생성하거나 상태를 변경하지 않고 기존 참여 정보를 `200 OK`로 반환한다. 방장이 자신의 초대 링크를 열었을 때도 방장은 이미 `HOST`, `ACCEPTED` 상태이므로 이 분기에 해당한다.
+## 6. 역할 진행도 조회
 
-기존 참여자를 반환할 때는 현재 인원이 6명이거나 `current_step`이 2 이상이어도 `409`를 반환하지 않는다. 최대 인원과 참여 가능 단계 검증은 새로운 사용자의 참여 요청을 생성할 때만 적용한다.
+다음 관계를 모두 만족하는 역할 진행도를 조회한다.
 
-## 5. 새로운 참여 요청 생성
+```text
+COOPERATIVE_ROLE_PROGRESS.id = roleProgressId
+COOPERATIVE_ROLE_PROGRESS.participant_id = COOPERATIVE_MISSION_PARTICIPANT.id
+COOPERATIVE_MISSION_PARTICIPANT.cooperative_mission_progress_id = cooperativeMissionProgressId
+```
 
-현재 사용자가 해당 진행도의 참여자 명단에 없으면 새로운 참여 요청을 생성하기 전에 다음 조건을 검증한다.
+역할 진행도가 존재하지 않거나 다른 협동 미션 진행도에 속하면 `404 COOPERATIVE_ROLE_PROGRESS_NOT_FOUND`를 반환한다.
 
-### 5.1 참여 가능 단계
+역할 진행도의 `progress_status`가 이미 `COMPLETED`이면 사진을 다시 인증하거나 기존 사진을 덮어쓰지 않고 `409 COOPERATIVE_ROLE_PROGRESS_ALREADY_COMPLETED`를 반환한다.
 
-새로운 참여 요청은 `current_step = 1`인 초대 단계에서만 생성할 수 있다.
+## 7. 담당 참가자 권한
 
-`current_step`이 `2`, `3`, `4`이면 새로운 팀원을 받을 수 없는 상태이므로 참여자를 생성하지 않는다.
+현재 사용자는 다음 조건을 모두 만족해야 한다.
 
-### 5.2 최대 참여 인원
+- 역할 진행도의 `participant_id`와 연결된 참가자의 사용자 id가 `current_user_id`와 같다.
+- 참가자의 `participant_status`가 `ACCEPTED`이다.
 
-협동 미션 최대 참여 인원은 방장을 포함하여 6명으로 고정한다.
+조건을 만족하지 않으면 `403 COOPERATIVE_ROLE_PROGRESS_ACCESS_DENIED`를 반환한다.
 
-서비스 코드에는 다음 상수를 사용한다.
+방장도 해당 역할이 자신에게 배정된 경우에만 사진을 인증할 수 있다. 방장이라는 이유만으로 다른 참가자의 역할을 대신 인증할 수 없다.
+
+한 참가자가 여러 역할을 맡았다면 각 `roleProgressId`에 대해 사진 인증 API를 별도로 호출한다.
+
+## 8. 사진 인증 모듈 분리
+
+사진 인증 판단은 `service.py`에 직접 구현하지 않고 다음 별도 모듈로 분리한다.
+
+```text
+app/cooperative_mission/photo_verifier.py
+```
+
+서비스는 사진 인증 모듈에 다음 정보를 전달한다.
+
+- 이미지 파일의 bytes 또는 검증된 파일 객체
+- 이미지 MIME type
+- `COOPERATIVE_ROLE_CARD.role_name`
+- `COOPERATIVE_ROLE_CARD.role_description`
+- `COOPERATIVE_ROLE_CARD.location_to_find`
+
+모듈은 서비스에 인증 여부인 `bool`만 반환한다.
 
 ```python
-COOPERATIVE_MISSION_MAX_PARTICIPANTS = 6
+def verify_role_image(
+    *,
+    image_bytes: bytes,
+    content_type: str,
+    role_name: str,
+    role_description: str,
+    location_to_find: list[str],
+) -> bool:
+    ...
 ```
 
-해당 진행도에 연결된 `COOPERATIVE_MISSION_PARTICIPANT` 행의 수를 조회한다. 인원 계산에는 `PENDING`과 `ACCEPTED` 참여자를 모두 포함한다.
+라우터와 서비스는 OpenAI API 호출 방법, 프롬프트 또는 응답 형식을 알지 않아야 한다. 이후 인증 방식이 변경되어도 `photo_verifier.py` 내부 구현만 교체할 수 있어야 한다.
+
+## 9. 임시 인증 구현
+
+현재는 OpenAI API 기반 이미지 인증 기획과 프롬프트가 확정되지 않았으므로 실제 외부 API를 호출하지 않는다.
+
+`photo_verifier.py`의 `verify_role_image()`는 유효한 이미지 입력에 대해 항상 `True`를 반환하도록 구현한다.
+
+```python
+def verify_role_image(
+    *,
+    image_bytes: bytes,
+    content_type: str,
+    role_name: str,
+    role_description: str,
+    location_to_find: list[str],
+) -> bool:
+    return True
+```
+
+항상 인증 성공을 반환하더라도 파일 형식, 파일 크기, 진행 단계, 담당자 권한과 중복 완료 검증은 생략하지 않는다.
+
+향후에는 동일한 함수 인터페이스를 유지한 채 함수 내부에서 OpenAI API를 호출하고 역할 카드 정보와 이미지를 프롬프트에 포함하여 인증 여부를 판단한다.
+
+## 10. 인증 실패 처리
+
+사진 인증 모듈이 `False`를 반환하면 인증 실패로 처리한다.
+
+- Blob Storage에 사진을 업로드하지 않는다.
+- `item_img_url`을 변경하지 않는다.
+- `progress_status`를 변경하지 않는다.
+- `completed_at`을 변경하지 않는다.
+- `200 OK`와 `isVerified: false`를 반환한다.
+
+인증 실패는 정상적인 판정 결과이므로 4xx 오류로 처리하지 않는다.
+
+## 11. Blob Storage 저장
+
+사진 인증 모듈이 `True`를 반환한 경우에만 Azure Blob Storage에 사진을 업로드한다.
+
+컨테이너는 환경변수 `AZURE_STORAGE_CONTAINER`로 지정한다.
+
+Blob 경로는 다음 형식을 사용한다.
 
 ```text
-participant_count = PENDING 참여자 수 + ACCEPTED 참여자 수
+cooperative_mission_role/{cooperativeMissionProgressId}/{roleProgressId}/{uuid}.{extension}
 ```
 
-`participant_count >= COOPERATIVE_MISSION_MAX_PARTICIPANTS`이면 새로운 참여자를 생성하지 않는다.
+경로 구성 규칙은 다음과 같다.
 
-### 5.3 참여자 생성값
+- `cooperativeMissionProgressId`: 요청 Path의 진행도 id
+- `roleProgressId`: 요청 Path의 역할 진행도 id
+- `uuid`: 서버에서 생성한 충돌 가능성이 낮은 UUID
+- `extension`: 실제 이미지 형식에 따라 정규화한 `jpg | png | webp`
 
-단계와 최대 인원 검증을 통과하면 다음 값으로 `COOPERATIVE_MISSION_PARTICIPANT`를 생성한다.
+사진 파일은 App Service 또는 Docker 컨테이너의 로컬 파일 시스템이나 MySQL BLOB 컬럼에 저장하지 않는다.
 
-- `cooperative_mission_progress_id`: 팀 토큰으로 조회한 진행도 id
-- `user_id`: 현재 사용자 id
-- `participant_status`: `PENDING`
-- `participant_role`: `MEMBER`
-- `joined_at`: `NULL`
+## 12. 인증 성공 시 DB 갱신
 
-새로운 참여자를 정상적으로 생성하면 `201 Created`를 반환한다.
+Blob 업로드가 성공하면 다음 값을 하나의 트랜잭션에서 변경한다.
 
-## 6. 응답 데이터
+- `item_img_url`: 업로드된 Blob URL
+- `progress_status`: `COMPLETED`
+- `completed_at`: `now_kst()`로 구한 인증 완료 시각
 
-신규 참여 요청과 기존 참여 정보는 같은 응답 구조를 사용한다.
+인증 성공 시 기존 역할 진행도 row를 갱신하며 새로운 역할 진행도를 생성하지 않는다.
 
-| 응답 필드 | 데이터 출처 |
-| --- | --- |
-| `missionProgressId` | `COOPERATIVE_MISSION_PROGRESS.id` |
-| `participantId` | `COOPERATIVE_MISSION_PARTICIPANT.id` |
-| `participantStatus` | `COOPERATIVE_MISSION_PARTICIPANT.participant_status` |
+이 API에서는 다음 값을 변경하지 않는다.
 
-응답 상태 코드는 다음과 같이 구분한다.
+- `COOPERATIVE_MISSION_PROGRESS.current_step`
+- `COOPERATIVE_MISSION_PROGRESS.mission_status`
+- `COOPERATIVE_MISSION_PROGRESS.completed_at`
 
-| 조건 | Status Code |
-| --- | --- |
-| 새로운 `PENDING` 참여자를 생성함 | `201 Created` |
-| 기존 `PENDING` 참여자를 반환함 | `200 OK` |
-| 기존 `ACCEPTED` 참여자를 반환함 | `200 OK` |
+## 13. Blob과 DB 저장 실패 처리
 
-프론트는 응답의 `missionProgressId`를 사용하여 자신의 참여 상태를 폴링한다.
+Blob 업로드에 실패하면 역할 진행도를 변경하지 않고 공통 `500 INTERNAL_SERVER_ERROR`를 반환한다.
 
-- `PENDING`: 수락 대기 화면 유지
-- `ACCEPTED`: 협동 미션 방으로 이동
+Blob 업로드는 성공했지만 DB 갱신 또는 커밋에 실패하면 업로드한 Blob을 삭제하는 보상 작업을 시도하고 DB 변경을 롤백한다.
 
-## 7. 중복 생성 및 동시 요청 방지
+보상 삭제까지 실패하면 삭제 대상 Blob 경로를 오류 로그에 남기되 이미지 bytes, 인증 토큰 또는 전체 사용자 정보는 로그에 기록하지 않는다.
 
-동일한 진행도와 동일한 사용자에 대한 참여자 데이터는 최대 하나만 존재해야 한다.
+DB 커밋이 완료된 이후에는 역할 진행도에 저장된 Blob을 삭제하지 않는다.
 
-같은 사용자가 참여 요청 API를 반복 호출하면 최초 요청에서만 참여자를 생성하고 이후 요청에는 기존 참여자를 반환한다.
+## 14. 상태 조회 반영
 
-진행도 조회, 기존 참여자 재확인, 현재 인원 확인과 참여자 생성을 하나의 트랜잭션 범위에서 처리한다. 동시에 여러 참여 요청이 들어오면 진행도 행을 잠근 뒤 기존 참여자와 현재 인원을 다시 조회하여 중복 참여자 생성과 6명 초과를 방지한다.
+인증 성공 트랜잭션이 커밋된 뒤 협동 미션 상태 조회 API의 다음 polling 응답에는 다음 값이 반영되어야 한다.
 
-## 8. 오류 처리
+- `roleProgresses[].progressStatus`: `COMPLETED`
+- `roleProgresses[].itemImgUrl`: 저장된 Blob URL
+- `completedRoleCount`: 이전 값보다 1 증가
+
+인증 실패이면 polling 응답의 역할 진행도와 완료 개수는 변경되지 않는다.
+
+## 15. 정상 응답
+
+사진 인증 모듈이 정상적으로 결과를 반환하면 성공 여부와 관계없이 `200 OK`를 반환한다.
+
+인증 성공:
+
+```json
+{
+  "isVerified": true
+}
+```
+
+인증 실패:
+
+```json
+{
+  "isVerified": false
+}
+```
+
+다른 응답 필드는 포함하지 않는다.
+
+## 16. 트랜잭션과 동시 요청
+
+진행도와 역할 진행도 검증, 사진 인증 성공 후 Blob 업로드 및 DB 갱신은 하나의 요청 흐름에서 처리한다.
+
+- 역할 진행도 row를 잠가 같은 역할에 대한 동시 인증 요청을 직렬화한다.
+- 잠금을 획득한 뒤 `progress_status`를 다시 확인한다.
+- 먼저 성공한 요청만 역할 진행도를 `COMPLETED`로 변경한다.
+- 이후 요청은 `409 COOPERATIVE_ROLE_PROGRESS_ALREADY_COMPLETED`를 반환한다.
+- DB 갱신 중 오류가 발생하면 변경 사항을 롤백한다.
+
+외부 이미지 인증이 도입되면 긴 OpenAI API 호출 동안 DB 잠금을 유지하지 않도록 인증 전 조회와 인증 성공 후 잠금 재조회 단계를 분리한다. 인증 성공 후에는 역할 진행도와 담당자가 요청 시작 시점과 동일한지 다시 검증한 뒤 저장한다.
+
+## 17. 오류 처리
 
 ### 400 `INVALID_REQUEST`
 
-`teamToken`이 누락되거나 빈 문자열인 경우 참여자를 생성하지 않고 공통 `400` 오류를 반환한다.
+다음 경우 반환한다.
+
+- `itemImage`가 누락된 경우
+- JPEG, PNG, WebP가 아닌 경우
+- 이미지 크기가 10MB를 초과한 경우
+- Path id가 정수가 아니거나 `1`보다 작은 경우
 
 ```json
 {
@@ -744,39 +1140,69 @@ participant_count = PENDING 참여자 수 + ACCEPTED 참여자 수
 }
 ```
 
-### 404 `INVALID_INVITE_TOKEN`
+### 403 `COOPERATIVE_ROLE_PROGRESS_ACCESS_DENIED`
 
-`teamToken`에 해당하는 `IN_PROGRESS` 협동 미션 진행도를 찾을 수 없으면 `404`를 반환한다.
+현재 사용자가 역할 진행도의 담당자가 아니거나 담당 참가자가 `ACCEPTED` 상태가 아니면 반환한다.
 
 ```json
 {
-  "code": "INVALID_INVITE_TOKEN"
+  "code": "COOPERATIVE_ROLE_PROGRESS_ACCESS_DENIED"
 }
 ```
 
-### 409 `COOPERATIVE_MISSION_FULL`
+### 404 `COOPERATIVE_MISSION_PROGRESS_NOT_FOUND`
 
-기존 참여자가 아닌 사용자가 참여를 요청했고, 해당 진행도의 참여자 수가 이미 6명 이상이면 `409`를 반환한다.
+`cooperativeMissionProgressId`에 해당하는 진행도가 존재하지 않으면 반환한다.
 
 ```json
 {
-  "code": "COOPERATIVE_MISSION_FULL"
+  "code": "COOPERATIVE_MISSION_PROGRESS_NOT_FOUND"
 }
 ```
 
-### 409 `COOPERATIVE_MISSION_JOIN_CLOSED`
+### 404 `COOPERATIVE_ROLE_PROGRESS_NOT_FOUND`
 
-기존 참여자가 아닌 사용자가 참여를 요청했고, 진행도의 `current_step`이 `2`, `3`, `4`이면 `409`를 반환한다.
+`roleProgressId`에 해당하는 역할 진행도가 존재하지 않거나 요청한 협동 미션 진행도에 속하지 않으면 반환한다.
 
 ```json
 {
-  "code": "COOPERATIVE_MISSION_JOIN_CLOSED"
+  "code": "COOPERATIVE_ROLE_PROGRESS_NOT_FOUND"
+}
+```
+
+### 409 `COOPERATIVE_MISSION_STEP_NOT_ALLOWED`
+
+진행도의 `current_step`이 미션 수행 단계인 `3`이 아니면 반환한다.
+
+```json
+{
+  "code": "COOPERATIVE_MISSION_STEP_NOT_ALLOWED"
+}
+```
+
+### 409 `COOPERATIVE_MISSION_ALREADY_COMPLETED`
+
+진행도가 이미 `COMPLETED` 상태이거나 `current_step = 4`이면 반환한다.
+
+```json
+{
+  "code": "COOPERATIVE_MISSION_ALREADY_COMPLETED"
+}
+```
+
+### 409 `COOPERATIVE_ROLE_PROGRESS_ALREADY_COMPLETED`
+
+역할 진행도가 이미 `COMPLETED` 상태이면 반환한다.
+
+```json
+{
+  "code": "COOPERATIVE_ROLE_PROGRESS_ALREADY_COMPLETED"
 }
 ```
 
 ### 500 `INTERNAL_SERVER_ERROR`
 
-참여자 생성 또는 DB 처리 중 예상하지 못한 오류가 발생하면 트랜잭션을 롤백하고 공통 `500` 오류를 반환한다.
+사진 인증 모듈, Blob Storage 또는 DB 처리 중 예상하지 못한 오류가 발생하면 공통 `500` 오류를 반환한다. 이미 업로드된 Blob이 있으면 보상 삭제를 시도한다.
 
 ```json
 {

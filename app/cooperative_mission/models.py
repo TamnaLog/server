@@ -180,8 +180,10 @@ class CooperativeMissionParticipant(Base):
 class CooperativeRoleProgress(Base):
     """COOPERATIVE_ROLE_PROGRESS - 협동 미션 역할 진행도.
 
-    참여자 한 명이 역할 하나를 맡으므로 `participant_id` 는 UNIQUE 다.
-    반면 역할 카드는 공용 마스터라 여러 방에서 같은 카드가 배정될 수 있어 UNIQUE 가 아니다.
+    역할 카드 하나는 한 방에서 한 명에게만 배정하지만, 한 참여자는 서로 다른 역할 카드를
+    여러 개 맡을 수 있다. 그래서 `participant_id` 는 UNIQUE 가 아니다.
+    (app/cooperative_mission/docs/BUSINESS_RULES_2.md - 10. 역할 카드 배정 규칙)
+    역할 카드도 공용 마스터라 여러 방에서 같은 카드가 배정될 수 있어 UNIQUE 가 아니다.
     """
 
     __tablename__ = "COOPERATIVE_ROLE_PROGRESS"
@@ -191,7 +193,6 @@ class CooperativeRoleProgress(Base):
         BigInteger,
         ForeignKey("COOPERATIVE_MISSION_PARTICIPANT.id", ondelete="CASCADE"),
         nullable=False,
-        unique=True,
     )
     cooperative_role_card_id: Mapped[int] = mapped_column(
         BigInteger,

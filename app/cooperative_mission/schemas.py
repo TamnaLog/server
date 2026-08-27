@@ -3,9 +3,12 @@
 필드명은 app/cooperative_mission/docs/API_SPEC.md 기준(camelCase)이다.
 """
 
+from fastapi import UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
+from app.common.next_location import NextLocationSummaryResponse
+from app.common.rewards import GrantedRewardResponse
 from app.cooperative_mission.models import (
     MissionStatus,
     ParticipantRole,
@@ -14,10 +17,18 @@ from app.cooperative_mission.models import (
 
 
 __all__ = [
+    "CooperativeMissionProgressSaveRequest",
+    "CooperativeRoleAssignmentSaveRequest",
+    "RoleProgressVerificationRequest",
+    "RoleProgressVerificationResponse",
     "CooperativeMissionStartResponse",
+    "CooperativeMissionStatusResponse",
+    "CurrentParticipantResponse",
+    "GrantedRewardResponse",
     "JoinCooperativeMissionRequest",
     "JoinCooperativeMissionResponse",
     "MissionStatus",
+    "NextLocationSummaryResponse",
     "ParticipantResponse",
     "ParticipantRole",
     "ParticipantStatus",
@@ -79,6 +90,86 @@ class CooperativeMissionStartResponse(CamelModel):
     participants: list[ParticipantResponse]
     role_cards: list[RoleCardResponse]
     role_progresses: list[RoleProgressResponse]
+
+
+class CurrentParticipantResponse(CamelModel):
+    """Bearer 토큰으로 식별한 현재 사용자의 참가자 정보.
+
+    프론트가 자기 참가자 id/역할/상태를 보내지 않고 이 값으로 화면을 정한다.
+    """
+
+    participant_id: int
+    participant_role: ParticipantRole
+    participant_status: ParticipantStatus
+
+
+class CooperativeMissionStatusResponse(CamelModel):
+    """GET /api/v1/cooperative-missions/{cooperativeMissionProgressId}/progress 정상 응답.
+
+    프론트가 폴링하는 API라 단계별로 필요한 값만 채우고 나머지는 키를 지우지 않고 `null` 로 둔다.
+
+    | 필드 | 1단계 | 2·3단계 | 4단계 |
+    | --- | --- | --- | --- |
+    | `current_participant` / `participants` | 값 | 값 | `null` |
+    | `role_cards` | `null` | 값 | `null` |
+    | `role_progresses` / 역할 집계 | `null` | 값(없으면 빈 배열/0) | `null` |
+    | `reward` / `next_location` | `null` | `null` | 값 |
+    """
+
+    mission_progress_id: int
+    mission_id: int
+    mission_title: str
+    mission_progress_status: MissionStatus
+    current_step: int
+    current_participant: CurrentParticipantResponse | None = None
+    participants: list[ParticipantResponse] | None = None
+    role_cards: list[RoleCardResponse] | None = None
+    role_progresses: list[RoleProgressResponse] | None = None
+    completed_role_count: int | None = None
+    total_role_count: int | None = None
+    reward: GrantedRewardResponse | None = None
+    next_location: NextLocationSummaryResponse | None = None
+
+
+class CooperativeMissionProgressSaveRequest(CamelModel):
+    """PATCH /api/v1/cooperative-missions/{cooperativeMissionProgressId}/progress 요청 Body.
+
+    다음 단계 하나만 받는다. 1단계로 되돌리는 요청은 없으므로 `2 | 3 | 4` 만 허용한다.
+    """
+
+    current_step: int = Field(ge=2, le=4, description="변경할 다음 단계. 2 | 3 | 4")
+
+
+class CooperativeRoleAssignmentSaveRequest(CamelModel):
+    """PUT /api/v1/cooperative-missions/{progressId}/role-assignments/{roleCardId} 요청 Body.
+
+    배정 단위는 Path 의 역할 카드이고, Body 로는 그 카드를 맡을 참가자만 받는다.
+    """
+
+    participant_id: int = Field(
+        ge=1, description="역할 카드를 배정할 ACCEPTED 참가자 id"
+    )
+
+
+class RoleProgressVerificationRequest(CamelModel):
+    """POST .../role-progresses/{roleProgressId}/verification 요청 Body.
+
+    `multipart/form-data` 로 받는다. 사진 형식/크기 검증은 파일 내용을 봐야 하므로
+    스키마가 아니라 service 에서 처리한다.
+    참가자와 역할 카드는 요청으로 받지 않고 역할 진행도 관계로 조회한다.
+    """
+
+    item_image: UploadFile
+
+
+class RoleProgressVerificationResponse(CamelModel):
+    """POST .../role-progresses/{roleProgressId}/verification 정상 응답.
+
+    인증 실패는 오류가 아니라 판정 결과이므로 `200` 으로 `is_verified: false` 를 반환한다.
+    갱신된 역할 상태는 상태 조회 API 폴링으로 확인한다.
+    """
+
+    is_verified: bool
 
 
 class JoinCooperativeMissionRequest(CamelModel):
