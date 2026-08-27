@@ -79,6 +79,8 @@ def _granted_flags_query(
         )
         .where(
             CooperativeMissionProgress.cooperative_mission_id == mission_id,
+            CooperativeMissionProgress.deleted_at.is_(None),
             CooperativeMissionParticipant.user_id == current_user_id,
+            CooperativeMissionParticipant.deleted_at.is_(None),
         )
     )

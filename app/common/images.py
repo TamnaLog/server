@@ -9,9 +9,14 @@
 
 허용 형식은 JPEG / PNG / WebP 뿐이다. GIF, BMP, TIFF, SVG, HEIC/HEIF 등은 허용하지 않는다.
 `.jpeg` 로 전달된 JPEG 도 저장 확장자는 `.jpg` 로 통일한다.
+
+업로드 파일을 읽는 규칙(최대 10MB, 빈 파일 금지)도 도메인마다 같으므로 여기서 함께 관리한다.
 """
 
 from enum import Enum
+from typing import BinaryIO
+
+from app.core.errors import InvalidRequestError
 
 
 class ImageFormat(str, Enum):
@@ -69,3 +74,44 @@ def detect_image_format(data: bytes) -> ImageFormat | None:
         return ImageFormat.WEBP
 
     return None
+
+
+# 업로드 이미지 최대 크기
+MAX_IMAGE_SIZE_BYTE = 10 * 1024 * 1024
+
+# 크기 제한을 넘는 파일을 통째로 메모리에 올리지 않도록 나눠 읽는 단위
+IMAGE_CHUNK_SIZE_BYTE = 1024 * 1024
+
+
+def read_image(image: BinaryIO) -> bytes:
+    """업로드 이미지를 크기 제한을 지키며 읽는다.
+
+    전체를 한 번에 메모리로 읽지 않고 나눠 읽다가 최대 크기를 넘으면 즉시 중단한다.
+    비어 있거나 최대 크기를 넘으면 400 으로 처리한다.
+    """
+    chunks: list[bytes] = []
+    size = 0
+
+    while chunk := image.read(IMAGE_CHUNK_SIZE_BYTE):
+        size += len(chunk)
+        if size > MAX_IMAGE_SIZE_BYTE:
+            raise InvalidRequestError(
+                f"이미지 파일이 최대 크기({MAX_IMAGE_SIZE_BYTE} bytes)를 초과했습니다."
+            )
+        chunks.append(chunk)
+
+    if size == 0:
+        raise InvalidRequestError("이미지 파일이 비어 있습니다.")
+
+    return b"".join(chunks)
+
+
+def read_and_detect(image: BinaryIO) -> tuple[bytes, ImageFormat]:
+    """업로드 이미지를 읽고 실제 형식까지 판별한다. 허용 형식이 아니면 400."""
+    data = read_image(image)
+    image_format = detect_image_format(data)
+    if image_format is None:
+        raise InvalidRequestError(
+            "허용하지 않는 이미지 형식입니다. (JPEG / PNG / WebP 만 허용)"
+        )
+    return data, image_format

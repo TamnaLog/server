@@ -11,14 +11,15 @@ from app.cooperative_mission.models import (
     CooperativeMission,
     CooperativeMissionParticipant,
     CooperativeMissionProgress,
+    ParticipantRole,
     ParticipantStatus,
-    ParticipantType,
 )
-from app.core.deps import CURRENT_USER_ID
 from app.culture_mission.models import CultureMission, CultureMissionProgress
 from app.map.models import Location
 from app.mission.models import Mission, MissionStatus
+from app.user.models import User
 from app.treasure_mission.models import ArCharacter, TreasureMission
+from conftest import CURRENT_USER_ID, access_token_hash
 
 
 # MISSION(유형 분류) id
@@ -107,9 +108,9 @@ def _participant(*, id: int, progress_id: int, user_id: int) -> CooperativeMissi
     return CooperativeMissionParticipant(
         id=id,
         cooperative_mission_progress_id=progress_id,
-        participant_type=ParticipantType.USER.value,
         user_id=user_id,
         participant_status=ParticipantStatus.ACCEPTED.value,
+        participant_role=ParticipantRole.HOST.value,
     )
 
 
@@ -125,6 +126,12 @@ def mission_data(db_session: Session) -> None:
                 acquire_condition="문화 미션을 완료하면 만날 수 있어요.",
                 character_img_url=CHARACTER_IMG_URL,
                 hashtags=["#돌담"],
+            ),
+            User(
+                id=CURRENT_USER_ID,
+                access_token_hash=access_token_hash(CURRENT_USER_ID),
+                nickname="몽글몽글파도",
+                point=0,
             ),
             Location(
                 id=LOCATION_ID,
@@ -174,7 +181,6 @@ def mission_data(db_session: Session) -> None:
                 id=SHARED_DETAIL_ID,
                 mission_id=COOPERATIVE_TYPE_ID,
                 location_id=LOCATION_ID,
-                role_total_count=4,
                 reward_detail={"ar_character_id": None, "point": 200},
             ),
         ]

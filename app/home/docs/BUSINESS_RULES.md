@@ -11,7 +11,9 @@
 - 쌓인 방명록 개수
 - 사용자에게 배정된 AR 캐릭터 이미지 URL
 
-현재 로그인 기능은 구현되어 있지 않으므로 API를 호출하는 사용자는 항상 `id=1`로 처리한다.
+API를 호출하는 사용자는 `Authorization: Bearer {accessToken}` 헤더의 액세스 토큰으로 정한다.
+
+토큰이 없거나 토큰에 해당하는 사용자가 존재하지 않으면 홈 데이터를 조회하지 않고 `401 UNAUTHORIZED_USER`를 반환한다.
 
 ## 2. 추천 미션
 
@@ -97,3 +99,5 @@ app/home/guestbook_counter.py
 사용자에게 배정된 AR 캐릭터가 있으면 해당 캐릭터의 이미지 URL을 `characterImgUrl`로 반환한다.
 
 사용자에게 배정된 AR 캐릭터가 없으면 `characterImgUrl`은 `null`로 반환한다.
+
+사용자 자체가 없는 경우는 `characterImgUrl`을 `null`로 반환하는 것이 아니라 `401 UNAUTHORIZED_USER`로 처리한다. (현재 사용자 확인은 공통 의존성이 담당한다)

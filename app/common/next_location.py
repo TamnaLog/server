@@ -43,17 +43,23 @@ class NextLocationMissionResponse(CamelModel):
     mission_type: MissionType
 
 
-class NextLocationResponse(CamelModel):
-    """미션 완료 후 추천하는 다음 장소.
+class NextLocationSummaryResponse(CamelModel):
+    """미션 완료 후 추천하는 다음 장소. (거리 없음)
 
+    사용자 좌표를 받지 않는 API(협동 미션 상태 조회)는 거리를 계산할 수 없어 이 형식을 쓴다.
     `location_image_url` 은 TourAPI 에서 조회하므로 조회하지 못하면 `null` 이다.
     """
 
     id: int
     location_title: str
     location_image_url: str | None = None
-    distance_meter: int
     mission: NextLocationMissionResponse | None = None
+
+
+class NextLocationResponse(NextLocationSummaryResponse):
+    """미션 완료 후 추천하는 다음 장소. (사용자 위치에서의 직선거리 포함)"""
+
+    distance_meter: int
 
 
 def recommend_next_location(
@@ -74,6 +80,23 @@ def recommend_next_location(
         distance_meter=distance.calculate_distance_meter(
             latitude, longitude, location.my, location.mx
         ),
+        mission=_pick_mission(db, location.id),
+    )
+
+
+def recommend_next_location_summary(db: Session) -> NextLocationSummaryResponse | None:
+    """사용자 좌표 없이 다음에 갈 장소를 추천한다. (거리 제외, 현재는 랜덤)
+
+    추천 기준은 좌표가 있는 경우와 같다. 거리만 계산하지 않는다.
+    """
+    location = _pick_location(db)
+    if location is None:
+        return None
+
+    return NextLocationSummaryResponse(
+        id=location.id,
+        location_title=location.location_title,
+        location_image_url=get_location_image_url(location.content_id),
         mission=_pick_mission(db, location.id),
     )
 

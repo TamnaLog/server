@@ -11,10 +11,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.deps import CURRENT_USER_ID
+from app.common import images
 from app.treasure_mission import service
 from app.treasure_mission.models import PictureWithCharacter
 from app.user.models import User
+from conftest import CURRENT_USER_ID, access_token_hash
 
 
 ENDPOINT = "/api/v1/treasure-missions/pictures-with-character"
@@ -56,8 +57,18 @@ def deletes(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 def user_data(db_session: Session) -> None:
     db_session.add_all(
         [
-            User(id=CURRENT_USER_ID, nickname="몽글몽글파도", point=0),
-            User(id=OTHER_USER_ID, nickname="한라봉주스", point=0),
+            User(
+                id=CURRENT_USER_ID,
+                access_token_hash=access_token_hash(CURRENT_USER_ID),
+                nickname="몽글몽글파도",
+                point=0,
+            ),
+            User(
+                id=OTHER_USER_ID,
+                access_token_hash=access_token_hash(OTHER_USER_ID),
+                nickname="한라봉주스",
+                point=0,
+            ),
         ]
     )
     db_session.commit()
@@ -198,10 +209,6 @@ def test_DB_저장이_실패하면_올린_Blob을_지운다(
     deletes: list[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # 사용자 행이 없으면 FK 위반으로 커밋이 실패한다.
-    db_session.query(User).delete()
-    db_session.commit()
-
     def boom(self: Session) -> None:
         raise RuntimeError("DB 저장 실패")
 
@@ -244,7 +251,7 @@ def test_빈_파일이면_400으로_응답한다(
 def test_10MB를_초과하면_400으로_응답하고_업로드하지_않는다(
     client: TestClient, user_data: None, uploads: list[dict[str, Any]]
 ) -> None:
-    oversized = JPEG_BYTES + b"0" * service.MAX_PICTURE_SIZE_BYTE
+    oversized = JPEG_BYTES + b"0" * images.MAX_IMAGE_SIZE_BYTE
 
     response = _post(client, content=oversized)
 
@@ -256,12 +263,12 @@ def test_10MB를_초과하면_400으로_응답하고_업로드하지_않는다(
 def test_10MB_이하는_저장한다(
     client: TestClient, user_data: None, uploads: list[dict[str, Any]]
 ) -> None:
-    limit_size = JPEG_BYTES + b"0" * (service.MAX_PICTURE_SIZE_BYTE - len(JPEG_BYTES))
+    limit_size = JPEG_BYTES + b"0" * (images.MAX_IMAGE_SIZE_BYTE - len(JPEG_BYTES))
 
     response = _post(client, content=limit_size)
 
     assert response.status_code == 204
-    assert len(uploads[0]["data"]) == service.MAX_PICTURE_SIZE_BYTE
+    assert len(uploads[0]["data"]) == images.MAX_IMAGE_SIZE_BYTE
 
 
 @pytest.mark.parametrize(

@@ -60,9 +60,11 @@ CREATE TABLE `USER` (
     `ar_character_id`      BIGINT      NULL                 COMMENT '배정된 AR 캐릭터',
     `nickname`             VARCHAR(20) NULL,
     `point`                INT         NOT NULL DEFAULT 0,
+    `access_token_hash`    CHAR(64)    NOT NULL                COMMENT '액세스 토큰 해시(SHA-256 hex)',
     `created_at`           DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`           DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_user__access_token_hash` (`access_token_hash`),
     KEY `idx_user__travel_style` (`user_travel_style_id`),
     KEY `idx_user__ar_character` (`ar_character_id`),
     CONSTRAINT `fk_user__travel_style`
@@ -210,7 +212,6 @@ CREATE TABLE `COOPERATIVE_MISSION` (
     `id`               BIGINT   NOT NULL AUTO_INCREMENT,
     `mission_id`       BIGINT   NOT NULL,
     `location_id`      BIGINT   NOT NULL,
-    `role_total_count` INT      NOT NULL,
     `reward_detail`    JSON     NOT NULL                COMMENT '{ar_character_id, point, coupon_location, coupon_price}',
     `created_at`       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -235,6 +236,7 @@ CREATE TABLE `COOPERATIVE_MISSION_PROGRESS` (
     `completed_at`           DATETIME     NULL,
     `created_at`             DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`             DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `deleted_at`             DATETIME     NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_cooperative_progress__team_token` (`team_token`),
     KEY `idx_cooperative_progress__mission` (`cooperative_mission_id`),
@@ -243,40 +245,32 @@ CREATE TABLE `COOPERATIVE_MISSION_PROGRESS` (
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '협동 미션 진행도(방)';
 
 CREATE TABLE `COOPERATIVE_ROLE_CARD` (
-    `id`                              BIGINT       NOT NULL AUTO_INCREMENT,
-    `cooperative_mission_progress_id` BIGINT       NOT NULL,
-    `role_name`                       VARCHAR(20)  NOT NULL,
-    `role_description`                VARCHAR(200) NOT NULL,
-    `location_to_find`                VARCHAR(200) NOT NULL,
-    `hint`                            VARCHAR(200) NOT NULL,
-    `picture_guide`                   VARCHAR(200) NOT NULL,
-    `is_selected`                     BOOLEAN      NOT NULL DEFAULT FALSE,
-    `created_at`                      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `updated_at`                      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`),
-    KEY `idx_role_card__progress` (`cooperative_mission_progress_id`),
-    CONSTRAINT `fk_role_card__progress`
-        FOREIGN KEY (`cooperative_mission_progress_id`) REFERENCES `COOPERATIVE_MISSION_PROGRESS` (`id`) ON DELETE CASCADE
+    `id`               BIGINT       NOT NULL AUTO_INCREMENT,
+    `role_name`        VARCHAR(20)  NOT NULL,
+    `role_description` VARCHAR(200) NOT NULL,
+    `location_to_find` JSON         NOT NULL                COMMENT 'string[]',
+    `created_at`       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at`       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '협동 미션 역할 카드';
 
 CREATE TABLE `COOPERATIVE_MISSION_PARTICIPANT` (
     `id`                              BIGINT       NOT NULL AUTO_INCREMENT,
     `cooperative_mission_progress_id` BIGINT       NOT NULL,
-    `participant_type`                VARCHAR(20)  NOT NULL                COMMENT 'USER | GUEST',
-    `user_id`                         BIGINT       NULL,
-    `guest_name`                      VARCHAR(100) NULL,
-    `guest_token`                     VARCHAR(500) NULL,
-    `participant_status`              VARCHAR(20)  NOT NULL                COMMENT 'ACCEPTED | INVITED',
+    `user_id`                         BIGINT       NOT NULL,
+    `participant_status`              VARCHAR(20)  NOT NULL                COMMENT 'PENDING | ACCEPTED',
+    `participant_role`                VARCHAR(20)  NOT NULL                COMMENT 'HOST | MEMBER',
     `joined_at`                       DATETIME     NULL,
     `created_at`                      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`                      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `deleted_at`                      DATETIME     NULL,
     PRIMARY KEY (`id`),
     KEY `idx_participant__progress` (`cooperative_mission_progress_id`),
     KEY `idx_participant__user` (`user_id`),
     CONSTRAINT `fk_participant__progress`
         FOREIGN KEY (`cooperative_mission_progress_id`) REFERENCES `COOPERATIVE_MISSION_PROGRESS` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_participant__user`
-        FOREIGN KEY (`user_id`) REFERENCES `USER` (`id`) ON DELETE SET NULL
+        FOREIGN KEY (`user_id`) REFERENCES `USER` (`id`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '협동 미션 참여자';
 
 CREATE TABLE `COOPERATIVE_ROLE_PROGRESS` (
@@ -288,9 +282,10 @@ CREATE TABLE `COOPERATIVE_ROLE_PROGRESS` (
     `completed_at`             DATETIME     NULL,
     `created_at`               DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`               DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `deleted_at`               DATETIME     NULL,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_role_progress__participant` (`participant_id`),
-    UNIQUE KEY `uk_role_progress__role_card` (`cooperative_role_card_id`),
+    KEY `idx_role_progress__participant` (`participant_id`),
+    KEY `idx_role_progress__role_card` (`cooperative_role_card_id`),
     CONSTRAINT `fk_role_progress__participant`
         FOREIGN KEY (`participant_id`) REFERENCES `COOPERATIVE_MISSION_PARTICIPANT` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_role_progress__role_card`

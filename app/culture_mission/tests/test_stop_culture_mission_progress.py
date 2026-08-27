@@ -12,12 +12,12 @@ from sqlalchemy.orm import Session
 
 from app.common import distance, next_location
 from app.cooperative_mission.models import CooperativeMission
-from app.core.deps import CURRENT_USER_ID
 from app.culture_mission.models import CultureMission, CultureMissionProgress, MissionStatus
 from app.map.models import Location
 from app.mission.models import Mission
 from app.treasure_mission.models import AcquiredArCharacter, ArCharacter
 from app.user.models import User
+from conftest import CURRENT_USER_ID, access_token_hash
 
 
 CULTURE_TYPE_ID = 1
@@ -96,8 +96,18 @@ def progress_data(db_session: Session) -> None:
                 description="일행과 역할을 나눠보세요.",
                 step_detail=[{"step": 1, "step_title": "초대", "description": "설명"}],
             ),
-            User(id=CURRENT_USER_ID, nickname="몽글몽글파도", point=INITIAL_USER_POINT),
-            User(id=OTHER_USER_ID, nickname="한라봉주스", point=0),
+            User(
+                id=CURRENT_USER_ID,
+                access_token_hash=access_token_hash(CURRENT_USER_ID),
+                nickname="몽글몽글파도",
+                point=INITIAL_USER_POINT,
+            ),
+            User(
+                id=OTHER_USER_ID,
+                access_token_hash=access_token_hash(OTHER_USER_ID),
+                nickname="한라봉주스",
+                point=0,
+            ),
             ArCharacter(
                 id=AR_CHARACTER_ID,
                 character_name="돌담이",
@@ -364,7 +374,6 @@ def test_다음_장소에_연결된_미션이_있으면_유형과_세부_미션_
             id=COOPERATIVE_MISSION_ID,
             mission_id=COOPERATIVE_TYPE_ID,
             location_id=LOCATION_ID,
-            role_total_count=4,
             reward_detail={},
         )
     )

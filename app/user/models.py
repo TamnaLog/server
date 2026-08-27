@@ -13,6 +13,7 @@ docs/erd.md 기준으로 이 도메인이 담당하는 테이블:
 from datetime import datetime
 
 from sqlalchemy import (
+    CHAR,
     JSON,
     BigInteger,
     Boolean,
@@ -62,6 +63,8 @@ class User(Base):
     )
     nickname: Mapped[str | None] = mapped_column(String(20), nullable=True)
     point: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
+    # 액세스 토큰 해시(SHA-256 hex 64자). 토큰 원문은 저장하지 않는다.
+    access_token_hash: Mapped[str] = mapped_column(CHAR(64), nullable=False, unique=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )

@@ -21,6 +21,12 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 INVALID_REQUEST = "INVALID_REQUEST"
 INTERNAL_SERVER_ERROR = "INTERNAL_SERVER_ERROR"
+UNAUTHORIZED_USER = "UNAUTHORIZED_USER"
+
+# 현재 사용자 인증에 쓰는 OpenAPI 보안 스키마 이름.
+# app/core/deps.py 가 이 이름으로 Bearer 스키마를 만들고,
+# 아래 문서 처리에서 401 을 붙일 API 를 고르는 기준으로도 쓴다.
+OPENAPI_SECURITY_SCHEME_NAME = "AccessToken"
 
 
 class ErrorResponse(BaseModel):
@@ -46,6 +52,20 @@ class InvalidRequestError(AppError):
 
     def __init__(self, detail: str = "") -> None:
         super().__init__(status.HTTP_400_BAD_REQUEST, INVALID_REQUEST, detail)
+
+
+class UnauthorizedError(AppError):
+    """401 - 현재 사용자를 확인할 수 없다."""
+
+    def __init__(self, code: str, detail: str = "") -> None:
+        super().__init__(status.HTTP_401_UNAUTHORIZED, code, detail)
+
+
+class ForbiddenError(AppError):
+    """403 - 현재 사용자는 확인했지만 이 동작을 할 권한이 없다."""
+
+    def __init__(self, code: str, detail: str = "") -> None:
+        super().__init__(status.HTTP_403_FORBIDDEN, code, detail)
 
 
 class NotFoundError(AppError):
@@ -116,6 +136,14 @@ def _error_response_doc(description: str, code: str) -> dict[str, Any]:
     }
 
 
+def _uses_current_user(operation: dict[str, Any]) -> bool:
+    """액세스 토큰으로 현재 사용자를 확인하는 API 인지 본다. (401 문서를 붙일 대상)"""
+    return any(
+        OPENAPI_SECURITY_SCHEME_NAME in requirement
+        for requirement in operation.get("security", [])
+    )
+
+
 def _drop_unused_validation_schemas(schema: dict[str, Any]) -> None:
     """더 이상 참조되지 않는 FastAPI 기본 검증 에러 스키마를 제거한다."""
     schemas = schema.get("components", {}).get("schemas", {})
@@ -163,6 +191,11 @@ def use_common_error_responses(app: FastAPI) -> None:
                     responses.setdefault(
                         str(status.HTTP_400_BAD_REQUEST),
                         _error_response_doc("잘못된 요청", INVALID_REQUEST),
+                    )
+                if _uses_current_user(operation):
+                    responses.setdefault(
+                        str(status.HTTP_401_UNAUTHORIZED),
+                        _error_response_doc("현재 사용자를 확인할 수 없음", UNAUTHORIZED_USER),
                     )
                 responses.setdefault(
                     str(status.HTTP_500_INTERNAL_SERVER_ERROR),

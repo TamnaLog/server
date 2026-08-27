@@ -22,7 +22,7 @@ def save_onboarding_info(
     - **나중에 할게요**를 선택한 경우: 선택값과 여행 유형은 `null`로 두고
       기본 캐릭터(돌멍이)를 배정한다.
     """
-    user = _get_or_create_user(db, current_user_id)
+    user = _get_user(db, current_user_id)
 
     if request.is_skipped:
         user.expectation = None
@@ -46,13 +46,15 @@ def save_onboarding_info(
     return _to_response(user, ar_character, travel_style)
 
 
-def _get_or_create_user(db: Session, user_id: int) -> User:
-    """사용자를 조회하고, 없으면 해당 id로 생성한다."""
+def _get_user(db: Session, user_id: int) -> User:
+    """현재 사용자를 조회한다.
+
+    `get_current_user_id()` 가 이미 사용자 존재를 확인하므로 여기서는 없을 수 없다.
+    그래도 조회 실패를 조용히 넘기지 않도록 방어적으로 확인한다.
+    """
     user = db.get(User, user_id)
     if user is None:
-        user = User(id=user_id)
-        db.add(user)
-        db.flush()
+        raise RuntimeError(f"사용자 {user_id} 를 찾을 수 없습니다.")
     return user
 
 

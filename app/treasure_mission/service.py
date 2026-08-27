@@ -344,11 +344,7 @@ def _recommend_next_location(
 # AR 캐릭터와 사진 저장
 # ---------------------------------------------------------------------
 
-# 사진 파일 최대 크기(10MB)
-MAX_PICTURE_SIZE_BYTE = 10 * 1024 * 1024
-
-# 업로드 데이터를 나눠 읽는 단위
-PICTURE_CHUNK_SIZE_BYTE = 1024 * 1024
+# 사진 형식/크기 정책은 app/common/images.py 가 공용으로 가진다. (JPEG/PNG/WebP, 최대 10MB)
 
 # Blob 저장 경로의 최상위 prefix. 그 아래를 사용자 id로 나눈다.
 PICTURE_BLOB_PREFIX = "ar_character_picture"
@@ -364,12 +360,7 @@ def save_picture_with_character(
     DB가 참조하지 않는 파일이 남지 않게 한다.
     """
     saved_at = _parse_taken_at(taken_at)
-    data = _read_picture(picture)
-    image_format = images.detect_image_format(data)
-    if image_format is None:
-        raise InvalidRequestError(
-            "허용하지 않는 이미지 형식입니다. (JPEG / PNG / WebP 만 허용)"
-        )
+    data, image_format = images.read_and_detect(picture)
 
     picture_url = blob_storage.upload_file(
         data,
@@ -411,23 +402,3 @@ def _parse_taken_at(taken_at: str) -> datetime:
     return parsed
 
 
-def _read_picture(picture: BinaryIO) -> bytes:
-    """사진 파일을 크기 제한을 지키며 읽는다.
-
-    전체를 한 번에 메모리로 읽지 않고 나눠 읽다가 최대 크기를 넘으면 즉시 중단한다.
-    """
-    chunks: list[bytes] = []
-    size = 0
-
-    while chunk := picture.read(PICTURE_CHUNK_SIZE_BYTE):
-        size += len(chunk)
-        if size > MAX_PICTURE_SIZE_BYTE:
-            raise InvalidRequestError(
-                f"사진 파일이 최대 크기({MAX_PICTURE_SIZE_BYTE} bytes)를 초과했습니다."
-            )
-        chunks.append(chunk)
-
-    if size == 0:
-        raise InvalidRequestError("사진 파일이 비어 있습니다.")
-
-    return b"".join(chunks)

@@ -11,12 +11,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.common.distance import calculate_distance_meter
-from app.core.deps import CURRENT_USER_ID
 from app.map.models import Location
 from app.mission.models import Mission, MissionStatus
 from app.treasure_mission.constants import TREASURE_APPEAR_RADIUS_METER
 from app.treasure_mission.models import TreasureMission, TreasureMissionProgress
 from app.user.models import User
+from conftest import CURRENT_USER_ID, access_token_hash
 
 
 TREASURE_TYPE_ID = 3
@@ -73,8 +73,18 @@ def treasure_mission_data(db_session: Session) -> None:
                 mx=LOCATION_LNG,
                 my=LOCATION_LAT,
             ),
-            User(id=CURRENT_USER_ID, nickname="몽글몽글파도", point=0),
-            User(id=OTHER_USER_ID, nickname="한라봉주스", point=0),
+            User(
+                id=CURRENT_USER_ID,
+                access_token_hash=access_token_hash(CURRENT_USER_ID),
+                nickname="몽글몽글파도",
+                point=0,
+            ),
+            User(
+                id=OTHER_USER_ID,
+                access_token_hash=access_token_hash(OTHER_USER_ID),
+                nickname="한라봉주스",
+                point=0,
+            ),
         ]
     )
     db_session.flush()

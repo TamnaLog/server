@@ -83,10 +83,11 @@
 - 배정된 AR 캐릭터가 있으면 그 캐릭터의 이미지 URL이 나간다.
 - 배정된 캐릭터가 없으면 `characterImgUrl` 은 `null` 이다.
 
-### 7. 사용자 데이터가 없는 경우
+### 7. 현재 사용자
 
-- 로그인 전이라 사용자 id는 항상 1로 고정되는데, 해당 사용자 행이 없어도 200으로 응답한다.
-  이때 `characterImgUrl` 은 `null`, `progressMission` 은 빈 배열이다.
+- 현재 사용자는 `Authorization: Bearer {accessToken}` 헤더의 액세스 토큰으로 정한다.
+- 헤더의 사용자가 존재하지 않으면 홈 데이터를 만들지 않고 **401 `UNAUTHORIZED_USER`** 로 응답한다.
+  (`characterImgUrl` 을 `null` 로 채워 200을 주는 것이 아니다)
 
 ### 8. 잘못된 요청
 

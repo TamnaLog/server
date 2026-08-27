@@ -14,11 +14,20 @@
 - MySQL
 - Docker / Docker Compose
 
-### 1.3 Authentication Assumption
-- 현재 로그인 기능은 구현되어 있지 않다.
-- 현재 사용자는 항상 `id=1`로 처리한다.
-- DB에는 항상 1번 사용자에 대한 목업 데이터가 존재해야 한다.
-- 현재 사용자 id가 필요한 API는 `get_current_user_id()` 의존성을 사용한다.
+### 1.3 Authentication
+- 별도의 로그인 화면 없이 익명 사용자 + 액세스 토큰으로 사용자를 식별한다.
+- 프론트는 앱 실행 시 기기 보안 저장소의 토큰을 확인한다.
+  - 토큰이 없으면 `POST /api/v1/auth/anonymous`로 익명 사용자와 토큰을 발급받아 저장한다.
+  - 이후 모든 요청에 `Authorization: Bearer {accessToken}` 헤더를 넣는다.
+- 토큰 원문은 발급 응답에서 한 번만 내려주고, DB에는 SHA-256 해시(`USER.access_token_hash`)만 저장한다.
+  - 토큰 생성/해시는 `app/core/security.py`에 있고 발급(`app/auth`)과 식별(`app/core/deps.py`)이 같이 쓴다.
+  - 토큰 원문과 해시는 로그/에러 응답/예외 메시지에 넣지 않는다.
+- 현재 사용자 id가 필요한 API는 `get_current_user_id()` 의존성을 사용한다. (`app/core/deps.py`)
+  - 헤더가 없거나 Bearer 형식이 아니면 401 `UNAUTHORIZED_USER`
+  - 토큰 해시에 해당하는 `USER`가 없으면 401 `UNAUTHORIZED_USER`
+  - 401은 `use_common_error_responses()`가 Bearer 인증을 쓰는 API에만 자동으로 문서에 넣는다.
+- 목업 사용자(1~6번)의 토큰 원문은 `test-user-{id}-token`이다. (`scripts/sql/02-data-mock.sql`)
+  - 테스트에서는 `conftest.py`의 `auth_headers(user_id)`를 쓴다.
 
 ### 1.4 Date and Time Policy
 - 시간 정보는 한국시간(KST) 기준으로 처리한다.
@@ -34,7 +43,7 @@
 - 도메인별 패키지 구조: `app/<domain>/{router,service,schemas,models}.py`
 - 도메인 문서: `app/<domain>/docs/API_SPEC.md`, `app/<domain>/docs/BUSINESS_RULES.md`
 - 공통 코드
-  - `app/core/`: 앱 인프라 (`config.py`, `database.py`, `deps.py`, `errors.py`, `models.py`)
+  - `app/core/`: 앱 인프라 (`config.py`, `database.py`, `deps.py`, `errors.py`, `models.py`, `security.py`)
   - `app/common/`: 도메인이 공유하는 계산/유틸과 공용 응답 스키마
     - `distance.py`: 좌표 거리·예상 소요 시간
     - `rewards.py`: 미션 보상(`reward_detail`) 응답 스키마 + 조합 로직 (문화/협동/보물 공용)

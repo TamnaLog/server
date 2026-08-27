@@ -41,23 +41,23 @@ __all__ = [
     "Location",
     "Mission",
     "MissionStatus",
+    "ParticipantRole",
     "ParticipantStatus",
-    "ParticipantType",
 ]
 
 
-class ParticipantType(str, Enum):
-    """참여자 유형."""
-
-    USER = "USER"
-    GUEST = "GUEST"
-
-
 class ParticipantStatus(str, Enum):
-    """참여자 상태."""
+    """참여자 상태. 초대를 받은 뒤 수락하면 `ACCEPTED` 가 된다."""
 
+    PENDING = "PENDING"
     ACCEPTED = "ACCEPTED"
-    INVITED = "INVITED"
+
+
+class ParticipantRole(str, Enum):
+    """참여자 역할. 방을 만든 사람이 `HOST` 다."""
+
+    HOST = "HOST"
+    MEMBER = "MEMBER"
 
 
 class CooperativeMission(Base):
@@ -76,7 +76,6 @@ class CooperativeMission(Base):
     location_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("LOCATION.id", ondelete="RESTRICT"), nullable=False
     )
-    role_total_count: Mapped[int] = mapped_column(Integer, nullable=False)
     # 미션 보상. {ar_character_id, point, coupon_location, coupon_price}
     reward_detail: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -125,27 +124,23 @@ class CooperativeMissionProgress(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
     )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class CooperativeRoleCard(Base):
-    """COOPERATIVE_ROLE_CARD - 협동 미션 역할 카드."""
+    """COOPERATIVE_ROLE_CARD - 협동 미션 역할 카드.
+
+    특정 미션이나 방에 묶이지 않은 역할 카드 마스터 테이블이다.
+    어떤 방에서 누가 어떤 카드를 맡았는지는 COOPERATIVE_ROLE_PROGRESS 가 가진다.
+    """
 
     __tablename__ = "COOPERATIVE_ROLE_CARD"
 
     id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
-    cooperative_mission_progress_id: Mapped[int] = mapped_column(
-        BigInteger,
-        ForeignKey("COOPERATIVE_MISSION_PROGRESS.id", ondelete="CASCADE"),
-        nullable=False,
-    )
     role_name: Mapped[str] = mapped_column(String(20), nullable=False)
     role_description: Mapped[str] = mapped_column(String(200), nullable=False)
-    location_to_find: Mapped[str] = mapped_column(String(200), nullable=False)
-    hint: Mapped[str] = mapped_column(String(200), nullable=False)
-    picture_guide: Mapped[str] = mapped_column(String(200), nullable=False)
-    is_selected: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="0"
-    )
+    # 역할 수행을 위해 찾아야 하는 장소/대상 목록 (string[])
+    location_to_find: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )
@@ -157,7 +152,8 @@ class CooperativeRoleCard(Base):
 class CooperativeMissionParticipant(Base):
     """COOPERATIVE_MISSION_PARTICIPANT - 협동 미션 참여자.
 
-    가입 사용자는 `user_id`, 초대 URL로 들어온 게스트는 `guest_name`/`guest_token` 을 사용한다.
+    참여자는 모두 가입 사용자다. 방을 만든 사람이 `HOST`, 초대받아 들어온 사람이 `MEMBER` 다.
+    초대를 받았지만 아직 수락하지 않은 상태는 `PENDING` 이다.
     """
 
     __tablename__ = "COOPERATIVE_MISSION_PARTICIPANT"
@@ -168,13 +164,11 @@ class CooperativeMissionParticipant(Base):
         ForeignKey("COOPERATIVE_MISSION_PROGRESS.id", ondelete="CASCADE"),
         nullable=False,
     )
-    participant_type: Mapped[str] = mapped_column(String(20), nullable=False)
-    user_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("USER.id", ondelete="SET NULL"), nullable=True
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("USER.id", ondelete="CASCADE"), nullable=False
     )
-    guest_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    guest_token: Mapped[str | None] = mapped_column(String(500), nullable=True)
     participant_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    participant_role: Mapped[str] = mapped_column(String(20), nullable=False)
     joined_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
@@ -182,10 +176,17 @@ class CooperativeMissionParticipant(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
     )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class CooperativeRoleProgress(Base):
-    """COOPERATIVE_ROLE_PROGRESS - 협동 미션 역할 진행도."""
+    """COOPERATIVE_ROLE_PROGRESS - 협동 미션 역할 진행도.
+
+    역할 카드 하나는 한 방에서 한 명에게만 배정하지만, 한 참여자는 서로 다른 역할 카드를
+    여러 개 맡을 수 있다. 그래서 `participant_id` 는 UNIQUE 가 아니다.
+    (app/cooperative_mission/docs/BUSINESS_RULES_2.md - 10. 역할 카드 배정 규칙)
+    역할 카드도 공용 마스터라 여러 방에서 같은 카드가 배정될 수 있어 UNIQUE 가 아니다.
+    """
 
     __tablename__ = "COOPERATIVE_ROLE_PROGRESS"
 
@@ -194,13 +195,11 @@ class CooperativeRoleProgress(Base):
         BigInteger,
         ForeignKey("COOPERATIVE_MISSION_PARTICIPANT.id", ondelete="CASCADE"),
         nullable=False,
-        unique=True,
     )
     cooperative_role_card_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("COOPERATIVE_ROLE_CARD.id", ondelete="CASCADE"),
         nullable=False,
-        unique=True,
     )
     item_img_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     progress_status: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -211,3 +210,4 @@ class CooperativeRoleProgress(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
     )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
