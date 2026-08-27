@@ -10,7 +10,7 @@
 
 온보딩에서 선택한 여행 기대 항목, 주 이동 수단, 자투리 시간 여행 방식을 현재 사용자의 `USER` 데이터에 저장한다.
 
-현재 사용자는 `X-Test-User-Id` 헤더로 정하며, 이 API는 사용자를 새로 만들지 않는다. 헤더의 사용자가 존재하지 않으면 `401 UNAUTHORIZED_USER`를 반환한다.
+현재 사용자는 `Authorization: Bearer {accessToken}` 헤더의 액세스 토큰으로 정하며, 이 API는 사용자를 새로 만들지 않는다. 사용자는 `POST /api/v1/auth/anonymous`(익명 사용자 발급)에서 이미 생성되어 있어야 한다. 토큰에 해당하는 사용자가 존재하지 않으면 `401 UNAUTHORIZED_USER`를 반환한다.
 
 ---
 
@@ -125,7 +125,7 @@ Status Code : 201
 
 Status Code : 401
 
-`X-Test-User-Id` 헤더의 사용자가 존재하지 않는 경우
+`Authorization` 헤더의 액세스 토큰이 없거나 토큰에 해당하는 사용자가 존재하지 않는 경우
 
 ```json
 {

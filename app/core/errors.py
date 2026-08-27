@@ -23,8 +23,10 @@ INVALID_REQUEST = "INVALID_REQUEST"
 INTERNAL_SERVER_ERROR = "INTERNAL_SERVER_ERROR"
 UNAUTHORIZED_USER = "UNAUTHORIZED_USER"
 
-# 현재 사용자 헤더 이름. app/core/deps.py 가 이 값을 가져다 쓴다.
-TEST_USER_ID_HEADER = "X-Test-User-Id"
+# 현재 사용자 인증에 쓰는 OpenAPI 보안 스키마 이름.
+# app/core/deps.py 가 이 이름으로 Bearer 스키마를 만들고,
+# 아래 문서 처리에서 401 을 붙일 API 를 고르는 기준으로도 쓴다.
+OPENAPI_SECURITY_SCHEME_NAME = "AccessToken"
 
 
 class ErrorResponse(BaseModel):
@@ -128,10 +130,10 @@ def _error_response_doc(description: str, code: str) -> dict[str, Any]:
 
 
 def _uses_current_user(operation: dict[str, Any]) -> bool:
-    """현재 사용자 헤더를 받는 API 인지 확인한다. (401 문서를 붙일 대상)"""
+    """액세스 토큰으로 현재 사용자를 확인하는 API 인지 본다. (401 문서를 붙일 대상)"""
     return any(
-        parameter.get("name") == TEST_USER_ID_HEADER
-        for parameter in operation.get("parameters", [])
+        OPENAPI_SECURITY_SCHEME_NAME in requirement
+        for requirement in operation.get("security", [])
     )
 
 

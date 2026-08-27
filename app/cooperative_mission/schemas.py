@@ -84,7 +84,7 @@ class CooperativeMissionStartResponse(CamelModel):
 class JoinCooperativeMissionRequest(CamelModel):
     """POST /api/v1/cooperative-missions/join-requests 요청 Body.
 
-    참여할 사람은 Body 가 아니라 공통 `X-Test-User-Id` 헤더로 식별한다.
+    참여할 사람은 Body 가 아니라 공통 `Authorization: Bearer` 액세스 토큰으로 식별한다.
     """
 
     team_token: str = Field(min_length=1, description="초대 URL 에서 추출한 팀 토큰")

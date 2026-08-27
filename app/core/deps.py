@@ -1,49 +1,59 @@
 """공통 FastAPI 의존성.
 
-로그인 기능이 아직 없어서 현재 사용자는 요청 헤더로 정한다.
-프론트는 앱 시작 시 사용자 번호를 입력받아 메모리에 두고, 모든 요청에 아래 헤더를 넣는다.
+현재 사용자는 `Authorization` 헤더의 Bearer 액세스 토큰으로 식별한다.
 
 ```text
-X-Test-User-Id: 2
+Authorization: Bearer {accessToken}
 ```
 
-로그인을 구현하면 이 모듈의 헤더 처리만 토큰 인증으로 바꾸면 되고,
-`get_current_user_id()` 를 쓰는 라우터는 그대로 둘 수 있다.
+토큰 원문은 `POST /api/v1/auth/anonymous`(익명 사용자 발급)에서 한 번만 내려준다.
+DB에는 원문 대신 SHA-256 해시(`USER.access_token_hash`)만 저장하므로,
+요청으로 받은 토큰 원문을 같은 방식으로 해시해서 사용자를 찾는다.
 """
 
 from typing import Annotated
 
-from fastapi import Depends, Header
+from fastapi import Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.errors import TEST_USER_ID_HEADER, UNAUTHORIZED_USER, UnauthorizedError
+from app.core.errors import (
+    OPENAPI_SECURITY_SCHEME_NAME,
+    UNAUTHORIZED_USER,
+    UnauthorizedError,
+)
+from app.core.security import hash_access_token
 from app.user.models import User
 
 
-# 테스트/로컬에서 기본으로 사용하는 사용자 id
-CURRENT_USER_ID = 1
+# 헤더가 없거나 Bearer가 아니면 여기서 막지 않고 아래에서 401 UNAUTHORIZED_USER 로 처리한다.
+# (FastAPI 기본 동작은 403이라 공통 에러 형식과 맞지 않는다.)
+bearer_scheme = HTTPBearer(
+    scheme_name=OPENAPI_SECURITY_SCHEME_NAME,
+    description="익명 사용자 발급 API에서 받은 액세스 토큰 원문",
+    auto_error=False,
+)
 
 
 def get_current_user_id(
     db: Annotated[Session, Depends(get_db)],
-    x_test_user_id: Annotated[
-        int,
-        Header(
-            alias=TEST_USER_ID_HEADER,
-            ge=1,
-            description="현재 사용자 id. 로그인 구현 전까지 프론트가 직접 넣는다.",
-        ),
-    ],
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
 ) -> int:
-    """현재 로그인한 사용자 id를 반환한다.
+    """현재 사용자 id를 반환한다.
 
-    헤더로 받은 id의 사용자가 실제로 존재하는지 확인한다.
-    없는 사용자로 요청하면 이후 로직이 엉뚱한 데이터를 만들 수 있어 401로 막는다.
+    토큰이 없거나 일치하는 사용자가 없으면 401로 막는다.
+    토큰 원문과 해시는 에러 메시지에 넣지 않는다.
     """
-    if db.get(User, x_test_user_id) is None:
-        raise UnauthorizedError(
-            UNAUTHORIZED_USER,
-            detail=f"{TEST_USER_ID_HEADER}={x_test_user_id} 사용자를 찾을 수 없습니다.",
+    if credentials is None:
+        raise UnauthorizedError(UNAUTHORIZED_USER, detail="Bearer 액세스 토큰이 없습니다.")
+
+    user_id = db.scalar(
+        select(User.id).where(
+            User.access_token_hash == hash_access_token(credentials.credentials)
         )
-    return x_test_user_id
+    )
+    if user_id is None:
+        raise UnauthorizedError(UNAUTHORIZED_USER, detail="토큰에 해당하는 사용자가 없습니다.")
+    return user_id

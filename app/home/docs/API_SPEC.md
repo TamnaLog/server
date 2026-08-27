@@ -123,7 +123,7 @@ Status Code : 200
 
 Status Code : 401
 
-`X-Test-User-Id` 헤더의 사용자가 존재하지 않는 경우
+`Authorization` 헤더의 액세스 토큰이 없거나 토큰에 해당하는 사용자가 존재하지 않는 경우
 
 ```json
 {

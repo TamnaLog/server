@@ -20,11 +20,10 @@ from app.cooperative_mission.models import (
     ParticipantRole,
     ParticipantStatus,
 )
-from app.core.deps import CURRENT_USER_ID
-from app.core.errors import TEST_USER_ID_HEADER
 from app.map.models import Location
 from app.mission.models import Mission
 from app.user.models import User
+from conftest import CURRENT_USER_ID, access_token_hash, auth_headers
 
 
 ENDPOINT = "/api/v1/cooperative-missions/join-requests"
@@ -67,10 +66,25 @@ def join_data(db_session: Session) -> None:
                 mx=126.5707,
                 my=33.4507,
             ),
-            User(id=CURRENT_USER_ID, nickname="몽글몽글파도", point=0),
-            User(id=HOST_USER_ID, nickname="한라봉주스", point=0),
+            User(
+                id=CURRENT_USER_ID,
+                access_token_hash=access_token_hash(CURRENT_USER_ID),
+                nickname="몽글몽글파도",
+                point=0,
+            ),
+            User(
+                id=HOST_USER_ID,
+                access_token_hash=access_token_hash(HOST_USER_ID),
+                nickname="한라봉주스",
+                point=0,
+            ),
             *[
-                User(id=user_id, nickname=f"사용자{user_id}", point=0)
+                User(
+                    id=user_id,
+                    access_token_hash=access_token_hash(user_id),
+                    nickname=f"사용자{user_id}",
+                    point=0,
+                )
                 for user_id in EXTRA_USER_IDS
             ],
         ]
@@ -189,13 +203,13 @@ def test_수락_대기_상태의_팀원으로_저장한다(
     assert created.joined_at is None
 
 
-def test_요청자는_Body가_아니라_헤더로_식별한다(
+def test_요청자는_Body가_아니라_액세스_토큰으로_식별한다(
     client: TestClient, db_session: Session, join_data: None
 ) -> None:
     other_user_id = EXTRA_USER_IDS[0]
 
     response = client.post(
-        ENDPOINT, json=_body(), headers={TEST_USER_ID_HEADER: str(other_user_id)}
+        ENDPOINT, json=_body(), headers=auth_headers(other_user_id)
     )
 
     assert response.status_code == 201
@@ -249,7 +263,7 @@ def test_방장이_자신의_초대_링크를_열면_200에_HOST_정보를_반�
     client: TestClient, db_session: Session, join_data: None
 ) -> None:
     response = client.post(
-        ENDPOINT, json=_body(), headers={TEST_USER_ID_HEADER: str(HOST_USER_ID)}
+        ENDPOINT, json=_body(), headers=auth_headers(HOST_USER_ID)
     )
 
     assert response.status_code == 200
@@ -419,10 +433,10 @@ def test_팀_토큰이_잘못되면_400_INVALID_REQUEST로_응답한다(
     assert len(_participants(db_session)) == 1
 
 
-def test_헤더의_사용자가_없으면_401로_응답하고_참여자를_만들지_않는다(
+def test_토큰의_사용자가_없으면_401로_응답하고_참여자를_만들지_않는다(
     client: TestClient, db_session: Session, join_data: None
 ) -> None:
-    response = client.post(ENDPOINT, json=_body(), headers={TEST_USER_ID_HEADER: "999"})
+    response = client.post(ENDPOINT, json=_body(), headers=auth_headers(999))
 
     assert response.status_code == 401
     assert response.json() == {"code": "UNAUTHORIZED_USER"}

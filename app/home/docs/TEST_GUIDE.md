@@ -85,7 +85,7 @@
 
 ### 7. 현재 사용자
 
-- 현재 사용자는 `X-Test-User-Id` 헤더로 정한다.
+- 현재 사용자는 `Authorization: Bearer {accessToken}` 헤더의 액세스 토큰으로 정한다.
 - 헤더의 사용자가 존재하지 않으면 홈 데이터를 만들지 않고 **401 `UNAUTHORIZED_USER`** 로 응답한다.
   (`characterImgUrl` 을 `null` 로 채워 200을 주는 것이 아니다)
 

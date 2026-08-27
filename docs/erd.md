@@ -8,6 +8,7 @@ USER {
 	bigint ar_character_id FK "NULL"
 	varchar_20 nickname "NULL"
 	int point "NOT NULL, DEFAULT: 0"
+    char_64 access_token_hash UK "NOT NULL, UNIQUE"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 }

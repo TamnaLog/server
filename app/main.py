@@ -4,6 +4,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
+from app.auth.router import router as auth_router
 from app.cooperative_mission.router import router as cooperative_mission_router
 from app.core.config import Settings, get_settings
 from app.core.database import get_db, ping_database
@@ -20,6 +21,7 @@ from app.treasure_mission.router import router as treasure_mission_router
 
 
 ROUTERS = (
+    auth_router,
     home_router,
     onboarding_router,
     map_router,

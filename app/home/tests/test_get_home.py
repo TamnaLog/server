@@ -20,11 +20,11 @@ from app.cooperative_mission.models import (
     ParticipantRole,
     ParticipantStatus,
 )
-from app.core.deps import CURRENT_USER_ID
 from app.culture_mission.models import CultureMission, CultureMissionProgress
 from app.guestbook.models import Guestbook, RoadGuestbook
 from app.home.models import ArCharacter, Location, Mission, MissionStatus, User
 from app.treasure_mission.models import TreasureMission, TreasureMissionProgress
+from conftest import CURRENT_USER_ID, access_token_hash
 
 
 ENDPOINT = "/api/v1/users/me/home"
@@ -123,8 +123,19 @@ def home_data(db_session: Session) -> None:
             _mission(CULTURE_TYPE_ID, "CULTURE", "제주 문화 퀴즈", step_count=3),
             _mission(COOPERATIVE_TYPE_ID, "COOPERATIVE", "함께 키우는 귤나무", step_count=4),
             _mission(TREASURE_TYPE_ID, "TREASURE", "보물 찾기", step_count=3),
-            User(id=CURRENT_USER_ID, nickname="몽글몽글파도", point=0, ar_character_id=1),
-            User(id=OTHER_USER_ID, nickname="한라봉주스", point=0),
+            User(
+                id=CURRENT_USER_ID,
+                access_token_hash=access_token_hash(CURRENT_USER_ID),
+                nickname="몽글몽글파도",
+                point=0,
+                ar_character_id=1,
+            ),
+            User(
+                id=OTHER_USER_ID,
+                access_token_hash=access_token_hash(OTHER_USER_ID),
+                nickname="한라봉주스",
+                point=0,
+            ),
         ]
     )
     db_session.flush()
@@ -565,10 +576,10 @@ def test_배정된_캐릭터가_없으면_characterImgUrl은_null이다(
     assert body["characterImgUrl"] is None
 
 
-def test_헤더의_사용자가_없으면_401_UNAUTHORIZED_USER로_응답한다(
+def test_토큰의_사용자가_없으면_401_UNAUTHORIZED_USER로_응답한다(
     client: TestClient, db_session: Session, home_data: None
 ) -> None:
-    # 현재 사용자는 X-Test-User-Id 헤더로 정하고, 없는 사용자면 조회 자체를 막는다.
+    # 현재 사용자는 액세스 토큰으로 정하고, 토큰의 사용자가 없으면 조회 자체를 막는다.
     db_session.query(User).filter(User.id == CURRENT_USER_ID).delete()
     db_session.commit()
 

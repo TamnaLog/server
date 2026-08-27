@@ -233,8 +233,8 @@ const inviteUrl =
 - HTTP 메서드: `POST`
 - 엔드포인트: `/api/v1/cooperative-missions/join-requests`
 - 요청 Body의 `teamToken`으로 참여할 협동 미션 방을 식별한다.
-- 참여를 요청하는 사용자는 요청 Body로 받지 않고 공통 `X-Test-User-Id` 헤더를 통해 식별한다.
-- `get_current_user_id()`에서 헤더의 사용자 id가 실제 `USER`에 존재하는지 먼저 검증한다.
+- 참여를 요청하는 사용자는 요청 Body로 받지 않고 공통 `Authorization: Bearer {accessToken}` 헤더로 식별한다.
+- `get_current_user_id()`에서 토큰에 해당하는 `USER`가 실제로 존재하는지 먼저 검증한다.
 
 ## 2. 진행도 조회
 

@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session
 
 from app.common import distance, next_location
 from app.cooperative_mission.models import CooperativeMission
-from app.core.deps import CURRENT_USER_ID
 from app.map.models import Location
 from app.mission.models import Mission, MissionStatus
 from app.treasure_mission.models import (
@@ -22,6 +21,7 @@ from app.treasure_mission.models import (
     TreasureMissionProgress,
 )
 from app.user.models import User
+from conftest import CURRENT_USER_ID, access_token_hash
 
 
 TREASURE_TYPE_ID = 3
@@ -119,8 +119,18 @@ def progress_data(db_session: Session) -> None:
                 mx=LOCATION_LNG,
                 my=LOCATION_LAT,
             ),
-            User(id=CURRENT_USER_ID, nickname="몽글몽글파도", point=INITIAL_USER_POINT),
-            User(id=OTHER_USER_ID, nickname="한라봉주스", point=0),
+            User(
+                id=CURRENT_USER_ID,
+                access_token_hash=access_token_hash(CURRENT_USER_ID),
+                nickname="몽글몽글파도",
+                point=INITIAL_USER_POINT,
+            ),
+            User(
+                id=OTHER_USER_ID,
+                access_token_hash=access_token_hash(OTHER_USER_ID),
+                nickname="한라봉주스",
+                point=0,
+            ),
             ArCharacter(
                 id=AR_CHARACTER_ID,
                 character_name="천지연 물방울",

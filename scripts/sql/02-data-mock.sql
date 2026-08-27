@@ -65,15 +65,32 @@ VALUES
 -- USER : id=1 은 나, id=2~6 은 협동 미션 팀원
 -- ---------------------------------------------------------------------
 
+-- access_token_hash 는 액세스 토큰 원문의 SHA-256 이다. (원문은 DB에 저장하지 않는다)
+-- 목업 사용자의 토큰 원문은 'test-user-{id}-token' 이라고 가정하고 넣은 값이다.
+-- 그래서 아래 헤더로 목업 사용자를 그대로 호출할 수 있다.
+--     Authorization: Bearer test-user-1-token   -> 1번 사용자
+--     Authorization: Bearer test-user-2-token   -> 2번 사용자 (이하 6번까지 동일)
 INSERT INTO `USER`
-    (`id`, `expectation`, `transportation`, `travel_style`, `user_travel_style_id`, `ar_character_id`, `nickname`, `point`)
+    (`id`, `expectation`, `transportation`, `travel_style`, `user_travel_style_id`,
+     `ar_character_id`, `nickname`, `point`, `access_token_hash`)
 VALUES
-    (1, '["PHOTO", "LOCAL", "NATURE"]', '["WALK", "BUS"]',  '["RIGHT_HERE", "NEAR_AROUND"]',       1, NULL, '몽글몽글파도', 1200),
-    (2, '["CAFE", "WALKING"]',          '["CAR"]',          '["NEAR_DESTINATION"]',                2, NULL, '한라봉주스',   300),
-    (3, '["NATURE", "CULTURE"]',        '["WALK"]',         '["RIGHT_HERE"]',                      3, NULL, '오름러버',     450),
-    (4, '["PHOTO", "CAFE"]',            '["BICYCLE"]',      '["NEAR_AROUND"]',                     1, NULL, '바다필름',     0),
-    (5, '["LOCAL", "CULTURE"]',         '["BUS", "WALK"]',  '["NEAR_AROUND", "NEAR_DESTINATION"]',  2, NULL, '돌담산책',    780),
-    (6, '["WALKING", "NATURE"]',        '["CAR", "WALK"]',  '["RIGHT_HERE"]',                      3, NULL, '귤빛노을',     150);
+    (1, '["PHOTO", "LOCAL", "NATURE"]', '["WALK", "BUS"]', '["RIGHT_HERE", "NEAR_AROUND"]', 1, NULL, '몽글몽글파도', 1200,
+     '680aac6fc35fae2feece55508a4c21c2b49c69c292ad76a814b7742d7a08fddb'),
+
+    (2, '["CAFE", "WALKING"]', '["CAR"]', '["NEAR_DESTINATION"]', 2, NULL, '한라봉주스', 300,
+     'c1d8de760790698435231bef2ea0d71cee9b997502052bd1ca97cfd07620a9ff'),
+
+    (3, '["NATURE", "CULTURE"]', '["WALK"]', '["RIGHT_HERE"]', 3, NULL, '오름러버', 450,
+     'da05fa4b4bb194c93c0de926b0faa619e5fa1a1e2e1ef7f31f09df8e4936366e'),
+
+    (4, '["PHOTO", "CAFE"]', '["BICYCLE"]', '["NEAR_AROUND"]', 1, NULL, '바다필름', 0,
+     'e132a395928a9716062b43a418dbb5f7bafc3eeb1f6143f90929f852e05cb2ba'),
+
+    (5, '["LOCAL", "CULTURE"]', '["BUS", "WALK"]', '["NEAR_AROUND", "NEAR_DESTINATION"]', 2, NULL, '돌담산책', 780,
+     '80114cadbd96fcb6f060357fdad912c4120533a57bbab039d4e71560198d26a3'),
+
+    (6, '["WALKING", "NATURE"]', '["CAR", "WALK"]', '["RIGHT_HERE"]', 3, NULL, '귤빛노을', 150,
+     '522ff314a6bf385a26c8b9031bb0377e74bf5875821ed3dd9e74cf67daef00aa');
 
 
 -- ---------------------------------------------------------------------

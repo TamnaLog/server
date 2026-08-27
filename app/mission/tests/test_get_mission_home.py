@@ -14,12 +14,12 @@ from app.cooperative_mission.models import (
     ParticipantRole,
     ParticipantStatus,
 )
-from app.core.deps import CURRENT_USER_ID
 from app.culture_mission.models import CultureMission, CultureMissionProgress
 from app.map.models import Location
 from app.mission.models import Mission, MissionStatus
 from app.user.models import User
 from app.treasure_mission.models import ArCharacter, TreasureMission
+from conftest import CURRENT_USER_ID, access_token_hash
 
 
 # MISSION(유형 분류) id
@@ -127,7 +127,12 @@ def mission_data(db_session: Session) -> None:
                 character_img_url=CHARACTER_IMG_URL,
                 hashtags=["#돌담"],
             ),
-            User(id=CURRENT_USER_ID, nickname="몽글몽글파도", point=0),
+            User(
+                id=CURRENT_USER_ID,
+                access_token_hash=access_token_hash(CURRENT_USER_ID),
+                nickname="몽글몽글파도",
+                point=0,
+            ),
             Location(
                 id=LOCATION_ID,
                 content_id=126508,

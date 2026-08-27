@@ -23,10 +23,10 @@ from app.cooperative_mission.models import (
     ParticipantRole,
     ParticipantStatus,
 )
-from app.core.deps import CURRENT_USER_ID
 from app.map.models import Location
 from app.mission.models import Mission
 from app.user.models import User
+from conftest import CURRENT_USER_ID, access_token_hash
 
 
 COOPERATIVE_TYPE_ID = 1
@@ -69,9 +69,24 @@ def cooperative_data(db_session: Session) -> None:
                 mx=126.5707,
                 my=33.4507,
             ),
-            User(id=CURRENT_USER_ID, nickname=CURRENT_USER_NICKNAME, point=0),
-            User(id=OTHER_USER_ID, nickname=OTHER_USER_NICKNAME, point=0),
-            User(id=THIRD_USER_ID, nickname="오름러버", point=0),
+            User(
+                id=CURRENT_USER_ID,
+                access_token_hash=access_token_hash(CURRENT_USER_ID),
+                nickname=CURRENT_USER_NICKNAME,
+                point=0,
+            ),
+            User(
+                id=OTHER_USER_ID,
+                access_token_hash=access_token_hash(OTHER_USER_ID),
+                nickname=OTHER_USER_NICKNAME,
+                point=0,
+            ),
+            User(
+                id=THIRD_USER_ID,
+                access_token_hash=access_token_hash(THIRD_USER_ID),
+                nickname="오름러버",
+                point=0,
+            ),
         ]
     )
     db_session.flush()

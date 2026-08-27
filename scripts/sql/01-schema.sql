@@ -60,9 +60,11 @@ CREATE TABLE `USER` (
     `ar_character_id`      BIGINT      NULL                 COMMENT '배정된 AR 캐릭터',
     `nickname`             VARCHAR(20) NULL,
     `point`                INT         NOT NULL DEFAULT 0,
+    `access_token_hash`    CHAR(64)    NOT NULL                COMMENT '액세스 토큰 해시(SHA-256 hex)',
     `created_at`           DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`           DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_user__access_token_hash` (`access_token_hash`),
     KEY `idx_user__travel_style` (`user_travel_style_id`),
     KEY `idx_user__ar_character` (`ar_character_id`),
     CONSTRAINT `fk_user__travel_style`

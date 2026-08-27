@@ -11,10 +11,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.deps import CURRENT_USER_ID
 from app.treasure_mission import service
 from app.treasure_mission.models import PictureWithCharacter
 from app.user.models import User
+from conftest import CURRENT_USER_ID, access_token_hash
 
 
 ENDPOINT = "/api/v1/treasure-missions/pictures-with-character"
@@ -56,8 +56,18 @@ def deletes(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 def user_data(db_session: Session) -> None:
     db_session.add_all(
         [
-            User(id=CURRENT_USER_ID, nickname="몽글몽글파도", point=0),
-            User(id=OTHER_USER_ID, nickname="한라봉주스", point=0),
+            User(
+                id=CURRENT_USER_ID,
+                access_token_hash=access_token_hash(CURRENT_USER_ID),
+                nickname="몽글몽글파도",
+                point=0,
+            ),
+            User(
+                id=OTHER_USER_ID,
+                access_token_hash=access_token_hash(OTHER_USER_ID),
+                nickname="한라봉주스",
+                point=0,
+            ),
         ]
     )
     db_session.commit()

@@ -10,11 +10,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.deps import CURRENT_USER_ID
 from app.culture_mission.models import CultureMission, CultureMissionProgress, MissionStatus
 from app.mission.models import Mission
 from app.treasure_mission.models import ArCharacter
 from app.user.models import User
+from conftest import CURRENT_USER_ID, access_token_hash
 
 
 CULTURE_TYPE_ID = 1
@@ -91,8 +91,18 @@ def culture_mission_data(db_session: Session) -> None:
                 description="제주의 퀴즈를 맞춰보세요.",
                 step_detail=[{"step": 1, "step_title": "퀴즈 풀기", "description": "설명"}],
             ),
-            User(id=CURRENT_USER_ID, nickname="몽글몽글파도", point=0),
-            User(id=OTHER_USER_ID, nickname="한라봉주스", point=0),
+            User(
+                id=CURRENT_USER_ID,
+                access_token_hash=access_token_hash(CURRENT_USER_ID),
+                nickname="몽글몽글파도",
+                point=0,
+            ),
+            User(
+                id=OTHER_USER_ID,
+                access_token_hash=access_token_hash(OTHER_USER_ID),
+                nickname="한라봉주스",
+                point=0,
+            ),
         ]
     )
     db_session.flush()
