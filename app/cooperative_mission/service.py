@@ -31,7 +31,7 @@ from app.cooperative_mission.schemas import (
     RoleCardResponse,
     RoleProgressResponse,
 )
-from app.core.errors import ConflictError, NotFoundError
+from app.core.errors import ConflictError, ForbiddenError, NotFoundError
 from app.user.models import User
 
 
@@ -39,6 +39,9 @@ COOPERATIVE_MISSION_NOT_FOUND = "COOPERATIVE_MISSION_NOT_FOUND"
 INVALID_INVITE_TOKEN = "INVALID_INVITE_TOKEN"
 COOPERATIVE_MISSION_FULL = "COOPERATIVE_MISSION_FULL"
 COOPERATIVE_MISSION_JOIN_CLOSED = "COOPERATIVE_MISSION_JOIN_CLOSED"
+COOPERATIVE_MISSION_PROGRESS_NOT_FOUND = "COOPERATIVE_MISSION_PROGRESS_NOT_FOUND"
+COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND = "COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND"
+COOPERATIVE_MISSION_HOST_ONLY = "COOPERATIVE_MISSION_HOST_ONLY"
 
 # 신규 진행도 초기값
 FIRST_STEP = 1
@@ -392,6 +395,116 @@ def _create_member_participant(
         joined_at=None,
     )
     db.add(participant)
+    return participant
+
+
+# ---------------------------------------------------------------------
+# 참여 요청 수락
+# ---------------------------------------------------------------------
+
+
+def accept_join_request(
+    db: Session, current_user_id: int, mission_progress_id: int, participant_id: int
+) -> None:
+    """방장이 참여 요청을 수락한다.
+
+    - `PENDING` 팀원을 `ACCEPTED` 로 바꾸고 수락 시각을 남긴다.
+    - 이미 `ACCEPTED` 인 팀원에 대한 재요청은 아무것도 바꾸지 않는다. (멱등)
+
+    수락은 기존 참여자 row 의 상태만 바꾸므로 최대 인원을 다시 확인하지 않는다.
+    (URL 로 참여 요청할 때 `PENDING` 도 인원에 포함했다)
+    """
+    progress = _get_in_progress_by_id(db, mission_progress_id)
+    _check_host(db, progress.id, current_user_id)
+    _check_join_open(progress)
+
+    participant = _get_member_participant(db, progress.id, participant_id)
+    if participant.participant_status == ParticipantStatus.ACCEPTED.value:
+        # 이미 수락된 팀원이면 수락 시각을 덮어쓰지 않는다.
+        return
+
+    participant.participant_status = ParticipantStatus.ACCEPTED.value
+    participant.joined_at = now_kst()
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+
+def _get_in_progress_by_id(db: Session, mission_progress_id: int) -> CooperativeMissionProgress:
+    """진행 중인 협동 미션 방을 조회한다.
+
+    없는 방과 이미 끝난 방을 구분하지 않고 404 로 처리한다.
+    수락과 단계 변경이 동시에 들어와도 어긋나지 않도록 진행도 행을 잠근다.
+    (SQLite 는 행 잠금이 없어 무시되고, MySQL 에서만 실제로 걸린다)
+    """
+    statement = (
+        select(CooperativeMissionProgress)
+        .where(
+            CooperativeMissionProgress.id == mission_progress_id,
+            CooperativeMissionProgress.mission_status == MissionStatus.IN_PROGRESS.value,
+        )
+        .with_for_update()
+    )
+    progress = db.scalars(statement).first()
+    if progress is None:
+        raise NotFoundError(
+            COOPERATIVE_MISSION_PROGRESS_NOT_FOUND,
+            detail=f"진행 중인 협동 미션 진행도 {mission_progress_id} 를 찾을 수 없습니다.",
+        )
+    return progress
+
+
+def _check_host(db: Session, progress_id: int, current_user_id: int) -> None:
+    """현재 사용자가 이 방의 방장인지 확인한다.
+
+    방장 여부는 요청 값이 아니라 토큰으로 식별한 사용자의 참여자 row 로만 판단한다.
+    """
+    statement = (
+        select(CooperativeMissionParticipant.id)
+        .where(
+            CooperativeMissionParticipant.cooperative_mission_progress_id == progress_id,
+            CooperativeMissionParticipant.user_id == current_user_id,
+            CooperativeMissionParticipant.participant_role == ParticipantRole.HOST.value,
+            CooperativeMissionParticipant.participant_status
+            == ParticipantStatus.ACCEPTED.value,
+        )
+        .limit(1)
+    )
+    if db.scalar(statement) is None:
+        raise ForbiddenError(
+            COOPERATIVE_MISSION_HOST_ONLY,
+            detail=f"사용자 {current_user_id} 는 진행도 {progress_id} 의 방장이 아닙니다.",
+        )
+
+
+def _get_member_participant(
+    db: Session, progress_id: int, participant_id: int
+) -> CooperativeMissionParticipant:
+    """수락 대상 팀원을 조회한다.
+
+    다른 방의 참여자이거나 방장이면 대상이 아니므로 404 로 처리한다.
+    수락 재요청/거절과 동시에 들어와도 어긋나지 않도록 참여자 행을 잠근다.
+    """
+    statement = (
+        select(CooperativeMissionParticipant)
+        .where(
+            CooperativeMissionParticipant.id == participant_id,
+            CooperativeMissionParticipant.cooperative_mission_progress_id == progress_id,
+            CooperativeMissionParticipant.participant_role == ParticipantRole.MEMBER.value,
+        )
+        .with_for_update()
+    )
+    participant = db.scalars(statement).first()
+    if participant is None:
+        raise NotFoundError(
+            COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND,
+            detail=(
+                f"진행도 {progress_id} 에서 수락할 팀원 {participant_id} 를 찾을 수 없습니다."
+            ),
+        )
     return participant
 
 

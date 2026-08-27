@@ -6,6 +6,7 @@
 | --- | --- |
 | `POST /api/v1/cooperative-missions/{cooperativeMissionId}/progress` (협동 미션 시작하기/이어하기) | `app/cooperative_mission/tests/test_start_cooperative_mission.py` |
 | `POST /api/v1/cooperative-missions/join-requests` (URL로 참여 요청) | `app/cooperative_mission/tests/test_join_cooperative_mission.py` |
+| `PATCH /api/v1/cooperative-missions/{cooperativeMissionProgressId}/participants/{participantId}/accept` (참여 요청 수락) | `app/cooperative_mission/tests/test_accept_join_request.py` |
 
 ## 시작하기/이어하기 테스트 의도
 
@@ -124,6 +125,59 @@
 - `teamToken` 누락 · 빈 문자열 · `null` → **400 `INVALID_REQUEST`**
 - 헤더의 사용자가 없으면 **401 `UNAUTHORIZED_USER`** 이고 참여자도 생기지 않는다.
 
+## 참여 요청 수락 테스트 의도
+
+이 API는 응답 본문이 없다(`204`). 그래서 확인할 것은 응답 형식이 아니라 **DB가 어떻게 바뀌었는가**와
+**누가 이 요청을 할 수 있는가**다.
+
+첫째는 **방장 권한**이다. 방장 여부를 요청 값이 아니라 토큰으로 식별한 사용자의 참여자 row로 판단하므로,
+팀원 본인 / 방에 없는 사람 / 다른 방의 방장이 각각 `403`인지 본다.
+특히 권한 검증이 단계 검증보다 **앞**이어서, 남의 방에 요청해도 그 방의 진행 단계를 알 수 없어야 한다.
+
+둘째는 **두 Path id의 관계**다. `participantId`만 믿고 수락하면 다른 방 팀원을 수락할 수 있다.
+그래서 "참여자는 있는데 다른 방 소속", "대상이 방장" 같은 경우를 `404`로 확인한다.
+
+셋째는 **멱등성**이다. 프론트가 응답을 못 받아 재전송해도 상태와 `joined_at`이 다시 바뀌면 안 된다.
+이미 `ACCEPTED`인 참여자를 다시 수락해도 `204`이고 수락 시각이 그대로인지 본다.
+
+### 주요 검증 항목
+
+#### 1. 수락 처리
+
+- **204**이고 응답 본문이 비어 있다.
+- 대상 참여자가 `PENDING → ACCEPTED` 로 바뀌고 `joined_at` 이 기록된다.
+- 역할(`MEMBER`)과 소속 방은 그대로다.
+- **새 참여자 row를 만들지 않는다.** (기존 row 갱신)
+
+#### 2. 멱등 재요청
+
+- 이미 `ACCEPTED` 인 참여자를 다시 수락해도 **204**, `joined_at` 은 기존 값 유지.
+- 같은 요청을 연속 두 번 보내도 수락 시각과 참여자 수가 그대로다.
+
+#### 3. 403 `COOPERATIVE_MISSION_HOST_ONLY`
+
+- 수락 대기 중인 **팀원 본인**이 요청한 경우
+- 방에 참여하지 않은 사용자가 요청한 경우
+- **다른 방의 방장**이 요청한 경우 (자기 방에서만 방장이다)
+- 모두 참여자 상태를 바꾸지 않는다.
+- 단계가 지난 방이어도 방장이 아니면 **409보다 403이 먼저**다.
+
+#### 4. 404
+
+- 진행도가 없거나 **이미 완료된 방** → `COOPERATIVE_MISSION_PROGRESS_NOT_FOUND`
+  (없는 방과 끝난 방을 구분해서 노출하지 않는다)
+- 참여자가 없거나 **다른 방 소속**이거나 **대상이 방장**
+  → `COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`
+
+#### 5. 409 `COOPERATIVE_MISSION_JOIN_CLOSED`
+
+- `current_step` 이 2 / 3 이면 수락할 수 없고, 상태와 `joined_at` 도 그대로다.
+
+#### 6. 400 / 401
+
+- 두 Path id가 0 이하이거나 정수가 아니면 **400 `INVALID_REQUEST`**
+- 헤더의 사용자가 없으면 **401 `UNAUTHORIZED_USER`** 이고 참여자 상태도 그대로다.
+
 ## 실행 방법
 
 ```bash
@@ -139,6 +193,7 @@ pytest app/cooperative_mission
 # 특정 테스트만
 pytest app/cooperative_mission/tests/test_start_cooperative_mission.py -k 이어하기
 pytest app/cooperative_mission/tests/test_join_cooperative_mission.py -k 기존
+pytest app/cooperative_mission/tests/test_accept_join_request.py -k 멱등
 ```
 
 DB는 SQLite 인메모리를 사용하므로 MySQL이 떠 있지 않아도 실행된다.

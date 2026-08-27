@@ -225,6 +225,395 @@ const inviteUrl =
 }
 ```
 
+# 참여 요청 수락 비즈니스 룰
+
+## 1. 요청 및 사용자 식별
+
+방장이 협동 미션에 들어온 참여 요청을 수락할 때 호출한다.
+
+- Path의 `cooperativeMissionProgressId`로 협동 미션 진행도를 식별한다.
+- Path의 `participantId`로 수락할 참여 요청을 식별한다.
+- Request Query와 Body는 받지 않는다.
+- 현재 사용자는 Authorization Bearer 토큰을 사용하는 `get_current_user_id()`로 식별한다.
+
+프론트에서 방장 사용자 id나 수락 상태를 전달받지 않는다. 방장 여부와 변경할 상태는 백엔드가 DB를 기준으로 결정한다.
+
+## 2. 처리 순서
+
+1. Path 값의 형식을 검증한다.
+2. `cooperativeMissionProgressId`에 해당하는 `IN_PROGRESS` 협동 미션 진행도를 잠금 조회한다.
+3. 현재 사용자가 해당 진행도의 `HOST`이자 `ACCEPTED` 참여자인지 확인한다.
+4. 진행도의 `current_step`이 초대 단계인 `1`인지 확인한다.
+5. `participantId`에 해당하는 같은 진행도의 참여자를 잠금 조회한다.
+6. 대상 참여자의 역할과 현재 상태를 확인한다.
+7. `PENDING` 참여자를 `ACCEPTED`로 변경하고 `joined_at`을 저장한다.
+8. 트랜잭션을 커밋하고 `204 No Content`를 반환한다.
+
+## 3. 진행도 조회
+
+다음 조건으로 `COOPERATIVE_MISSION_PROGRESS`를 조회한다.
+
+- `id = cooperativeMissionProgressId`
+- `mission_status = IN_PROGRESS`
+
+조건을 만족하는 진행도가 없으면 `404 COOPERATIVE_MISSION_PROGRESS_NOT_FOUND`를 반환한다. 존재하지 않는 진행도와 이미 `COMPLETED`인 진행도를 별도 오류로 구분하지 않는다.
+
+## 4. 방장 권한 검증
+
+현재 사용자가 다음 조건을 모두 만족하는 `COOPERATIVE_MISSION_PARTICIPANT`인지 확인한다.
+
+- `cooperative_mission_progress_id = cooperativeMissionProgressId`
+- `user_id = current_user_id`
+- `participant_role = HOST`
+- `participant_status = ACCEPTED`
+
+조건을 만족하지 않으면 참여 요청을 변경하지 않고 `403 COOPERATIVE_MISSION_HOST_ONLY`를 반환한다.
+
+방장 여부는 요청 Body나 대상 `participantId`로 판단하지 않는다. 반드시 Bearer 토큰으로 식별한 현재 사용자의 참가자 row를 조회하여 판단한다.
+
+## 5. 수락 가능 단계
+
+참여 요청 수락은 초대 단계에서만 가능하다.
+
+```text
+COOPERATIVE_MISSION_PROGRESS.current_step = 1
+```
+
+`current_step`이 `2` 또는 `3`이면 역할 정하기나 미션 수행 단계가 이미 시작된 것이므로 `409 COOPERATIVE_MISSION_JOIN_CLOSED`를 반환한다.
+
+## 6. 대상 참여자 조회
+
+다음 조건으로 수락 대상 `COOPERATIVE_MISSION_PARTICIPANT`를 조회한다.
+
+- `id = participantId`
+- `cooperative_mission_progress_id = cooperativeMissionProgressId`
+- `participant_role = MEMBER`
+
+대상 참여자가 존재하지 않거나 다른 진행도에 속하거나 `HOST`인 경우 `404 COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`를 반환한다.
+
+`participantId`만으로 참여자를 조회한 뒤 진행도 관계를 별도로 신뢰하지 않는다. 반드시 Path의 두 id가 같은 관계에 속하는지 함께 검증한다.
+
+## 7. PENDING 참여자 수락
+
+대상 참여자의 `participant_status`가 `PENDING`이면 다음과 같이 변경한다.
+
+- `participant_status`: `ACCEPTED`
+- `joined_at`: `now_kst()`로 구한 수락 처리 시각
+
+`joined_at`은 프로젝트 시간 정책에 따라 KST 기준 offset 없는 `DATETIME`으로 저장한다.
+
+수락 처리에서는 새로운 참가자 row를 생성하지 않는다. URL로 참여 요청 API가 생성한 기존 `PENDING` row를 갱신한다.
+
+## 8. 이미 수락된 참여자 재요청
+
+같은 진행도의 동일 참여자가 이미 `ACCEPTED` 상태이면 멱등 요청으로 처리한다.
+
+- 참가자 데이터를 추가로 변경하지 않는다.
+- 기존 `joined_at`을 유지한다.
+- 새로운 참가자 row를 생성하지 않는다.
+- 오류 대신 `204 No Content`를 반환한다.
+
+프론트가 정상 응답을 받지 못해 수락 요청을 재전송하더라도 상태나 수락 시각이 중복 변경되지 않아야 한다.
+
+## 9. 인원 계산
+
+URL로 참여 요청을 생성할 때 `PENDING`과 `ACCEPTED` 참여자를 모두 최대 인원에 포함하므로, 수락 시에는 최대 인원을 다시 증가시키거나 새로운 자리를 차지하지 않는다.
+
+수락은 기존 `PENDING` row의 상태만 변경하므로 별도의 `COOPERATIVE_MISSION_FULL` 검증을 수행하지 않는다.
+
+## 10. 트랜잭션과 동시 요청
+
+진행도 조회, 방장 검증, 대상 참여자 조회와 상태 변경을 하나의 트랜잭션으로 처리한다.
+
+- 진행도 row를 잠가 단계 변경 및 미션 완료 요청과 충돌하지 않게 한다.
+- 대상 참여자 row를 잠가 수락 재요청이나 거절 요청과 충돌하지 않게 한다.
+- 수락 처리 중 오류가 발생하면 상태와 `joined_at` 변경을 모두 롤백한다.
+
+수락과 거절 요청이 동시에 들어오면 먼저 잠금을 획득하여 커밋한 요청의 결과를 기준으로 나중 요청을 처리한다. 거절로 참가자 row가 먼저 삭제되었다면 수락 요청은 `404 COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`를 반환한다.
+
+## 11. 폴링 반영
+
+수락 트랜잭션이 커밋된 뒤 협동 미션 상태 조회 API는 해당 참여자를 `participantStatus: ACCEPTED`로 반환해야 한다.
+
+수락 API 자체는 갱신된 참여자 정보를 응답하지 않는다. 방장과 팀원의 화면 갱신은 협동 미션 상태 조회 API 폴링 결과를 사용한다.
+
+## 12. 정상 응답
+
+다음 경우 모두 `204 No Content`를 반환한다.
+
+- `PENDING` 참여자를 정상적으로 `ACCEPTED`로 변경한 경우
+- 동일 참여자가 이미 `ACCEPTED` 상태인 경우
+
+응답 Body는 반환하지 않는다.
+
+## 13. 오류 처리
+
+### 400 `INVALID_REQUEST`
+
+Path 값의 형식이나 범위가 유효하지 않은 경우 공통 요청 오류를 반환한다.
+
+- `cooperativeMissionProgressId`가 정수가 아니거나 `1`보다 작은 경우
+- `participantId`가 정수가 아니거나 `1`보다 작은 경우
+
+```json
+{
+  "code": "INVALID_REQUEST"
+}
+```
+
+### 403 `COOPERATIVE_MISSION_HOST_ONLY`
+
+현재 사용자가 해당 진행도의 `HOST`이자 `ACCEPTED` 참여자가 아닌 경우 반환한다.
+
+```json
+{
+  "code": "COOPERATIVE_MISSION_HOST_ONLY"
+}
+```
+
+### 404 `COOPERATIVE_MISSION_PROGRESS_NOT_FOUND`
+
+`cooperativeMissionProgressId`에 해당하는 `IN_PROGRESS` 진행도가 존재하지 않는 경우 반환한다.
+
+```json
+{
+  "code": "COOPERATIVE_MISSION_PROGRESS_NOT_FOUND"
+}
+```
+
+### 404 `COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`
+
+다음 경우 반환한다.
+
+- `participantId`에 해당하는 참여자가 없는 경우
+- 대상 참여자가 다른 협동 미션 진행도에 속하는 경우
+- 대상 참여자의 역할이 `MEMBER`가 아닌 경우
+- 거절 처리로 대상 참여자 row가 이미 삭제된 경우
+
+```json
+{
+  "code": "COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND"
+}
+```
+
+### 409 `COOPERATIVE_MISSION_JOIN_CLOSED`
+
+진행도의 `current_step`이 초대 단계인 `1`이 아닌 경우 반환한다.
+
+```json
+{
+  "code": "COOPERATIVE_MISSION_JOIN_CLOSED"
+}
+```
+
+### 500 `INTERNAL_SERVER_ERROR`
+
+참여자 상태 변경 또는 DB 처리 중 예상하지 못한 오류가 발생하면 트랜잭션을 롤백하고 공통 `500` 오류를 반환한다.
+
+```json
+{
+  "code": "INTERNAL_SERVER_ERROR"
+}
+```
+
+
+# 참여 요청 거절 비즈니스 룰
+
+## 1. 요청 및 사용자 식별
+
+방장이 협동 미션에 들어온 참여 요청을 거절할 때 호출한다.
+
+- HTTP 메서드: `DELETE`
+- 엔드포인트: `/api/v1/cooperative-missions/{cooperativeMissionProgressId}/participants/{participantId}`
+- Path의 `cooperativeMissionProgressId`로 협동 미션 진행도를 식별한다.
+- Path의 `participantId`로 거절할 참여 요청을 식별한다.
+- Request Query와 Body는 받지 않는다.
+- 현재 사용자는 Authorization Bearer 토큰을 사용하는 `get_current_user_id()`로 식별한다.
+
+프론트에서 방장 사용자 id나 거절 상태를 전달받지 않는다. 방장 여부와 삭제 가능 여부는 백엔드가 DB를 기준으로 판단한다.
+
+## 2. 처리 순서
+
+1. Path 값의 형식을 검증한다.
+2. `cooperativeMissionProgressId`에 해당하는 `IN_PROGRESS` 협동 미션 진행도를 잠금 조회한다.
+3. 현재 사용자가 해당 진행도의 `HOST`이자 `ACCEPTED` 참여자인지 확인한다.
+4. 진행도의 `current_step`이 초대 단계인 `1`인지 확인한다.
+5. `participantId`에 해당하는 같은 진행도의 참여자를 잠금 조회한다.
+6. 대상 참여자가 `MEMBER`이자 `PENDING` 상태인지 확인한다.
+7. 대상 `COOPERATIVE_MISSION_PARTICIPANT` row를 삭제한다.
+8. 트랜잭션을 커밋하고 `204 No Content`를 반환한다.
+
+## 3. 진행도 조회
+
+다음 조건으로 `COOPERATIVE_MISSION_PROGRESS`를 조회한다.
+
+- `id = cooperativeMissionProgressId`
+- `mission_status = IN_PROGRESS`
+
+조건을 만족하는 진행도가 없으면 `404 COOPERATIVE_MISSION_PROGRESS_NOT_FOUND`를 반환한다. 존재하지 않는 진행도와 이미 `COMPLETED`인 진행도를 별도 오류로 구분하지 않는다.
+
+## 4. 방장 권한 검증
+
+현재 사용자가 다음 조건을 모두 만족하는 `COOPERATIVE_MISSION_PARTICIPANT`인지 확인한다.
+
+- `cooperative_mission_progress_id = cooperativeMissionProgressId`
+- `user_id = current_user_id`
+- `participant_role = HOST`
+- `participant_status = ACCEPTED`
+
+조건을 만족하지 않으면 참여 요청을 삭제하지 않고 `403 COOPERATIVE_MISSION_HOST_ONLY`를 반환한다.
+
+방장 여부는 요청 Path의 `participantId`로 판단하지 않는다. 반드시 Bearer 토큰으로 식별한 현재 사용자의 참가자 row를 조회하여 판단한다.
+
+## 5. 거절 가능 단계
+
+참여 요청 거절은 초대 단계에서만 가능하다.
+
+```text
+COOPERATIVE_MISSION_PROGRESS.current_step = 1
+```
+
+`current_step`이 `2` 또는 `3`이면 역할 정하기나 미션 수행 단계가 이미 시작된 것이므로 `409 COOPERATIVE_MISSION_JOIN_CLOSED`를 반환한다.
+
+## 6. 대상 참여자 조회
+
+다음 조건으로 거절 대상 `COOPERATIVE_MISSION_PARTICIPANT`를 조회한다.
+
+- `id = participantId`
+- `cooperative_mission_progress_id = cooperativeMissionProgressId`
+- `participant_role = MEMBER`
+
+대상 참여자가 존재하지 않거나 다른 진행도에 속하거나 `HOST`인 경우 `404 COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`를 반환한다.
+
+`participantId`만으로 참여자를 조회한 뒤 진행도 관계를 별도로 신뢰하지 않는다. 반드시 Path의 두 id가 같은 관계에 속하는지 함께 검증한다.
+
+## 7. PENDING 참여자 거절
+
+대상 참여자의 `participant_status`가 `PENDING`이면 별도의 `REJECTED` 상태를 저장하지 않고 해당 참가자 row를 삭제한다.
+
+참가자 row가 삭제되면 다음 결과가 반영된다.
+
+- 해당 참여 요청은 참가자 목록에서 제거된다.
+- `PENDING` 참여자도 포함하던 현재 참여 인원이 1명 감소한다.
+- 최대 참여 인원에 새로운 사용자가 참여 요청을 보낼 수 있는 자리가 생긴다.
+- 거절된 사용자는 동일한 초대 URL을 통해 새로운 `PENDING` 참여 요청을 생성할 수 있다.
+
+## 8. ACCEPTED 참여자 보호
+
+대상 참여자가 이미 `ACCEPTED` 상태이면 이 API로 삭제하지 않는다.
+
+수락된 팀원 제거는 참여 요청 거절과 다른 행위이므로 `409 COOPERATIVE_MISSION_PARTICIPANT_ALREADY_ACCEPTED`를 반환한다. 이 API는 초대 단계의 `PENDING` 참여 요청만 삭제할 수 있다.
+
+## 9. 반복 요청 처리
+
+거절이 완료된 참여자 row는 DB에서 삭제되므로 같은 `participantId`로 다시 요청하면 `404 COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`를 반환한다.
+
+거절 API는 삭제된 row를 복원하거나 새로운 참여자 row를 생성하지 않는다. 거절된 사용자가 다시 참여하려면 초대 URL을 통해 URL로 참여 요청 API를 다시 호출해야 한다.
+
+## 10. 트랜잭션과 동시 요청
+
+진행도 조회, 방장 검증, 대상 참여자 조회와 삭제를 하나의 트랜잭션으로 처리한다.
+
+- 진행도 row를 잠가 단계 변경 및 미션 완료 요청과 충돌하지 않게 한다.
+- 대상 참여자 row를 잠가 수락 요청 및 중복 거절 요청과 충돌하지 않게 한다.
+- 거절 처리 중 오류가 발생하면 참가자 삭제를 롤백한다.
+
+수락과 거절 요청이 동시에 들어오면 먼저 잠금을 획득하여 커밋한 요청의 결과를 기준으로 나중 요청을 처리한다.
+
+- 거절이 먼저 커밋되면 이후 수락 요청은 `404 COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`를 반환한다.
+- 수락이 먼저 커밋되면 이후 거절 요청은 참가자를 삭제하지 않고 `409 COOPERATIVE_MISSION_PARTICIPANT_ALREADY_ACCEPTED`를 반환한다.
+
+## 11. 폴링 반영
+
+거절 트랜잭션이 커밋된 뒤 협동 미션 상태 조회 API의 `participants`에는 삭제된 `participantId`를 포함하지 않는다.
+
+거절 API 자체는 삭제 결과를 응답하지 않는다. 게스트 프론트는 협동 미션 상태 조회 API를 폴링하면서 기존에 저장한 자신의 `participantId`가 `participants`에서 사라지면 참여 요청이 거절된 것으로 처리한다.
+
+## 12. 정상 응답
+
+`PENDING` 참여자 row를 정상적으로 삭제하면 `204 No Content`를 반환한다.
+
+응답 Body는 반환하지 않는다.
+
+## 13. 오류 처리
+
+### 400 `INVALID_REQUEST`
+
+Path 값의 형식이나 범위가 유효하지 않은 경우 공통 요청 오류를 반환한다.
+
+- `cooperativeMissionProgressId`가 정수가 아니거나 `1`보다 작은 경우
+- `participantId`가 정수가 아니거나 `1`보다 작은 경우
+
+```json
+{
+  "code": "INVALID_REQUEST"
+}
+```
+
+### 403 `COOPERATIVE_MISSION_HOST_ONLY`
+
+현재 사용자가 해당 진행도의 `HOST`이자 `ACCEPTED` 참여자가 아닌 경우 반환한다.
+
+```json
+{
+  "code": "COOPERATIVE_MISSION_HOST_ONLY"
+}
+```
+
+### 404 `COOPERATIVE_MISSION_PROGRESS_NOT_FOUND`
+
+`cooperativeMissionProgressId`에 해당하는 `IN_PROGRESS` 진행도가 존재하지 않는 경우 반환한다.
+
+```json
+{
+  "code": "COOPERATIVE_MISSION_PROGRESS_NOT_FOUND"
+}
+```
+
+### 404 `COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`
+
+다음 경우 반환한다.
+
+- `participantId`에 해당하는 참여자가 없는 경우
+- 대상 참여자가 다른 협동 미션 진행도에 속하는 경우
+- 대상 참여자의 역할이 `MEMBER`가 아닌 경우
+- 거절 처리로 대상 참여자 row가 이미 삭제된 경우
+
+```json
+{
+  "code": "COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND"
+}
+```
+
+### 409 `COOPERATIVE_MISSION_JOIN_CLOSED`
+
+진행도의 `current_step`이 초대 단계인 `1`이 아닌 경우 반환한다.
+
+```json
+{
+  "code": "COOPERATIVE_MISSION_JOIN_CLOSED"
+}
+```
+
+### 409 `COOPERATIVE_MISSION_PARTICIPANT_ALREADY_ACCEPTED`
+
+대상 참여자가 이미 `ACCEPTED` 상태인 경우 반환한다. 수락된 참가자 row는 삭제하지 않는다.
+
+```json
+{
+  "code": "COOPERATIVE_MISSION_PARTICIPANT_ALREADY_ACCEPTED"
+}
+```
+
+### 500 `INTERNAL_SERVER_ERROR`
+
+참여자 삭제 또는 DB 처리 중 예상하지 못한 오류가 발생하면 트랜잭션을 롤백하고 공통 `500` 오류를 반환한다.
+
+```json
+{
+  "code": "INTERNAL_SERVER_ERROR"
+}
+```
 
 # URL로 참여 요청 비즈니스 룰
 

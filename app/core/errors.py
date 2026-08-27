@@ -61,6 +61,13 @@ class UnauthorizedError(AppError):
         super().__init__(status.HTTP_401_UNAUTHORIZED, code, detail)
 
 
+class ForbiddenError(AppError):
+    """403 - 현재 사용자는 확인했지만 이 동작을 할 권한이 없다."""
+
+    def __init__(self, code: str, detail: str = "") -> None:
+        super().__init__(status.HTTP_403_FORBIDDEN, code, detail)
+
+
 class NotFoundError(AppError):
     """404 - 각 API 명세에 정의된 코드를 사용한다."""
 

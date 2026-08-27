@@ -107,6 +107,46 @@ def start_cooperative_mission(
     return result.response
 
 
+@router.patch(
+    "/{mission_progress_id}/participants/{participant_id}/accept",
+    summary="참여 요청 수락",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    responses={
+        status.HTTP_403_FORBIDDEN: _error_response(
+            "현재 사용자가 방장이 아님", service.COOPERATIVE_MISSION_HOST_ONLY
+        ),
+        status.HTTP_404_NOT_FOUND: _error_response(
+            "진행 중인 협동 미션 방 또는 수락할 팀원을 찾을 수 없음",
+            f"{service.COOPERATIVE_MISSION_PROGRESS_NOT_FOUND} | "
+            f"{service.COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND}",
+        ),
+        status.HTTP_409_CONFLICT: _error_response(
+            "참여 요청을 수락할 수 있는 초대 단계를 지남",
+            service.COOPERATIVE_MISSION_JOIN_CLOSED,
+        ),
+    },
+)
+def accept_join_request(
+    db: Annotated[Session, Depends(get_db)],
+    current_user_id: Annotated[int, Depends(get_current_user_id)],
+    mission_progress_id: Annotated[
+        int, Path(ge=1, description="참여 요청이 속한 COOPERATIVE_MISSION_PROGRESS.id")
+    ],
+    participant_id: Annotated[
+        int, Path(ge=1, description="수락할 COOPERATIVE_MISSION_PARTICIPANT.id")
+    ],
+) -> Response:
+    """PATCH /api/v1/cooperative-missions/{cooperativeMissionProgressId}/participants/{participantId}/accept."""
+    service.accept_join_request(
+        db=db,
+        current_user_id=current_user_id,
+        mission_progress_id=mission_progress_id,
+        participant_id=participant_id,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/{mission_progress_id}/progress", summary="협동 미션 상태 조회")
 def get_cooperative_mission_status(mission_progress_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
     """GET /api/v1/cooperative-missions/{missionProgressId}/progress - 협동 미션 상태 조회."""

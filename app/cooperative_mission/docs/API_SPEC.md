@@ -378,3 +378,105 @@ Status Code : 409
   "code": "COOPERATIVE_MISSION_JOIN_CLOSED"
 }
 ```
+
+
+## 참여 요청 수락
+- http 메서드: patch
+- domain: cooperative-mission
+- endpoint: /api/v1/cooperative-missions/{cooperativeMissionProgressId}/participants/{participantId}/accept
+
+### API 설명
+
+방장이 협동 미션 참여 요청을 수락할 때 호출한다.
+
+백엔드는 Authorization Bearer 토큰으로 현재 사용자를 식별하고, Path의 `cooperativeMissionProgressId`에 해당하는 진행 중인 협동 미션에서 현재 사용자가 `HOST`이자 `ACCEPTED` 참여자인지 확인한다.
+
+Path의 `participantId`에 해당하는 같은 협동 미션의 `PENDING` 팀원을 조회한 뒤 다음과 같이 변경한다.
+
+- `participant_status`: `PENDING → ACCEPTED`
+- `joined_at`: 수락 처리 시각
+
+수락이 완료되면 응답 Body 없이 `204 No Content`를 반환한다. 이미 `ACCEPTED` 상태인 동일 참여자에 대한 재요청도 추가 변경 없이 `204 No Content`를 반환한다.
+
+수락된 팀원은 자신이 폴링 중인 협동 미션 상태 조회 API에서 `participantStatus: ACCEPTED`를 확인한 뒤 협동 미션 방으로 이동한다.
+
+---
+
+### 요청 Query
+
+없음
+
+---
+
+### 요청 Path
+
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `cooperativeMissionProgressId` | number | O | 참여 요청이 속한 협동 미션 진행도 id. `COOPERATIVE_MISSION_PROGRESS.id` |
+| `participantId` | number | O | 수락할 참여 요청 id. `COOPERATIVE_MISSION_PARTICIPANT.id` |
+
+요청 예시
+
+```
+PATCH /api/v1/cooperative-missions/10/participants/23/accept
+```
+
+---
+
+### 요청 Body
+
+없음
+
+---
+
+### 정상 응답 데이터
+
+Status Code : 204
+
+참여 요청을 정상적으로 수락했거나 이미 수락된 동일 참여자에 대한 요청인 경우
+
+응답 Body 없음
+
+---
+
+### 오류 응답 데이터
+
+Status Code : 403
+
+현재 사용자가 해당 협동 미션의 방장이 아닌 경우
+
+```json
+{
+  "code": "COOPERATIVE_MISSION_HOST_ONLY"
+}
+```
+
+Status Code : 404
+
+`cooperativeMissionProgressId`에 해당하는 진행 중인 협동 미션 진행도가 존재하지 않는 경우
+
+```json
+{
+  "code": "COOPERATIVE_MISSION_PROGRESS_NOT_FOUND"
+}
+```
+
+Status Code : 404
+
+`participantId`에 해당하는 참여자가 존재하지 않거나 해당 협동 미션 진행도에 속하지 않는 경우
+
+```json
+{
+  "code": "COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND"
+}
+```
+
+Status Code : 409
+
+협동 미션이 참여 요청을 수락할 수 있는 초대 단계를 지난 경우
+
+```json
+{
+  "code": "COOPERATIVE_MISSION_JOIN_CLOSED"
+}
+```
