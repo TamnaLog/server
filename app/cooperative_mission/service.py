@@ -175,8 +175,10 @@ def _find_hosting_progress(
         .where(
             CooperativeMissionProgress.cooperative_mission_id == cooperative_mission_id,
             CooperativeMissionProgress.mission_status == MissionStatus.IN_PROGRESS.value,
+            CooperativeMissionProgress.deleted_at.is_(None),
             CooperativeMissionParticipant.user_id == current_user_id,
             CooperativeMissionParticipant.participant_role == ParticipantRole.HOST.value,
+            CooperativeMissionParticipant.deleted_at.is_(None),
         )
         .order_by(CooperativeMissionProgress.id)
     )
@@ -227,7 +229,10 @@ def _find_participants(db: Session, progress_id: int) -> list[ParticipantRespons
     statement = (
         select(CooperativeMissionParticipant, User.nickname)
         .join(User, User.id == CooperativeMissionParticipant.user_id)
-        .where(CooperativeMissionParticipant.cooperative_mission_progress_id == progress_id)
+        .where(
+            CooperativeMissionParticipant.cooperative_mission_progress_id == progress_id,
+            CooperativeMissionParticipant.deleted_at.is_(None),
+        )
         .order_by(
             case(
                 (
@@ -285,7 +290,11 @@ def _find_role_progresses(db: Session, progress_id: int) -> list[RoleProgressRes
             CooperativeRoleCard,
             CooperativeRoleCard.id == CooperativeRoleProgress.cooperative_role_card_id,
         )
-        .where(CooperativeMissionParticipant.cooperative_mission_progress_id == progress_id)
+        .where(
+            CooperativeMissionParticipant.cooperative_mission_progress_id == progress_id,
+            CooperativeMissionParticipant.deleted_at.is_(None),
+            CooperativeRoleProgress.deleted_at.is_(None),
+        )
         .order_by(CooperativeRoleProgress.id)
     )
     return [
@@ -365,6 +374,7 @@ def _get_progress_by_team_token(db: Session, team_token: str) -> CooperativeMiss
         .where(
             CooperativeMissionProgress.team_token == team_token,
             CooperativeMissionProgress.mission_status == MissionStatus.IN_PROGRESS.value,
+            CooperativeMissionProgress.deleted_at.is_(None),
         )
         .with_for_update()
     )
@@ -386,6 +396,7 @@ def _find_participant(
         .where(
             CooperativeMissionParticipant.cooperative_mission_progress_id == progress_id,
             CooperativeMissionParticipant.user_id == current_user_id,
+            CooperativeMissionParticipant.deleted_at.is_(None),
         )
         .order_by(CooperativeMissionParticipant.id)
     )
@@ -409,7 +420,10 @@ def _check_not_full(db: Session, progress_id: int) -> None:
     participant_count = db.scalar(
         select(func.count())
         .select_from(CooperativeMissionParticipant)
-        .where(CooperativeMissionParticipant.cooperative_mission_progress_id == progress_id)
+        .where(
+            CooperativeMissionParticipant.cooperative_mission_progress_id == progress_id,
+            CooperativeMissionParticipant.deleted_at.is_(None),
+        )
     )
     if (participant_count or 0) >= COOPERATIVE_MISSION_MAX_PARTICIPANTS:
         raise ConflictError(
@@ -483,6 +497,7 @@ def _get_in_progress_by_id(db: Session, mission_progress_id: int) -> Cooperative
         .where(
             CooperativeMissionProgress.id == mission_progress_id,
             CooperativeMissionProgress.mission_status == MissionStatus.IN_PROGRESS.value,
+            CooperativeMissionProgress.deleted_at.is_(None),
         )
         .with_for_update()
     )
@@ -508,6 +523,7 @@ def _check_host(db: Session, progress_id: int, current_user_id: int) -> None:
             CooperativeMissionParticipant.participant_role == ParticipantRole.HOST.value,
             CooperativeMissionParticipant.participant_status
             == ParticipantStatus.ACCEPTED.value,
+            CooperativeMissionParticipant.deleted_at.is_(None),
         )
         .limit(1)
     )
@@ -532,6 +548,7 @@ def _get_member_participant(
             CooperativeMissionParticipant.id == participant_id,
             CooperativeMissionParticipant.cooperative_mission_progress_id == progress_id,
             CooperativeMissionParticipant.participant_role == ParticipantRole.MEMBER.value,
+            CooperativeMissionParticipant.deleted_at.is_(None),
         )
         .with_for_update()
     )
@@ -556,8 +573,10 @@ def reject_join_request(
 ) -> None:
     """방장이 참여 요청을 거절한다.
 
-    거절은 `REJECTED` 상태를 남기지 않고 `PENDING` 참여자 row 를 지운다.
+    거절은 `REJECTED` 상태를 남기지 않고 `PENDING` 참여자 row 를 소프트 삭제한다.
+    (`deleted_at` 을 남기고 조회에서 제외한다. 행을 실제로 지우지는 않는다)
     자리가 하나 비므로 거절당한 사용자도 같은 초대 URL 로 다시 요청할 수 있다.
+    이때는 삭제된 row 를 되살리지 않고 참여자 row 를 새로 만든다.
 
     이미 수락한 팀원을 내보내는 것은 다른 동작이라 여기서 처리하지 않는다. (409)
     """
@@ -568,7 +587,7 @@ def reject_join_request(
     participant = _get_member_participant(db, progress.id, participant_id)
     _check_not_accepted(participant)
 
-    db.delete(participant)
+    participant.deleted_at = now_kst()
     try:
         db.commit()
     except Exception:
@@ -577,7 +596,7 @@ def reject_join_request(
 
 
 def _check_not_accepted(participant: CooperativeMissionParticipant) -> None:
-    """이미 수락된 팀원인지 확인한다. 수락된 팀원은 이 API 로 지우지 않는다."""
+    """이미 수락된 팀원인지 확인한다. 수락된 팀원은 이 API 로 삭제하지 않는다."""
     if participant.participant_status == ParticipantStatus.ACCEPTED.value:
         raise ConflictError(
             COOPERATIVE_MISSION_PARTICIPANT_ALREADY_ACCEPTED,
@@ -649,7 +668,8 @@ def _get_progress_for_status(
     (SQLite 는 행 잠금이 없어 무시되고, MySQL 에서만 실제로 걸린다)
     """
     statement = select(CooperativeMissionProgress).where(
-        CooperativeMissionProgress.id == mission_progress_id
+        CooperativeMissionProgress.id == mission_progress_id,
+        CooperativeMissionProgress.deleted_at.is_(None),
     )
     progress = db.scalars(statement.with_for_update()).first()
     if progress is None:
@@ -665,7 +685,8 @@ def _get_my_participant(
 ) -> CooperativeMissionParticipant:
     """현재 사용자의 참가자 row 를 찾는다.
 
-    참여 요청이 거절되면 참가자 row 가 지워지므로, 거절당한 팀원의 폴링도 여기서 404 가 된다.
+    참여 요청이 거절되면 참가자 row 가 소프트 삭제되고 조회에서 빠지므로,
+    거절당한 팀원의 폴링도 여기서 404 가 된다.
     """
     participant = _find_participant(db, progress_id, current_user_id)
     if participant is None:
@@ -746,7 +767,10 @@ def _get_progress_for_step_change(
     """
     statement = (
         select(CooperativeMissionProgress)
-        .where(CooperativeMissionProgress.id == mission_progress_id)
+        .where(
+            CooperativeMissionProgress.id == mission_progress_id,
+            CooperativeMissionProgress.deleted_at.is_(None),
+        )
         .with_for_update()
     )
     progress = db.scalars(statement).first()
@@ -784,7 +808,7 @@ def _check_sequential_step(
 def _check_no_pending_participant(db: Session, progress_id: int) -> None:
     """수락 대기 중인 참여 요청이 남아 있는지 확인한다. (1 → 2)
 
-    남은 요청을 자동으로 수락하거나 지우지 않는다. 방장이 직접 정리해야 한다.
+    남은 요청을 자동으로 수락하거나 삭제하지 않는다. 방장이 직접 정리해야 한다.
     """
     pending_id = db.scalar(
         select(CooperativeMissionParticipant.id)
@@ -792,6 +816,7 @@ def _check_no_pending_participant(db: Session, progress_id: int) -> None:
             CooperativeMissionParticipant.cooperative_mission_progress_id == progress_id,
             CooperativeMissionParticipant.participant_status
             == ParticipantStatus.PENDING.value,
+            CooperativeMissionParticipant.deleted_at.is_(None),
         )
         .limit(1)
     )
@@ -812,12 +837,15 @@ def _check_every_participant_has_role(db: Session, progress_id: int) -> None:
         select(CooperativeMissionParticipant.id)
         .outerjoin(
             CooperativeRoleProgress,
-            CooperativeRoleProgress.participant_id == CooperativeMissionParticipant.id,
+            (CooperativeRoleProgress.participant_id == CooperativeMissionParticipant.id)
+            # 삭제된 역할 진행도는 배정되지 않은 것으로 본다. (ON 절에 둬야 참가자가 남는다)
+            & CooperativeRoleProgress.deleted_at.is_(None),
         )
         .where(
             CooperativeMissionParticipant.cooperative_mission_progress_id == progress_id,
             CooperativeMissionParticipant.participant_status
             == ParticipantStatus.ACCEPTED.value,
+            CooperativeMissionParticipant.deleted_at.is_(None),
             CooperativeRoleProgress.id.is_(None),
         )
         .limit(1)
@@ -922,6 +950,7 @@ def _get_accepted_participant(
             CooperativeMissionParticipant.cooperative_mission_progress_id == progress_id,
             CooperativeMissionParticipant.participant_status
             == ParticipantStatus.ACCEPTED.value,
+            CooperativeMissionParticipant.deleted_at.is_(None),
         )
         .with_for_update()
     )
@@ -953,7 +982,9 @@ def _find_role_progress_by_role_card(
         )
         .where(
             CooperativeMissionParticipant.cooperative_mission_progress_id == progress_id,
+            CooperativeMissionParticipant.deleted_at.is_(None),
             CooperativeRoleProgress.cooperative_role_card_id == role_card_id,
+            CooperativeRoleProgress.deleted_at.is_(None),
         )
         .order_by(CooperativeRoleProgress.id)
     )
@@ -1052,7 +1083,9 @@ def _get_my_role_progress(
         )
         .where(
             CooperativeRoleProgress.id == role_progress_id,
+            CooperativeRoleProgress.deleted_at.is_(None),
             CooperativeMissionParticipant.cooperative_mission_progress_id == progress_id,
+            CooperativeMissionParticipant.deleted_at.is_(None),
         )
         .with_for_update(of=CooperativeRoleProgress)
     )

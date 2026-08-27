@@ -493,9 +493,9 @@ Status Code : 409
 
 백엔드는 Authorization Bearer 토큰으로 현재 사용자를 식별하고, Path의 `cooperativeMissionProgressId`에 해당하는 진행 중인 협동 미션에서 현재 사용자가 `HOST`이자 `ACCEPTED` 참여자인지 확인한다.
 
-Path의 `participantId`에 해당하는 같은 협동 미션의 `PENDING` 팀원을 조회한 뒤 `COOPERATIVE_MISSION_PARTICIPANT` row를 삭제한다.
+Path의 `participantId`에 해당하는 같은 협동 미션의 `PENDING` 팀원을 조회한 뒤 `COOPERATIVE_MISSION_PARTICIPANT` row를 소프트 삭제한다. (row를 지우지 않고 `deleted_at`을 남기며, 이후 모든 조회에서 제외된다)
 
-거절 상태는 별도로 저장하지 않는다. row가 삭제되므로 참여 가능 인원이 확보되며, 거절된 사용자는 동일한 초대 URL을 통해 다시 참여 요청할 수 있다.
+거절 상태는 별도로 저장하지 않는다. row가 조회에서 빠지므로 참여 가능 인원이 확보되며, 거절된 사용자는 동일한 초대 URL을 통해 다시 참여 요청할 수 있다.
 
 거절된 팀원은 자신이 폴링 중인 협동 미션 상태 조회 API의 `participants`에서 자신의 `participantId`가 제외된 것을 확인한 뒤 참여 요청이 거절된 것으로 처리한다.
 

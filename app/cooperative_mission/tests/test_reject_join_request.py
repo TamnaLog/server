@@ -161,6 +161,24 @@ def _add_other_progress(db_session: Session) -> None:
 
 
 def _participants(db_session: Session, progress_id: int = PROGRESS_ID) -> list[int]:
+    """소프트 삭제되지 않은(= 조회에 잡히는) 참여자 id 목록."""
+    db_session.expire_all()
+    return list(
+        db_session.scalars(
+            select(CooperativeMissionParticipant.id)
+            .where(
+                CooperativeMissionParticipant.cooperative_mission_progress_id == progress_id,
+                CooperativeMissionParticipant.deleted_at.is_(None),
+            )
+            .order_by(CooperativeMissionParticipant.id)
+        ).all()
+    )
+
+
+def _all_participant_rows(
+    db_session: Session, progress_id: int = PROGRESS_ID
+) -> list[int]:
+    """소프트 삭제된 행까지 포함한 실제 참여자 row id 목록."""
     db_session.expire_all()
     return list(
         db_session.scalars(
@@ -212,14 +230,24 @@ def test_방장이_거절하면_204로_응답하고_본문이_없다(
     assert response.content == b""
 
 
-def test_거절하면_참여자_row를_삭제한다(
+def test_거절하면_참여자_row를_소프트_삭제한다(
     client: TestClient, db_session: Session, reject_data: None
 ) -> None:
     _reject(client)
 
-    # REJECTED 상태를 남기지 않고 지운다. 방장은 그대로 남는다.
+    # REJECTED 상태를 남기지 않고 조회에서 제외한다. 방장은 그대로 남는다.
     assert _participants(db_session) == [HOST_PARTICIPANT_ID]
-    assert db_session.get(CooperativeMissionParticipant, MEMBER_PARTICIPANT_ID) is None
+
+    # 행 자체는 지우지 않고 deleted_at 만 남긴다.
+    assert _all_participant_rows(db_session) == [
+        HOST_PARTICIPANT_ID,
+        MEMBER_PARTICIPANT_ID,
+    ]
+    rejected = db_session.get(CooperativeMissionParticipant, MEMBER_PARTICIPANT_ID)
+    assert rejected is not None
+    assert rejected.deleted_at is not None
+    # 상태는 거절 전 그대로 두고 삭제 시각으로만 구분한다.
+    assert rejected.participant_status == ParticipantStatus.PENDING.value
 
 
 def test_거절한_사용자는_같은_초대_URL로_다시_요청할_수_있다(
@@ -237,6 +265,12 @@ def test_거절한_사용자는_같은_초대_URL로_다시_요청할_수_있다
     assert response.status_code == 201
     assert response.json()["participantStatus"] == "PENDING"
     assert len(_participants(db_session)) == 2
+
+    # 소프트 삭제된 row 를 되살리지 않고 참여자 row 를 새로 만든다.
+    new_participant_id = response.json()["participantId"]
+    assert new_participant_id != MEMBER_PARTICIPANT_ID
+    assert _participants(db_session) == [HOST_PARTICIPANT_ID, new_participant_id]
+    assert len(_all_participant_rows(db_session)) == 3
 
 
 def test_이미_거절한_참여자를_다시_거절하면_404로_응답한다(

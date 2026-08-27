@@ -122,6 +122,7 @@ def _grant_to_participants(
             CooperativeMissionParticipant.cooperative_mission_progress_id == progress_id,
             CooperativeMissionParticipant.participant_status
             == ParticipantStatus.ACCEPTED.value,
+            CooperativeMissionParticipant.deleted_at.is_(None),
         )
     ).all()
 
@@ -205,7 +206,9 @@ def count_completed_roles(db: Session, progress_id: int) -> int:
         )
         .where(
             CooperativeMissionParticipant.cooperative_mission_progress_id == progress_id,
+            CooperativeMissionParticipant.deleted_at.is_(None),
             CooperativeRoleProgress.progress_status == MissionStatus.COMPLETED.value,
+            CooperativeRoleProgress.deleted_at.is_(None),
         )
     )
     return len(db.scalars(statement).all())

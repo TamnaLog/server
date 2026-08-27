@@ -8,6 +8,7 @@
 | `POST /api/v1/cooperative-missions/join-requests` (URL로 참여 요청) | `app/cooperative_mission/tests/test_join_cooperative_mission.py` |
 | `PATCH /api/v1/cooperative-missions/{cooperativeMissionProgressId}/participants/{participantId}/accept` (참여 요청 수락) | `app/cooperative_mission/tests/test_accept_join_request.py` |
 | `DELETE /api/v1/cooperative-missions/{cooperativeMissionProgressId}/participants/{participantId}` (참여 요청 거절) | `app/cooperative_mission/tests/test_reject_join_request.py` |
+| 소프트 삭제(`deleted_at`) 공통 필터 — 위 API 전반 | `app/cooperative_mission/tests/test_soft_delete_filter.py` |
 
 ## 시작하기/이어하기 테스트 의도
 
@@ -182,9 +183,12 @@
 ## 참여 요청 거절 테스트 의도
 
 거절은 수락과 **권한·단계·대상 검증이 똑같고 마지막 한 걸음만 다르다.**
-상태를 바꾸는 대신 참가자 row 를 **지운다.** 그래서 검증도 "무엇이 사라졌는가"에 맞춘다.
+상태를 바꾸는 대신 참가자 row 를 **소프트 삭제한다.** 그래서 검증도 "무엇이 사라졌는가"에 맞춘다.
 
-첫째, **`REJECTED` 상태를 남기지 않는다.** 거절하면 row 자체가 없어야 하고,
+소프트 삭제라 확인할 것이 하나 늘어난다. **조회에서는 사라지지만 행은 남아 있어야 한다.**
+그래서 "살아 있는 참가자 목록"과 "실제 row 목록"을 따로 조회해 둘 다 확인한다.
+
+첫째, **`REJECTED` 상태를 남기지 않는다.** 거절하면 조회 결과에서 사라져야 하고,
 그 결과로 **자리가 하나 비어 거절당한 사용자가 같은 초대 URL 로 다시 요청**할 수 있어야 한다.
 그래서 거절 후 참여 요청 API 를 실제로 다시 호출해 201 이 나오는지까지 본다.
 
@@ -200,8 +204,10 @@
 #### 1. 거절 처리
 
 - **204**이고 응답 본문이 비어 있다.
-- 대상 참가자 row 가 삭제되고 방장은 그대로 남는다.
+- 대상 참가자가 조회에서 빠지고 방장은 그대로 남는다.
+- row 자체는 지우지 않는다. `deleted_at` 만 채워지고 `participant_status` 는 `PENDING` 그대로다.
 - 거절당한 사용자는 같은 초대 URL 로 다시 요청해 새 `PENDING` 이 만들어진다.
+  이때 삭제된 row 를 되살리지 않고 **새 `participantId`** 가 발급된다.
 - 같은 `participantId` 로 다시 거절하면 **404** (삭제된 row 를 복원하지 않는다)
 
 #### 2. 409 `COOPERATIVE_MISSION_PARTICIPANT_ALREADY_ACCEPTED`
@@ -230,6 +236,46 @@
 - 헤더의 사용자가 없으면 **401 `UNAUTHORIZED_USER`**
 - 두 경우 모두 참가자를 지우지 않는다.
 
+## 소프트 삭제 필터 테스트 의도
+
+`COOPERATIVE_MISSION_PROGRESS` / `COOPERATIVE_MISSION_PARTICIPANT` /
+`COOPERATIVE_ROLE_PROGRESS` 세 테이블은 행을 지우지 않고 `deleted_at` 으로 삭제를 표현한다.
+그래서 **조회할 때마다 `deleted_at IS NULL` 을 빠뜨리지 않았는지**가 이 도메인의 상시 위험 요소다.
+한 곳만 빠져도 삭제된 참가자가 인원 수에 잡히거나, 끝난 방이 홈에 다시 뜨거나,
+없는 역할이 배정된 것으로 처리된다.
+
+이 테스트는 필터를 쿼리 단위로 확인하지 않는다.
+**행 하나를 소프트 삭제한 뒤 API 응답이 실제로 달라지는지**로 확인한다.
+필터가 빠지면 응답이 그대로라서 바로 실패한다.
+
+### 주요 검증 항목
+
+#### 1. 참여자 소프트 삭제
+
+- 상태 조회의 `participants` 에서 빠진다.
+- 삭제된 본인이 폴링하면 **404 `COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`**
+- 홈 조회의 진행 중 미션에서 빠진다.
+- **인원 수에 들어가지 않는다.** 정원이 찬 방에서 한 명을 삭제하면 새 참여 요청이 201 로 통과한다.
+- 삭제된 방장은 방장 권한을 잃는다. (**403 `COOPERATIVE_MISSION_HOST_ONLY`**)
+  이어하기 대상도 아니라서 새 방이 만들어진다.
+- 수락 대기(`PENDING`) 집계에서도 빠져 `1 → 2` 단계 변경을 막지 않는다.
+
+#### 2. 진행도 소프트 삭제
+
+- 상태 조회 / 단계 변경에서 **404 `COOPERATIVE_MISSION_PROGRESS_NOT_FOUND`**
+- 홈 조회의 진행 중 미션에서 빠진다.
+- 그 방의 팀 토큰으로는 참여할 수 없다. (**404 `INVALID_INVITE_TOKEN`**)
+- 이어하기 대상이 아니라서 새 방이 만들어진다.
+
+#### 3. 역할 진행도 소프트 삭제
+
+- 상태 조회의 `roleProgresses` 와 `totalRoleCount` 에서 빠진다.
+- 역할이 삭제된 참가자는 **역할을 받지 않은 것으로 본다.**
+  (`2 → 3` 이 **409 `COOPERATIVE_PARTICIPANT_ROLE_REQUIRED`** 로 막힌다.
+  `OUTER JOIN` 의 `ON` 절에 필터를 두지 않으면 이 테스트가 깨진다)
+- 사진 인증 대상이 아니다. (**404 `COOPERATIVE_ROLE_PROGRESS_NOT_FOUND`**)
+- 그 역할 카드를 다시 배정할 수 있고, 삭제된 row 를 되살리지 않고 새 row 를 만든다.
+
 ## 실행 방법
 
 ```bash
@@ -247,6 +293,7 @@ pytest app/cooperative_mission/tests/test_start_cooperative_mission.py -k 이어
 pytest app/cooperative_mission/tests/test_join_cooperative_mission.py -k 기존
 pytest app/cooperative_mission/tests/test_accept_join_request.py -k 멱등
 pytest app/cooperative_mission/tests/test_reject_join_request.py -k 거절
+pytest app/cooperative_mission/tests/test_soft_delete_filter.py
 ```
 
 DB는 SQLite 인메모리를 사용하므로 MySQL이 떠 있지 않아도 실행된다.

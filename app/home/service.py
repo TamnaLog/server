@@ -185,7 +185,9 @@ def _find_cooperative_progresses(
         )
         .where(
             CooperativeMissionParticipant.user_id == current_user_id,
+            CooperativeMissionParticipant.deleted_at.is_(None),
             CooperativeMissionProgress.mission_status == MissionStatus.IN_PROGRESS.value,
+            CooperativeMissionProgress.deleted_at.is_(None),
         )
     )
     return [

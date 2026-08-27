@@ -270,17 +270,17 @@ INSERT INTO `COOPERATIVE_MISSION_PROGRESS`
     (`id`, `cooperative_mission_id`, `current_step`, `mission_status`,
      `team_token`,
      `ar_character_reward_granted`, `point_reward_granted`, `coupon_reward_granted`,
-     `completed_at`)
+     `completed_at`, `deleted_at`)
 VALUES
-    (1, 1, 2, 'IN_PROGRESS', 'mock-team-token-1', FALSE, FALSE, FALSE, NULL);
+    (1, 1, 2, 'IN_PROGRESS', 'mock-team-token-1', FALSE, FALSE, FALSE, NULL, NULL);
 
 INSERT INTO `COOPERATIVE_MISSION_PARTICIPANT`
     (`id`, `cooperative_mission_progress_id`, `user_id`,
-     `participant_status`, `participant_role`, `joined_at`)
+     `participant_status`, `participant_role`, `joined_at`, `deleted_at`)
 VALUES
-    (1, 1, 1, 'ACCEPTED', 'HOST',   '2026-08-20 10:00:00'),
-    (2, 1, 2, 'ACCEPTED', 'MEMBER', '2026-08-20 10:05:00'),
-    (3, 1, 3, 'PENDING',  'MEMBER', NULL);
+    (1, 1, 1, 'ACCEPTED', 'HOST',   '2026-08-20 10:00:00', NULL),
+    (2, 1, 2, 'ACCEPTED', 'MEMBER', '2026-08-20 10:05:00', NULL),
+    (3, 1, 3, 'PENDING',  'MEMBER', NULL,                  NULL);
 
 
 -- ---------------------------------------------------------------------

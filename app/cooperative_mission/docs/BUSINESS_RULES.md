@@ -1,5 +1,21 @@
 # 협동 미션 시작하기/이어하기 비즈니스 룰
 
+## 0. 소프트 삭제 공통 규칙 (협동 미션 전체)
+
+협동 미션의 다음 세 테이블은 행을 실제로 지우지 않고 `deleted_at`으로 삭제를 표현한다.
+
+- `COOPERATIVE_MISSION_PROGRESS`
+- `COOPERATIVE_MISSION_PARTICIPANT`
+- `COOPERATIVE_ROLE_PROGRESS`
+
+`deleted_at`이 `NULL`이면 살아 있는 데이터, 값이 있으면 삭제된 데이터다.
+
+세 테이블을 조회하는 모든 로직은 조인·집계·존재 확인을 포함해 `deleted_at IS NULL` 조건을 함께 사용한다. 참여 인원 계산, 방장 확인, 수락 대기 확인, 역할 배정 여부 판정처럼 개수나 존재 여부로 분기하는 곳도 예외가 아니다.
+
+역할 진행도를 `OUTER JOIN`으로 확인하는 경우에는 `deleted_at IS NULL`을 `WHERE`가 아니라 `ON` 절에 둔다. `WHERE`에 두면 역할이 삭제된 참가자까지 결과에서 사라져 "역할을 받지 않은 참가자"를 찾지 못한다.
+
+삭제된 데이터를 되살리는 동작은 정의하지 않는다. 다시 참여하거나 역할을 다시 배정할 때는 새로운 row를 만든다.
+
 ## 1. 요청 및 식별 기준
 
 - HTTP 메서드: `POST`
@@ -440,7 +456,7 @@ Path 값의 형식이나 범위가 유효하지 않은 경우 공통 요청 오�
 4. 진행도의 `current_step`이 초대 단계인 `1`인지 확인한다.
 5. `participantId`에 해당하는 같은 진행도의 참여자를 잠금 조회한다.
 6. 대상 참여자가 `MEMBER`이자 `PENDING` 상태인지 확인한다.
-7. 대상 `COOPERATIVE_MISSION_PARTICIPANT` row를 삭제한다.
+7. 대상 `COOPERATIVE_MISSION_PARTICIPANT` row를 소프트 삭제한다. (`deleted_at`에 현재 시각을 저장한다)
 8. 트랜잭션을 커밋하고 `204 No Content`를 반환한다.
 
 ## 3. 진행도 조회
@@ -489,9 +505,13 @@ COOPERATIVE_MISSION_PROGRESS.current_step = 1
 
 ## 7. PENDING 참여자 거절
 
-대상 참여자의 `participant_status`가 `PENDING`이면 별도의 `REJECTED` 상태를 저장하지 않고 해당 참가자 row를 삭제한다.
+대상 참여자의 `participant_status`가 `PENDING`이면 별도의 `REJECTED` 상태를 저장하지 않고 해당 참가자 row를 소프트 삭제한다.
 
-참가자 row가 삭제되면 다음 결과가 반영된다.
+소프트 삭제는 row를 실제로 지우지 않고 `deleted_at`에 삭제 시각을 남긴다. `participant_status`는 거절 전 값(`PENDING`) 그대로 둔다.
+
+`COOPERATIVE_MISSION_PARTICIPANT`를 조회하는 모든 로직이 `deleted_at IS NULL` 조건을 함께 사용하므로, 소프트 삭제된 참가자는 실제로 지운 것과 동일하게 동작한다.
+
+참가자 row가 소프트 삭제되면 다음 결과가 반영된다.
 
 - 해당 참여 요청은 참가자 목록에서 제거된다.
 - `PENDING` 참여자도 포함하던 현재 참여 인원이 1명 감소한다.
@@ -506,9 +526,9 @@ COOPERATIVE_MISSION_PROGRESS.current_step = 1
 
 ## 9. 반복 요청 처리
 
-거절이 완료된 참여자 row는 DB에서 삭제되므로 같은 `participantId`로 다시 요청하면 `404 COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`를 반환한다.
+거절이 완료된 참여자 row는 조회 대상에서 빠지므로 같은 `participantId`로 다시 요청하면 `404 COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`를 반환한다.
 
-거절 API는 삭제된 row를 복원하거나 새로운 참여자 row를 생성하지 않는다. 거절된 사용자가 다시 참여하려면 초대 URL을 통해 URL로 참여 요청 API를 다시 호출해야 한다.
+거절 API는 삭제된 row를 복원하거나 새로운 참여자 row를 생성하지 않는다. 거절된 사용자가 다시 참여하려면 초대 URL을 통해 URL로 참여 요청 API를 다시 호출해야 한다. 이때도 소프트 삭제된 row를 되살리지 않고 참여자 row를 새로 만든다.
 
 ## 10. 트랜잭션과 동시 요청
 
