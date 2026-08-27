@@ -7,6 +7,7 @@
 | `POST /api/v1/cooperative-missions/{cooperativeMissionId}/progress` (협동 미션 시작하기/이어하기) | `app/cooperative_mission/tests/test_start_cooperative_mission.py` |
 | `POST /api/v1/cooperative-missions/join-requests` (URL로 참여 요청) | `app/cooperative_mission/tests/test_join_cooperative_mission.py` |
 | `PATCH /api/v1/cooperative-missions/{cooperativeMissionProgressId}/participants/{participantId}/accept` (참여 요청 수락) | `app/cooperative_mission/tests/test_accept_join_request.py` |
+| `DELETE /api/v1/cooperative-missions/{cooperativeMissionProgressId}/participants/{participantId}` (참여 요청 거절) | `app/cooperative_mission/tests/test_reject_join_request.py` |
 
 ## 시작하기/이어하기 테스트 의도
 
@@ -178,6 +179,57 @@
 - 두 Path id가 0 이하이거나 정수가 아니면 **400 `INVALID_REQUEST`**
 - 헤더의 사용자가 없으면 **401 `UNAUTHORIZED_USER`** 이고 참여자 상태도 그대로다.
 
+## 참여 요청 거절 테스트 의도
+
+거절은 수락과 **권한·단계·대상 검증이 똑같고 마지막 한 걸음만 다르다.**
+상태를 바꾸는 대신 참가자 row 를 **지운다.** 그래서 검증도 "무엇이 사라졌는가"에 맞춘다.
+
+첫째, **`REJECTED` 상태를 남기지 않는다.** 거절하면 row 자체가 없어야 하고,
+그 결과로 **자리가 하나 비어 거절당한 사용자가 같은 초대 URL 로 다시 요청**할 수 있어야 한다.
+그래서 거절 후 참여 요청 API 를 실제로 다시 호출해 201 이 나오는지까지 본다.
+
+둘째, **이미 수락된 팀원은 이 API 로 지울 수 없다.** 수락된 팀원 내보내기는 다른 동작이라
+`409 COOPERATIVE_MISSION_PARTICIPANT_ALREADY_ACCEPTED` 이고 row 도 그대로여야 한다.
+(수락이 먼저 커밋된 뒤 들어온 거절 요청이 이 경우다)
+
+셋째, 거절은 되돌릴 수 없으므로 **막아야 할 요청에서 정말 아무것도 지워지지 않는지**를
+모든 오류 케이스에서 참가자 목록으로 확인한다.
+
+### 주요 검증 항목
+
+#### 1. 거절 처리
+
+- **204**이고 응답 본문이 비어 있다.
+- 대상 참가자 row 가 삭제되고 방장은 그대로 남는다.
+- 거절당한 사용자는 같은 초대 URL 로 다시 요청해 새 `PENDING` 이 만들어진다.
+- 같은 `participantId` 로 다시 거절하면 **404** (삭제된 row 를 복원하지 않는다)
+
+#### 2. 409 `COOPERATIVE_MISSION_PARTICIPANT_ALREADY_ACCEPTED`
+
+- 이미 `ACCEPTED` 인 팀원은 삭제하지 않고 409.
+
+#### 3. 403 `COOPERATIVE_MISSION_HOST_ONLY`
+
+- 팀원 본인 / 방에 없는 사용자 / **다른 방의 방장**이 요청한 경우
+- 단계가 지난 방이어도 방장이 아니면 **409보다 403이 먼저**다.
+- 모두 참가자를 지우지 않는다.
+
+#### 4. 404
+
+- 진행도가 없거나 **이미 완료된 방** → `COOPERATIVE_MISSION_PROGRESS_NOT_FOUND`
+- 참여자가 없거나 **다른 방 소속**이거나 **대상이 방장**(방장은 자기 자신을 거절할 수 없다)
+  → `COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`
+
+#### 5. 409 `COOPERATIVE_MISSION_JOIN_CLOSED`
+
+- `current_step` 이 2 / 3 이면 거절할 수 없고 참가자도 그대로다.
+
+#### 6. 400 / 401
+
+- 두 Path id가 0 이하이거나 정수가 아니면 **400 `INVALID_REQUEST`**
+- 헤더의 사용자가 없으면 **401 `UNAUTHORIZED_USER`**
+- 두 경우 모두 참가자를 지우지 않는다.
+
 ## 실행 방법
 
 ```bash
@@ -194,6 +246,7 @@ pytest app/cooperative_mission
 pytest app/cooperative_mission/tests/test_start_cooperative_mission.py -k 이어하기
 pytest app/cooperative_mission/tests/test_join_cooperative_mission.py -k 기존
 pytest app/cooperative_mission/tests/test_accept_join_request.py -k 멱등
+pytest app/cooperative_mission/tests/test_reject_join_request.py -k 거절
 ```
 
 DB는 SQLite 인메모리를 사용하므로 MySQL이 떠 있지 않아도 실행된다.

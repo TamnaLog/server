@@ -42,6 +42,9 @@ COOPERATIVE_MISSION_JOIN_CLOSED = "COOPERATIVE_MISSION_JOIN_CLOSED"
 COOPERATIVE_MISSION_PROGRESS_NOT_FOUND = "COOPERATIVE_MISSION_PROGRESS_NOT_FOUND"
 COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND = "COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND"
 COOPERATIVE_MISSION_HOST_ONLY = "COOPERATIVE_MISSION_HOST_ONLY"
+COOPERATIVE_MISSION_PARTICIPANT_ALREADY_ACCEPTED = (
+    "COOPERATIVE_MISSION_PARTICIPANT_ALREADY_ACCEPTED"
+)
 
 # 신규 진행도 초기값
 FIRST_STEP = 1
@@ -506,6 +509,45 @@ def _get_member_participant(
             ),
         )
     return participant
+
+
+# ---------------------------------------------------------------------
+# 참여 요청 거절
+# ---------------------------------------------------------------------
+
+
+def reject_join_request(
+    db: Session, current_user_id: int, mission_progress_id: int, participant_id: int
+) -> None:
+    """방장이 참여 요청을 거절한다.
+
+    거절은 `REJECTED` 상태를 남기지 않고 `PENDING` 참여자 row 를 지운다.
+    자리가 하나 비므로 거절당한 사용자도 같은 초대 URL 로 다시 요청할 수 있다.
+
+    이미 수락한 팀원을 내보내는 것은 다른 동작이라 여기서 처리하지 않는다. (409)
+    """
+    progress = _get_in_progress_by_id(db, mission_progress_id)
+    _check_host(db, progress.id, current_user_id)
+    _check_join_open(progress)
+
+    participant = _get_member_participant(db, progress.id, participant_id)
+    _check_not_accepted(participant)
+
+    db.delete(participant)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+
+def _check_not_accepted(participant: CooperativeMissionParticipant) -> None:
+    """이미 수락된 팀원인지 확인한다. 수락된 팀원은 이 API 로 지우지 않는다."""
+    if participant.participant_status == ParticipantStatus.ACCEPTED.value:
+        raise ConflictError(
+            COOPERATIVE_MISSION_PARTICIPANT_ALREADY_ACCEPTED,
+            detail=f"참여자 {participant.id} 는 이미 수락된 팀원입니다.",
+        )
 
 
 # ---------------------------------------------------------------------
