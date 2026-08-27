@@ -22,6 +22,7 @@ __all__ = [
     "RoleProgressVerificationRequest",
     "RoleProgressVerificationResponse",
     "CooperativeMissionStartResponse",
+    "CooperativeMissionLeaveResponse",
     "CooperativeMissionStatusResponse",
     "CurrentParticipantResponse",
     "GrantedRewardResponse",
@@ -128,6 +129,19 @@ class CooperativeMissionStatusResponse(CamelModel):
     completed_role_count: int | None = None
     total_role_count: int | None = None
     reward: GrantedRewardResponse | None = None
+    next_location: NextLocationSummaryResponse | None = None
+
+
+class CooperativeMissionLeaveResponse(CamelModel):
+    """DELETE .../{cooperativeMissionProgressId}/participants/me 정상 응답.
+
+    나가기는 미션 완료가 아니라 보상을 지급하지 않는다.
+    다만 프론트가 완료 화면과 같은 구조로 처리할 수 있도록 `reward` 키는 유지하고
+    항목 값만 모두 `null` 로 내려준다.
+    """
+
+    mission_progress_id: int
+    reward: GrantedRewardResponse
     next_location: NextLocationSummaryResponse | None = None
 
 

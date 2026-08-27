@@ -8,6 +8,7 @@
 | `PATCH /api/v1/cooperative-missions/{cooperativeMissionProgressId}/progress` (협동 미션 진행도 저장) | `app/cooperative_mission/tests/test_save_cooperative_mission_progress.py` |
 | `PUT /api/v1/cooperative-missions/{cooperativeMissionProgressId}/role-assignments/{roleCardId}` (협동 미션 역할 배정 저장) | `app/cooperative_mission/tests/test_save_role_assignment.py` |
 | `POST /api/v1/cooperative-missions/{cooperativeMissionProgressId}/role-progresses/{roleProgressId}/verification` (협동 미션 역할 진행도 저장) | `app/cooperative_mission/tests/test_verify_role_progress.py` |
+| `DELETE /api/v1/cooperative-missions/{cooperativeMissionProgressId}/participants/me` (협동 미션 나가기) | `app/cooperative_mission/tests/test_leave_cooperative_mission.py` |
 
 ## 상태 조회 테스트 의도
 
@@ -263,6 +264,76 @@ Blob 호출은 실제 Azure 로 나가지 않도록 `uploads` / `deletes` 픽스
 - 두 Path id가 0 이하이거나 정수가 아님
 - 모두 업로드하지 않고 역할 진행도도 그대로다.
 
+## 나가기 테스트 의도
+
+나가기는 **누가 나가느냐에 따라 처리가 세 갈래로 갈린다.** 그래서 분기 자체가 검증 대상이다.
+
+1. 일반 팀원 / 대기 참가자 → 본인과 본인의 역할만 빠지고 방은 그대로
+2. 방장인데 남은 `ACCEPTED` 팀원이 있음 → 방장 승계
+3. 마지막 `ACCEPTED` 참가자 → 방 전체 삭제
+
+특히 **"마지막"의 기준이 `ACCEPTED` 수라는 점**이 틀리기 쉽다.
+대기(`PENDING`) 참가자만 남은 방은 유지하지 않고, 반대로 대기 참가자가 나갔다고 방을 지워서도 안 된다.
+그래서 방장 한 명 + 대기 참가자 한 명인 방에서 대기 참가자가 나가는 경우를 따로 확인한다.
+
+또 하나는 **나가기가 완료가 아니라는 것**이다.
+보상을 주지 않고 `mission_status` / `current_step` / `completed_at` / 보상 지급 여부를 건드리지 않는다.
+응답의 `reward` 키는 유지하되 세 항목 값이 모두 `null`이어야 한다.
+
+### 주요 검증 항목
+
+#### 1. 정상 응답
+
+- **200**이고 `missionProgressId`를 반환한다.
+- `reward`는 `{arCharacter: null, point: null, coupon: null}` 이고,
+  실제로도 `USER.point`가 늘지 않고 `ACQUIRED_AR_CHARACTER`가 생기지 않으며
+  진행도의 보상 지급 여부도 그대로다.
+- `nextLocation`은 공통 추천 로직 결과다. 추천할 장소가 없으면 `null`.
+
+#### 2. 일반 팀원 / 대기 참가자 나가기
+
+- 본인만 소프트 삭제된다. 행은 남고 `deleted_at`만 채워지며 상태·역할 값은 그대로다.
+- 본인의 역할 진행도도 함께 소프트 삭제되고, **다른 참가자의 역할은 건드리지 않는다.**
+- 진행도의 단계·상태·`team_token`은 변하지 않는다.
+- 대기 참가자도 나가기로 참여 요청을 취소할 수 있다.
+- **방장 한 명만 남은 방에서 대기 참가자가 나가도 방은 유지된다.**
+- 역할 사진의 `item_img_url`과 Blob 이미지는 지우지 않는다. (`progress_status`도 그대로)
+
+#### 3. 방장 나가기와 승계
+
+- 남은 `ACCEPTED` 팀원 중 **먼저 참여한 사람**이 `HOST`가 된다.
+- `joined_at`이 같으면 **참가자 id가 작은 쪽**이 승계한다.
+- `PENDING` 참가자는 승계 대상이 아니다. 대기 참가자만 남으면 방 전체가 삭제된다.
+- 승계해도 진행도의 단계·상태·`team_token`은 유지된다. 승계자의 `joined_at`도 바뀌지 않는다.
+- 나간 방장의 역할 진행도도 함께 소프트 삭제된다.
+
+#### 4. 마지막 참가자 나가기
+
+- 진행도와 남은 참가자·역할 진행도가 **모두 같은 시각으로** 소프트 삭제된다.
+- 남아 있던 `PENDING` 참가자도 함께 정리된다.
+- **완료 처리하지 않는다.** `mission_status`는 `IN_PROGRESS`, `current_step`은 그대로,
+  `completed_at`은 `null`, 보상 지급 여부도 `false` 그대로다.
+- 삭제된 방은 상태 조회에서 404가 된다.
+
+#### 5. 3단계에서 나가기
+
+- 단계를 2로 되돌리지 않는다.
+- 인증까지 마친 역할이어도 삭제되어 `totalRoleCount` / `completedRoleCount`에서 빠진다.
+  (2/1 이던 집계가 나간 뒤 1/0 이 된다)
+
+#### 6. 404 / 409
+
+- 진행도가 없거나 **이미 삭제된 방** → `COOPERATIVE_MISSION_PROGRESS_NOT_FOUND`
+- 방의 참가자가 아니거나 **이미 나간 사용자** → `COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`
+- `mission_status`가 `COMPLETED`이거나 `current_step`이 4이면
+  **409 `COOPERATIVE_MISSION_ALREADY_COMPLETED`** 이고 아무도 나가지 않는다.
+
+#### 7. 400 / 401
+
+- Path id가 0 이하이거나 정수가 아니면 **400 `INVALID_REQUEST`**
+- 토큰의 사용자가 없으면 **401 `UNAUTHORIZED_USER`**
+- 두 경우 모두 참가자가 그대로 남는다.
+
 ## 실행 방법
 
 ```bash
@@ -281,6 +352,7 @@ pytest app/cooperative_mission/tests/test_get_cooperative_mission_status.py -k 4
 pytest app/cooperative_mission/tests/test_save_cooperative_mission_progress.py -k 단계
 pytest app/cooperative_mission/tests/test_save_role_assignment.py -k 배정
 pytest app/cooperative_mission/tests/test_verify_role_progress.py -k 인증
+pytest app/cooperative_mission/tests/test_leave_cooperative_mission.py -k 승계
 ```
 
 DB는 SQLite 인메모리를 사용하므로 MySQL이 떠 있지 않아도 실행된다.
@@ -291,3 +363,4 @@ TourAPI 호출은 `stub_location_image` 픽스처(autouse)로 막는다.
 진행도 저장 테스트는 `progress_data` 픽스처로 초대 단계 방을 만들고, `_set_step()` / `_assign_role()` 로 각 단계 상황을 재현한다.
 역할 배정 테스트는 `assignment_data` 픽스처로 2단계 방(방장/수락 팀원/대기 팀원)을 만들고, `_add_other_progress()` 로 다른 방 상황을 만든다.
 사진 인증 테스트는 `verification_data` 픽스처로 3단계 방과 역할 배정을 만들고, Blob 호출은 `uploads` / `deletes` 픽스처로 가로챈다.
+나가기 테스트는 `leave_data` 픽스처로 2단계 방(방장/수락 팀원)을 만들고, `_add_participant()` 로 승계 후보와 대기 참가자를 덧붙인다.

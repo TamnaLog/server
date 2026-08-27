@@ -325,6 +325,240 @@ coupon_reward_granted = TRUE
 }
 ```
 
+# 협동 미션 나가기 비즈니스 룰
+
+## 1. 요청 및 사용자 식별
+
+- HTTP 메서드: `DELETE`
+- 엔드포인트: `/api/v1/cooperative-missions/{cooperativeMissionProgressId}/participants/me`
+- Path의 `cooperativeMissionProgressId`로 나갈 `COOPERATIVE_MISSION_PROGRESS`를 식별한다.
+- Request Query와 Body는 받지 않는다.
+- 현재 사용자는 Authorization Bearer 토큰의 `get_current_user_id()`로 식별한다.
+
+프론트는 사용자 id와 참가자 id를 전달하지 않는다. 백엔드가 현재 사용자 id와 진행도 id로 삭제되지 않은 `COOPERATIVE_MISSION_PARTICIPANT`를 조회한다.
+
+## 2. 호출 가능 대상과 범위
+
+삭제되지 않은 협동 미션 진행도에 속한 `PENDING | ACCEPTED` 참가자는 미션 진행 중 언제든 나가기를 호출할 수 있다.
+
+- `PENDING` 팀원이 호출하면 대기 중인 참여 요청을 취소하는 것으로 처리한다.
+- `ACCEPTED` 일반 팀원이 호출하면 방에서 나가는 것으로 처리한다.
+- `ACCEPTED` 방장이 호출하면 남은 참가자에 따라 방장을 승계하거나 진행도 전체를 삭제한다.
+- 이미 완료된 진행도에서는 나가기를 허용하지 않는다.
+- 소프트 딜리트된 진행도나 참가자는 존재하지 않는 대상으로 취급한다.
+
+## 3. 공통 소프트 딜리트 규칙
+
+이 API에서 삭제는 모두 하드 딜리트가 아니라 `deleted_at`을 현재 한국시간으로 저장하는 소프트 딜리트다.
+
+현재 참가자가 나가면 다음 데이터를 같은 시각으로 소프트 딜리트한다.
+
+1. 현재 사용자의 `COOPERATIVE_MISSION_PARTICIPANT`
+2. 해당 참가자를 참조하는 모든 `COOPERATIVE_ROLE_PROGRESS`
+
+소프트 딜리트된 데이터는 이후 참가자 목록, 역할 진행도 목록, 역할 개수, 완료 역할 개수, 최대 인원 계산, 방장 권한 및 보상 대상에서 제외한다. 모든 일반 조회에는 `deleted_at IS NULL` 조건을 적용한다.
+
+## 4. 일반 팀원 및 대기 참가자 나가기
+
+현재 참가자의 `participant_role`이 `MEMBER`이면 참가자와 연결된 역할 진행도를 소프트 딜리트한다.
+
+- `PENDING` 참가자는 역할 진행도가 없더라도 동일하게 참가자를 소프트 딜리트한다.
+- `ACCEPTED` 참가자가 역할을 배정받았다면 해당 역할 진행도를 함께 소프트 딜리트한다.
+- 일반 팀원이 나가도 진행도의 `current_step`과 `mission_status`는 변경하지 않는다.
+- 나간 팀원의 역할 카드는 미배정 상태가 된다.
+
+## 5. 방장 나가기와 방장 승계
+
+방장이 나갈 때 다른 삭제되지 않은 `ACCEPTED` 참가자가 남아 있으면 방을 삭제하지 않고 방장을 승계한다.
+
+차기 방장은 다음 조건과 순서로 선정한다.
+
+```text
+deleted_at IS NULL
+participant_status = ACCEPTED
+현재 방장 참가자 제외
+ORDER BY joined_at ASC, id ASC
+LIMIT 1
+```
+
+- `PENDING` 참가자는 방장 승계 대상이 아니다.
+- 가장 먼저 방에 들어온 `ACCEPTED` 팀원을 우선한다.
+- `joined_at`이 같으면 `id`가 작은 참가자를 우선한다.
+- 선정된 참가자의 `participant_role`을 `MEMBER`에서 `HOST`로 변경한다.
+- 기존 방장 참가자와 기존 방장의 역할 진행도는 소프트 딜리트한다.
+- 진행도의 `current_step`, `mission_status`, `team_token`은 유지한다.
+
+## 6. 마지막 참가자 나가기
+
+마지막 참가자 여부는 `PENDING`을 제외한 삭제되지 않은 `ACCEPTED` 참가자 수로 판단한다.
+
+```text
+현재 사용자를 포함한 deleted_at IS NULL AND participant_status = ACCEPTED 참가자 수 = 1
+```
+
+현재 사용자가 마지막 `ACCEPTED` 참가자이면 다음 데이터를 모두 같은 시각으로 소프트 딜리트한다.
+
+1. `COOPERATIVE_MISSION_PROGRESS`
+2. 해당 진행도에 속한 모든 `COOPERATIVE_MISSION_PARTICIPANT`
+3. 해당 참가자들을 참조하는 모든 `COOPERATIVE_ROLE_PROGRESS`
+
+이때 남아 있던 `PENDING` 참가자와 그 하위 데이터도 함께 소프트 딜리트한다.
+
+진행도는 완료 처리하지 않으므로 다음 값은 변경하지 않는다.
+
+- `mission_status`를 `COMPLETED`로 변경하지 않는다.
+- `current_step`을 `4`로 변경하지 않는다.
+- `completed_at`을 저장하지 않는다.
+- 보상 지급 여부를 변경하지 않는다.
+
+## 7. 3단계에서 참가자가 나가는 경우
+
+`current_step = 3`에서 역할을 가진 참가자가 나가면 해당 역할 진행도도 소프트 딜리트되어 그 역할은 비어 있는 상태가 된다.
+
+- 진행도를 2단계로 되돌리지 않는다.
+- 삭제된 역할을 다른 참가자에게 자동으로 재배정하지 않는다.
+- 3단계에서는 역할 배정 API를 다시 호출하지 않는다.
+- 남은 참가자와 남아 있는 역할 진행도만으로 미션을 계속한다.
+- 소프트 딜리트된 역할 진행도는 `totalRoleCount`와 `completedRoleCount`에서 제외한다.
+- 소프트 딜리트 전에 사진 인증을 완료했더라도 완료 역할 수와 보상 계산에서 제외한다.
+
+## 8. Blob 이미지 보존
+
+역할 진행도를 소프트 딜리트하더라도 `item_img_url`이 참조하는 Azure Blob 이미지는 삭제하지 않는다.
+
+- DB의 `item_img_url`도 그대로 유지한다.
+- 소프트 딜리트된 데이터의 복구와 이력 확인이 가능하도록 Blob을 보존한다.
+- 나가기 API는 `blob_storage.delete_file()`을 호출하지 않는다.
+
+## 9. 보상 미지급
+
+협동 미션 나가기는 미션 완료가 아니므로 어떤 보상도 지급하지 않는다.
+
+- `ACQUIRED_AR_CHARACTER`를 생성하지 않는다.
+- `USER.point`를 증가시키지 않는다.
+- 쿠폰을 지급하지 않는다.
+- 진행도의 보상 지급 여부를 변경하지 않는다.
+
+응답에는 보상 객체의 키를 유지하고 값을 모두 `null`로 반환한다.
+
+```json
+{
+  "arCharacter": null,
+  "point": null,
+  "coupon": null
+}
+```
+
+## 10. 다음 장소 추천
+
+나가기 처리가 성공하면 `app/common/next_location.py`의 공통 다음 장소 추천 로직을 호출한다.
+
+- 나가기 서비스에 별도의 추천 로직을 중복 구현하지 않는다.
+- 현재 API는 사용자 위도·경도를 받지 않으므로 거리 없는 `recommend_next_location_summary()`를 사용한다.
+- 추천할 장소가 없으면 `nextLocation: null`을 반환한다.
+- 추천 장소에 연결된 미션이 없으면 `nextLocation.mission: null`을 반환한다.
+
+## 11. 처리 순서와 트랜잭션
+
+나가기 전체 처리는 하나의 트랜잭션으로 처리한다.
+
+1. Path 형식과 범위를 검증한다.
+2. 삭제되지 않은 진행도 row를 잠금 조회한다.
+3. 진행도가 완료 상태인지 확인한다.
+4. 현재 사용자의 삭제되지 않은 참가자 row를 조회한다.
+5. 삭제되지 않은 `ACCEPTED` 참가자 목록을 잠금 범위 안에서 다시 조회한다.
+6. 현재 참가자의 역할과 남은 `ACCEPTED` 참가자 수에 따라 일반 나가기, 방장 승계 또는 진행도 전체 삭제를 결정한다.
+7. 대상 참가자, 역할 진행도 및 필요한 경우 진행도의 `deleted_at`을 저장한다.
+8. 방장 승계가 필요하면 차기 참가자의 `participant_role`을 `HOST`로 변경한다.
+9. DB 변경을 한 번에 커밋한다.
+10. 공통 다음 장소 추천 결과와 보상이 없는 응답을 조합하여 `200 OK`를 반환한다.
+
+진행도 row를 먼저 잠가 방장과 다른 참가자가 동시에 나가더라도 방장이 두 명이 되거나 방장이 없는 진행 중 방이 남지 않도록 한다. 잠금을 획득한 뒤 참가자 수와 승계 대상을 다시 계산한다.
+
+DB 처리 중 오류가 발생하면 참가자 삭제, 역할 진행도 삭제, 진행도 삭제 및 방장 승계를 모두 롤백한다.
+
+## 12. 정상 응답
+
+나가기를 정상 처리하면 `200 OK`를 반환한다.
+
+```json
+{
+  "missionProgressId": 10,
+  "reward": {
+    "arCharacter": null,
+    "point": null,
+    "coupon": null
+  },
+  "nextLocation": {
+    "id": 39,
+    "locationTitle": "한담 해안 산책로",
+    "locationImageUrl": "https://example.com/locations/handam.jpg",
+    "mission": {
+      "id": 3,
+      "missionType": "TREASURE"
+    }
+  }
+}
+```
+
+## 13. 오류 처리
+
+### 400 `INVALID_REQUEST`
+
+`cooperativeMissionProgressId`가 정수가 아니거나 `1`보다 작으면 공통 요청 오류를 반환한다.
+
+```json
+{
+  "code": "INVALID_REQUEST"
+}
+```
+
+### 404 `COOPERATIVE_MISSION_PROGRESS_NOT_FOUND`
+
+다음 경우 반환한다.
+
+- `cooperativeMissionProgressId`에 해당하는 진행도가 존재하지 않는 경우
+- 해당 진행도가 이미 소프트 딜리트된 경우
+
+```json
+{
+  "code": "COOPERATIVE_MISSION_PROGRESS_NOT_FOUND"
+}
+```
+
+### 404 `COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`
+
+다음 경우 반환한다.
+
+- 현재 사용자가 해당 진행도의 참가자가 아닌 경우
+- 현재 사용자의 참가자 데이터가 이미 소프트 딜리트된 경우
+
+```json
+{
+  "code": "COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND"
+}
+```
+
+### 409 `COOPERATIVE_MISSION_ALREADY_COMPLETED`
+
+진행도의 `mission_status`가 `COMPLETED`이거나 `current_step = 4`이면 반환한다.
+
+```json
+{
+  "code": "COOPERATIVE_MISSION_ALREADY_COMPLETED"
+}
+```
+
+### 500 `INTERNAL_SERVER_ERROR`
+
+DB 변경 또는 다음 장소 추천 중 예상하지 못한 오류가 발생하면 공통 `500` 오류를 반환한다. DB 트랜잭션이 진행 중이었다면 모든 변경을 롤백한다.
+
+```json
+{
+  "code": "INTERNAL_SERVER_ERROR"
+}
+```
+
 # 협동 미션 역할 배정 저장 비즈니스 룰
 
 ## 1. 요청 및 사용자 식별

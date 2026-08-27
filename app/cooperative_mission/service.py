@@ -6,14 +6,16 @@
 
 import secrets
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, BinaryIO
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.common import images, next_location
 from app.common.datetimes import now_kst
+from app.common.rewards import GrantedRewardResponse
 from app.cooperative_mission import photo_verifier, reward_granter
 from app.cooperative_mission.models import (
     CooperativeMission,
@@ -26,6 +28,7 @@ from app.cooperative_mission.models import (
     ParticipantStatus,
 )
 from app.cooperative_mission.schemas import (
+    CooperativeMissionLeaveResponse,
     CooperativeMissionProgressSaveRequest,
     CooperativeRoleAssignmentSaveRequest,
     RoleProgressVerificationResponse,
@@ -1116,6 +1119,170 @@ def _get_my_role_progress(
             detail=f"역할 진행도 {role_progress_id} 는 이미 인증을 마쳤습니다.",
         )
     return role_progress
+
+
+# ---------------------------------------------------------------------
+# 협동 미션 나가기
+# ---------------------------------------------------------------------
+
+
+def leave_cooperative_mission(
+    db: Session, current_user_id: int, mission_progress_id: int
+) -> CooperativeMissionLeaveResponse:
+    """현재 사용자가 협동 미션에서 나간다.
+
+    나가는 사람의 역할에 따라 처리가 갈린다.
+
+    - 마지막 `ACCEPTED` 참가자: 방 전체(진행도/참가자/역할 진행도)를 소프트 삭제한다.
+    - 방장이고 남은 `ACCEPTED` 팀원이 있음: 본인만 빠지고 다음 팀원이 방장을 승계한다.
+    - 그 밖(`MEMBER` 또는 `PENDING`): 본인과 본인의 역할 진행도만 소프트 삭제한다.
+
+    나가기는 미션 완료가 아니므로 보상을 지급하지 않고 단계/완료 상태도 바꾸지 않는다.
+    """
+    # 완료된 방에서는 나갈 수 없다. (404/409 판정이 단계 변경과 같아 helper 를 함께 쓴다)
+    progress = _get_progress_for_step_change(db, mission_progress_id)
+    participant = _get_my_participant(db, progress.id, current_user_id)
+
+    # 잠금을 잡은 뒤 다시 세어야 동시에 나가도 방장이 둘이 되거나 사라지지 않는다.
+    accepted_participants = _find_accepted_participants(db, progress.id)
+    leaving_at = now_kst()
+
+    if _is_last_accepted(participant, accepted_participants):
+        _delete_whole_progress(db, progress, leaving_at)
+    else:
+        _delete_participant(db, participant, leaving_at)
+        if participant.participant_role == ParticipantRole.HOST.value:
+            _hand_over_host(db, participant, accepted_participants)
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    return CooperativeMissionLeaveResponse(
+        mission_progress_id=progress.id,
+        # 나가기는 보상을 지급하지 않으므로 세 항목 모두 비운다.
+        reward=GrantedRewardResponse(),
+        next_location=next_location.recommend_next_location_summary(db),
+    )
+
+
+def _find_accepted_participants(
+    db: Session, progress_id: int
+) -> list[CooperativeMissionParticipant]:
+    """방에 남아 있는 `ACCEPTED` 참가자를 방장 승계 순서로 정렬해 가져온다.
+
+    먼저 들어온 사람이 앞이고, 참여 시각이 같으면 참가자 id 가 작은 쪽이 앞이다.
+    `PENDING` 참가자는 방장 승계 대상이 아니라서 여기서 제외한다.
+    """
+    statement = (
+        select(CooperativeMissionParticipant)
+        .where(
+            CooperativeMissionParticipant.cooperative_mission_progress_id == progress_id,
+            CooperativeMissionParticipant.participant_status
+            == ParticipantStatus.ACCEPTED.value,
+            CooperativeMissionParticipant.deleted_at.is_(None),
+        )
+        .order_by(
+            CooperativeMissionParticipant.joined_at,
+            CooperativeMissionParticipant.id,
+        )
+    )
+    return list(db.scalars(statement).all())
+
+
+def _is_last_accepted(
+    participant: CooperativeMissionParticipant,
+    accepted_participants: list[CooperativeMissionParticipant],
+) -> bool:
+    """나가는 사람이 방에 남은 마지막 `ACCEPTED` 참가자인지 본다.
+
+    `PENDING` 참가자는 수를 세지 않는다. 대기 중인 사람만 남아도 방을 유지하지 않는다.
+    """
+    return (
+        participant.participant_status == ParticipantStatus.ACCEPTED.value
+        and len(accepted_participants) == 1
+    )
+
+
+def _delete_participant(
+    db: Session, participant: CooperativeMissionParticipant, deleted_at: datetime
+) -> None:
+    """참가자와 그 참가자가 맡은 역할 진행도를 소프트 삭제한다.
+
+    역할 진행도의 `item_img_url` 과 Blob 이미지는 지우지 않고 그대로 둔다.
+    """
+    participant.deleted_at = deleted_at
+    db.execute(
+        update(CooperativeRoleProgress)
+        .where(
+            CooperativeRoleProgress.participant_id == participant.id,
+            CooperativeRoleProgress.deleted_at.is_(None),
+        )
+        .values(deleted_at=deleted_at)
+        .execution_options(synchronize_session=False)
+    )
+
+
+def _delete_whole_progress(
+    db: Session, progress: CooperativeMissionProgress, deleted_at: datetime
+) -> None:
+    """방을 통째로 소프트 삭제한다. 남아 있던 `PENDING` 참가자도 함께 정리한다.
+
+    나가기는 완료가 아니라서 `mission_status` / `current_step` / `completed_at` 과
+    보상 지급 여부는 건드리지 않는다.
+    """
+    participant_ids = select(CooperativeMissionParticipant.id).where(
+        CooperativeMissionParticipant.cooperative_mission_progress_id == progress.id,
+        CooperativeMissionParticipant.deleted_at.is_(None),
+    )
+    db.execute(
+        update(CooperativeRoleProgress)
+        .where(
+            CooperativeRoleProgress.participant_id.in_(participant_ids),
+            CooperativeRoleProgress.deleted_at.is_(None),
+        )
+        .values(deleted_at=deleted_at)
+        .execution_options(synchronize_session=False)
+    )
+    db.execute(
+        update(CooperativeMissionParticipant)
+        .where(
+            CooperativeMissionParticipant.cooperative_mission_progress_id == progress.id,
+            CooperativeMissionParticipant.deleted_at.is_(None),
+        )
+        .values(deleted_at=deleted_at)
+        .execution_options(synchronize_session=False)
+    )
+    progress.deleted_at = deleted_at
+
+
+def _hand_over_host(
+    db: Session,
+    leaving_host: CooperativeMissionParticipant,
+    accepted_participants: list[CooperativeMissionParticipant],
+) -> None:
+    """방장이 나간 자리를 남은 `ACCEPTED` 팀원에게 넘긴다.
+
+    `_find_accepted_participants()` 가 이미 승계 순서로 정렬해 두었으므로 맨 앞을 고른다.
+    진행도의 단계/상태/팀 토큰은 그대로 둔다.
+    """
+    next_host = next(
+        (
+            candidate
+            for candidate in accepted_participants
+            if candidate.id != leaving_host.id
+        ),
+        None,
+    )
+    if next_host is None:
+        # 마지막 참가자 판정을 먼저 하므로 여기까지 오면 데이터가 어긋난 상황이다.
+        raise RuntimeError(
+            f"진행도 {leaving_host.cooperative_mission_progress_id} 의 방장을 넘길 참가자가 없습니다."
+        )
+
+    next_host.participant_role = ParticipantRole.HOST.value
 
 
 # ---------------------------------------------------------------------

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.cooperative_mission import service
 from app.cooperative_mission.schemas import (
+    CooperativeMissionLeaveResponse,
     CooperativeMissionProgressSaveRequest,
     CooperativeRoleAssignmentSaveRequest,
     RoleProgressVerificationRequest,
@@ -150,6 +151,40 @@ def accept_join_request(
         participant_id=participant_id,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# `/participants/me` 는 아래 `/participants/{participant_id}` 보다 먼저 등록해야 한다.
+# 순서가 바뀌면 "me" 가 participant_id 로 먼저 매칭돼 400 이 된다.
+@router.delete(
+    "/{mission_progress_id}/participants/me",
+    summary="협동 미션 나가기",
+    status_code=status.HTTP_200_OK,
+    response_model=CooperativeMissionLeaveResponse,
+    response_model_by_alias=True,
+    responses={
+        status.HTTP_404_NOT_FOUND: _error_response(
+            "협동 미션 방 또는 현재 사용자의 참가자 데이터를 찾을 수 없음",
+            f"{service.COOPERATIVE_MISSION_PROGRESS_NOT_FOUND} | "
+            f"{service.COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND}",
+        ),
+        status.HTTP_409_CONFLICT: _error_response(
+            "이미 완료된 협동 미션", service.COOPERATIVE_MISSION_ALREADY_COMPLETED
+        ),
+    },
+)
+def leave_cooperative_mission(
+    db: Annotated[Session, Depends(get_db)],
+    current_user_id: Annotated[int, Depends(get_current_user_id)],
+    mission_progress_id: Annotated[
+        int, Path(ge=1, description="나갈 COOPERATIVE_MISSION_PROGRESS.id")
+    ],
+) -> CooperativeMissionLeaveResponse:
+    """DELETE /api/v1/cooperative-missions/{cooperativeMissionProgressId}/participants/me."""
+    return service.leave_cooperative_mission(
+        db=db,
+        current_user_id=current_user_id,
+        mission_progress_id=mission_progress_id,
+    )
 
 
 @router.delete(

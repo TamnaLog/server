@@ -868,3 +868,148 @@ Status Code : 409
   "code": "COOPERATIVE_ROLE_PROGRESS_ALREADY_COMPLETED"
 }
 ```
+
+
+
+## 협동미션 나가기
+- http 메서드: delete
+- domain: cooperative-mission
+- endpoint: /api/v1/cooperative-missions/{cooperativeMissionProgressId}/participants/me
+
+### API 설명
+
+현재 사용자가 참여 중인 협동 미션에서 나갈 때 호출한다.
+
+백엔드는 Authorization Bearer 토큰으로 현재 사용자를 식별하므로 참가자 id나 사용자 id를 요청으로 전달받지 않는다. Path의 `cooperativeMissionProgressId`에 해당하는 협동 미션 진행도와 현재 사용자의 삭제되지 않은 참가자 데이터를 조회한다.
+
+일반 팀원이 나가면 해당 `COOPERATIVE_MISSION_PARTICIPANT`의 `deleted_at`을 현재 시각으로 저장하고, 그 참가자에게 연결된 모든 `COOPERATIVE_ROLE_PROGRESS`도 같은 방식으로 소프트 딜리트한다.
+
+방장이 나가고 다른 `ACCEPTED` 팀원이 남아 있으면 방장과 방장의 역할 진행도를 소프트 딜리트한 후, 남은 `ACCEPTED` 팀원 중 `joined_at`이 가장 빠른 참가자의 `participantRole`을 `HOST`로 변경한다. `joined_at`이 같으면 참가자 id가 작은 참가자를 우선한다. `PENDING` 참가자는 방장 승계 대상이 아니다.
+
+현재 사용자가 방에 남은 마지막 `ACCEPTED` 참가자라면 참가자와 역할 진행도를 소프트 딜리트하고, 협동 미션 진행도 자체도 `deleted_at`을 저장하여 소프트 딜리트한다. 이때 미션을 `COMPLETED`로 변경하거나 `completed_at`을 저장하지 않는다. 진행도가 삭제되면 그 진행도에 남아 있는 다른 참가자 및 역할 진행도도 함께 소프트 딜리트한다.
+
+나가기에서는 AR 캐릭터, 포인트, 쿠폰을 지급하지 않는다. 응답의 세 보상 필드는 모두 `null`로 반환한다.
+
+다음 추천 장소는 공통 다음 장소 추천 로직으로 조회한다. 추천 가능한 장소가 없으면 `nextLocation`을 `null`로 반환하며, 추천 장소에 연결된 미션이 없으면 `nextLocation.mission`을 `null`로 반환한다.
+
+---
+
+### 요청 Query
+
+없음
+
+---
+
+### 요청 Path
+
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `cooperativeMissionProgressId` | number | O | 나갈 협동 미션 진행도 id. `COOPERATIVE_MISSION_PROGRESS.id` |
+
+요청 예시
+
+```
+DELETE /api/v1/cooperative-missions/10/participants/me
+```
+
+---
+
+### 요청 Body
+
+없음
+
+---
+
+### 정상 응답 데이터
+
+Status Code : 200
+
+현재 사용자가 협동 미션에서 정상적으로 나간 경우
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `missionProgressId` | number | 나간 협동 미션 진행도 id |
+| `reward` | object | 나가기 결과의 보상 정보. 실제 보상은 지급하지 않음 |
+| `reward.arCharacter` | null | AR 캐릭터를 지급하지 않으므로 항상 `null` |
+| `reward.point` | null | 포인트를 지급하지 않으므로 항상 `null` |
+| `reward.coupon` | null | 쿠폰을 지급하지 않으므로 항상 `null` |
+| `nextLocation` | object | null | 공통 추천 로직으로 선정한 다음 장소. 추천 가능한 장소가 없으면 `null` |
+| `nextLocation.id` | number | 다음 장소 id |
+| `nextLocation.locationTitle` | string | 다음 장소명 |
+| `nextLocation.locationImageUrl` | string | null | 다음 장소 이미지 URL. 조회하지 못하면 `null` |
+| `nextLocation.mission` | object | null | 다음 장소의 미션. 연결된 미션이 없으면 `null` |
+| `nextLocation.mission.id` | number | 다음 미션 id |
+| `nextLocation.mission.missionType` | string | 다음 미션 유형. `COOPERATIVE | TREASURE` |
+
+```json
+{
+  "missionProgressId": 10,
+  "reward": {
+    "arCharacter": null,
+    "point": null,
+    "coupon": null
+  },
+  "nextLocation": {
+    "id": 39,
+    "locationTitle": "한담 해안 산책로",
+    "locationImageUrl": "https://example.com/locations/handam.jpg",
+    "mission": {
+      "id": 3,
+      "missionType": "TREASURE"
+    }
+  }
+}
+```
+
+다음 장소에 연결된 미션이 없는 경우
+
+```json
+{
+  "missionProgressId": 10,
+  "reward": {
+    "arCharacter": null,
+    "point": null,
+    "coupon": null
+  },
+  "nextLocation": {
+    "id": 39,
+    "locationTitle": "한담 해안 산책로",
+    "locationImageUrl": "https://example.com/locations/handam.jpg",
+    "mission": null
+  }
+}
+```
+
+---
+
+### 오류 응답 데이터
+
+Status Code : 404
+
+`cooperativeMissionProgressId`에 해당하는 삭제되지 않은 협동 미션 진행도가 존재하지 않는 경우
+
+```json
+{
+  "code": "COOPERATIVE_MISSION_PROGRESS_NOT_FOUND"
+}
+```
+
+Status Code : 404
+
+Bearer 토큰으로 식별한 현재 사용자의 삭제되지 않은 참가자 데이터가 해당 협동 미션 진행도에 존재하지 않는 경우
+
+```json
+{
+  "code": "COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND"
+}
+```
+
+Status Code : 409
+
+이미 완료된 협동 미션에서 나가기를 요청한 경우
+
+```json
+{
+  "code": "COOPERATIVE_MISSION_ALREADY_COMPLETED"
+}
+```
