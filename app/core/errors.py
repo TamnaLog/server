@@ -207,4 +207,5 @@ def use_common_error_responses(app: FastAPI) -> None:
         app.openapi_schema = schema
         return schema
 
-    app.openapi = custom_openapi
+    # FastAPI 가 공식 문서에서 안내하는 교체 방식이라 메서드 대입 경고만 끈다.
+    app.openapi = custom_openapi  # type: ignore[method-assign]

@@ -86,7 +86,9 @@ def _load_candidates(db: Session, current_user_id: int) -> list[_Candidate]:
 
 
 def _load_missions(
-    db: Session, mission_model: type, mission_type: MissionType
+    db: Session,
+    mission_model: type[CooperativeMission] | type[TreasureMission],
+    mission_type: MissionType,
 ) -> list[_Candidate]:
     """유형별 세부 미션과 공통 미션 제목을 함께 읽어온다."""
     statement = (

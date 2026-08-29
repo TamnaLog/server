@@ -75,7 +75,7 @@ def _get_detail_common_item(content_id: int) -> dict[str, Any] | None:
         "MobileOS": settings.kto_mobile_os,
         "MobileApp": settings.kto_mobile_app,
         "_type": "json",
-        "contentId": content_id,
+        "contentId": str(content_id),
     }
 
     try:
