@@ -7,7 +7,7 @@
 반대 방향으로 다시 import하면 순환 참조가 된다.
 """
 
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy.orm import Session
 
@@ -76,7 +76,11 @@ def _get_detail_mission(
 
     다른 유형의 테이블은 조회하지 않는다. 같은 id의 다른 유형 미션이 있어도 404다.
     """
-    detail_mission = db.get(_DETAIL_MISSION_MODELS[mission_type], mission_id)
+    # 유형에 따라 조회할 모델이 달라져서 db.get() 의 반환 타입을 직접 좁혀 준다.
+    detail_mission = cast(
+        CultureMission | CooperativeMission | TreasureMission | None,
+        db.get(_DETAIL_MISSION_MODELS[mission_type], mission_id),
+    )
     if detail_mission is None:
         raise NotFoundError(
             MISSION_NOT_FOUND,

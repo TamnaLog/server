@@ -9,3 +9,4 @@ gunicorn==23.0.0
 httpx==0.28.1
 python-multipart==0.0.20
 azure-storage-blob==12.30.0
+pydantic==2.11.10

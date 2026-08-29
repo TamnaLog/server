@@ -52,7 +52,8 @@ def get_container_client() -> ContainerClient:
     except ResourceExistsError as error:
         # 스토리지 계정에서 익명 접근을 막아 두면 같은 409 로 PublicAccessNotPermitted 가 온다.
         # 이미 있는 경우가 아니면 삼키지 않고 그대로 올린다.
-        if error.error_code != CONTAINER_ALREADY_EXISTS:
+        # (`error_code` 는 SDK 타입 정의에 없어서 getattr 로 읽는다)
+        if getattr(error, "error_code", None) != CONTAINER_ALREADY_EXISTS:
             raise
     return container_client
 

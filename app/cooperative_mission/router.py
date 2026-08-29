@@ -1,8 +1,6 @@
 """협동 미션 도메인 라우터.
 
-API 명세: app/cooperative_mission/docs/API_SPEC.md
-
-아직 명세가 확정되지 않은 API는 요청/응답 스키마 연결을 TODO로 남겨둔다.
+API 명세: app/cooperative_mission/docs/API_SPEC.md, app/cooperative_mission/docs/API_SPEC_2.md
 """
 
 from typing import Annotated, Any
@@ -295,13 +293,6 @@ def save_cooperative_mission_progress(
         request=request,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.patch("/{mission_progress_id}/progress/stop", summary="협동 미션 중단")
-def stop_cooperative_mission(mission_progress_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
-    """PATCH /api/v1/cooperative-missions/{missionProgressId}/progress/stop - 협동 미션 중단."""
-    # TODO: 요청/응답 스키마 연결 (app/cooperative_mission/schemas.py)
-    return service.stop_cooperative_mission(mission_progress_id, db)
 
 
 @router.put(

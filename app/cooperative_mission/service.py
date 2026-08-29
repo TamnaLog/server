@@ -7,7 +7,7 @@
 import secrets
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, BinaryIO
+from typing import BinaryIO
 
 from sqlalchemy import case, func, select, update
 from sqlalchemy.exc import IntegrityError
@@ -1283,13 +1283,3 @@ def _hand_over_host(
         )
 
     next_host.participant_role = ParticipantRole.HOST.value
-
-
-# ---------------------------------------------------------------------
-# 미구현 API
-# ---------------------------------------------------------------------
-
-
-def stop_cooperative_mission(mission_progress_id: int, db: Session) -> dict[str, Any]:
-    """협동 미션 중단."""
-    raise NotImplementedError
