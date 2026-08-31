@@ -49,7 +49,7 @@ DB에서는 범위로 후보만 좁히고 실제 사각형 안인지 다시 판�
   `treasureMission` / `cooperativeMission` / `guestbooksCount` / `representativeImageUrl`)
 - **거리와 예상 시간**은 `app/common/distance.py`를 직접 호출한 값과 같아야 한다.
   사용자 좌표를 장소와 같게 주면 `distanceMeter`가 0이 되는 것으로 실제 반영을 확인한다.
-- 보물찾기와 협동 미션이 **둘 다 있는 장소**는 두 객체가 모두 채워진다.
+- 한 장소에는 미션이 **최대 하나**라 두 미션 필드 중 하나만 값이 있다.
   없는 유형은 필드를 생략하지 않고 `null`이다.
 - 방명록 개수는 **삭제된 방명록을 빼고**, **그 장소의 방명록만** 센다.
 - 길바닥 방명록은 `content_img_url`의 **첫 번째** URL을 대표 이미지로 쓴다.
@@ -82,9 +82,12 @@ DB에서는 범위로 후보만 좁히고 실제 사각형 안인지 다시 판�
   - **다른 장소의 방명록**
 - 한 장소에 두 유형의 미션이 있을 때 **다른 유형의 방명록이 섞이지 않는다.**
 
-### 5. `isClustered = true` (좌표만)
+### 5. `isClustered = true` (식별자 + 좌표 + 미션 식별 정보)
 
-- 장소와 길바닥 방명록 모두 `latitude` / `longitude` **두 키만** 있는지 확인한다.
+- 장소는 `id` / `latitude` / `longitude` / `missionId` / `missionType`,
+  길바닥 방명록은 `id` / `latitude` / `longitude` 만 있는지 확인한다.
+- `missionId`는 `LOCATION.id`가 아니라 **세부 미션 id**다. (둘이 다른 값인지 확인)
+- 미션이 없는 장소는 `missionId`와 `missionType`이 **둘 다** `null`이다.
 - **TourAPI를 한 번도 호출하지 않는다.** (스텁에 기록된 호출 목록이 비어 있어야 한다)
 - 반대로 `isClustered = false`에서는 **화면 안 장소 수만큼** 호출한다.
   (화면 밖 장소는 조회하지 않으므로 호출되지 않는다)

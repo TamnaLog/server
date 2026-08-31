@@ -4,6 +4,13 @@
 같은 정보를 쓰기 때문에 한 곳에 모아 둔다.
 
 장소마다 미션을 다시 조회하면 N+1 이 되므로 항상 장소 id 목록으로 한 번에 가져온다.
+
+조회는 두 가지다.
+
+- `find_treasure_missions()` / `find_cooperative_missions()`:
+  공통 `MISSION` 제목까지 필요한 상세 응답용
+- `find_location_mission_refs()`: 세부 미션 id 와 유형만 필요한 클러스터링 응답용
+  (공통 `MISSION` 을 조인하지 않는다)
 """
 
 from dataclasses import dataclass
@@ -14,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.cooperative_mission.models import CooperativeMission
 from app.mission.models import Mission
+from app.mission.schemas import MissionType
 from app.treasure_mission.models import TreasureMission
 
 
@@ -85,3 +93,41 @@ def _to_missions_by_location(
             ),
         )
     return missions
+
+
+@dataclass(frozen=True)
+class LocationMissionRef:
+    """장소에 연결된 세부 미션 식별 정보. (제목 없이 id 와 유형만)"""
+
+    # 공통 MISSION.id 가 아니라 유형별 세부 미션 테이블의 id
+    id: int
+    mission_type: MissionType
+
+
+def find_location_mission_refs(
+    db: Session, location_ids: list[int]
+) -> dict[int, LocationMissionRef]:
+    """장소 id → 세부 미션 id/유형을 한 번에 조회한다.
+
+    한 장소에는 보물찾기 **또는** 협동 미션이 최대 하나라는 전제라 값도 하나다.
+    데이터 이상으로 두 유형이 다 있으면 보물찾기를 먼저 쓴다.
+    (공통 `MISSION` 은 조인하지 않는다. 제목이 필요 없다)
+    """
+    if not location_ids:
+        return {}
+
+    refs: dict[int, LocationMissionRef] = {}
+    for mission_model, mission_type in (
+        (TreasureMission, MissionType.TREASURE),
+        (CooperativeMission, MissionType.COOPERATIVE),
+    ):
+        statement = (
+            select(mission_model.location_id, mission_model.id)
+            .where(mission_model.location_id.in_(location_ids))
+            .order_by(mission_model.id)
+        )
+        for location_id, mission_id in db.execute(statement).all():
+            refs.setdefault(
+                location_id, LocationMissionRef(id=mission_id, mission_type=mission_type)
+            )
+    return refs

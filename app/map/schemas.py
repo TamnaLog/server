@@ -53,13 +53,31 @@ class MapContentsQuery(CamelModel):
 
 
 class MapPointResponse(CamelModel):
-    """클러스터링 상태에서 내려주는 좌표.
-
-    클러스터 구성과 표시 개수 계산은 프론트가 하므로 좌표만 그대로 전달한다.
-    """
+    """지도에 찍을 좌표."""
 
     latitude: float
     longitude: float
+
+
+class ClusteredLocationResponse(MapPointResponse):
+    """클러스터링 상태에서 내려주는 장소.
+
+    클러스터 구성과 표시 개수 계산은 프론트가 하므로 식별자와 좌표만 준다.
+    다만 프론트가 마커 모양을 정할 수 있게 연결된 미션의 id/유형은 함께 준다.
+
+    `id` 는 `LOCATION.id`, `mission_id` 는 유형별 세부 미션 id 라 서로 다른 값이다.
+    한 장소에는 미션이 최대 하나라 두 필드는 항상 한 쌍으로 나가고, 없으면 둘 다 `null` 이다.
+    """
+
+    id: int
+    mission_id: int | None = None
+    mission_type: MissionType | None = None
+
+
+class ClusteredRoadGuestbookResponse(MapPointResponse):
+    """클러스터링 상태에서 내려주는 길바닥 방명록. 식별자와 좌표만 준다."""
+
+    id: int
 
 
 class MapMissionResponse(CamelModel):
@@ -78,9 +96,9 @@ class MapMissionResponse(CamelModel):
 class MapLocationResponse(MapPointResponse):
     """지도에 표시할 장소 상세 정보.
 
-    보물찾기/협동 미션은 한 장소에 유형별로 최대 하나씩만 있다고 본다.
+    한 장소에는 보물찾기 **또는** 협동 미션이 최대 하나만 있다고 본다.
+    그래서 두 미션 필드 중 많아야 하나만 값이 있고 나머지는 `null` 이다.
     문화 미션은 장소를 참조하지 않아 지도에 나오지 않는다.
-    거리와 시간은 두 미션이 같은 장소를 공유하므로 장소 레벨에 한 번만 둔다.
     """
 
     id: int
@@ -114,12 +132,12 @@ class MapContentsResponse(CamelModel):
 class ClusteredMapContentsResponse(CamelModel):
     """GET /api/v1/map/contents 정상 응답. (`isClustered = true`)
 
-    대량 전송을 줄이려고 좌표만 내려준다.
-    장소 id·미션·방명록 개수·이미지는 조회하지도, 응답에 넣지도 않는다.
+    대량 전송을 줄이려고 클러스터링에 필요한 값만 내려준다.
+    장소명·거리·미션 제목/완료 여부·방명록 개수·이미지는 조회하지도, 응답에 넣지도 않는다.
     """
 
-    locations: list[MapPointResponse]
-    road_guestbooks: list[MapPointResponse]
+    locations: list[ClusteredLocationResponse]
+    road_guestbooks: list[ClusteredRoadGuestbookResponse]
 
 
 # ---------------------------------------------------------------------
