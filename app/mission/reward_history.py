@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | `CULTURE` | `CULTURE_MISSION_PROGRESS` | `user_id` |
 | `TREASURE` | `TREASURE_MISSION_PROGRESS` | `user_id` |
-| `COOPERATIVE` | `COOPERATIVE_MISSION_PROGRESS` | `COOPERATIVE_MISSION_PARTICIPANT.user_id` |
+| `COOPERATIVE` | `COOPERATIVE_MISSION_PROGRESS` | `COOPERATIVE_MISSION_PARTICIPANT.user_id` (수락된 참가자만) |
 """
 
 from sqlalchemy import Select, select
@@ -20,6 +20,7 @@ from app.common.rewards import GrantedRewards
 from app.cooperative_mission.models import (
     CooperativeMissionParticipant,
     CooperativeMissionProgress,
+    ParticipantStatus,
 )
 from app.culture_mission.models import CultureMissionProgress
 from app.mission.schemas import MissionType
@@ -81,6 +82,8 @@ def _granted_flags_query(
             CooperativeMissionProgress.cooperative_mission_id == mission_id,
             CooperativeMissionProgress.deleted_at.is_(None),
             CooperativeMissionParticipant.user_id == current_user_id,
+            CooperativeMissionParticipant.participant_status
+            == ParticipantStatus.ACCEPTED.value,
             CooperativeMissionParticipant.deleted_at.is_(None),
         )
     )

@@ -404,6 +404,65 @@ duration_minutes = calculate_duration_minutes(distance_meter)
 | `distanceMeter` | 공통 거리 모듈의 계산 결과 |
 | `durationMinutes` | 공통 거리 모듈의 계산 결과 |
 
+### 장소 미션
+
+장소에는 보물찾기 미션 또는 협동 미션이 최대 한 건만 연결된다. 문화 미션은 장소를 직접 참조하지 않으므로 장소 모달의 미션 조회 대상에 포함하지 않는다.
+
+```text
+TREASURE_MISSION.location_id = LOCATION.id
+OR COOPERATIVE_MISSION.location_id = LOCATION.id
+```
+
+- 연결된 미션이 없으면 `mission = null`을 반환한다.
+- 연결된 미션이 있으면 배열이 아닌 단일 `mission` 객체를 반환한다.
+- 보물찾기 미션과 협동 미션이 같은 장소에 동시에 존재하지 않는 것을 데이터 무결성 규칙으로 전제한다.
+- 조회 결과를 임의로 여러 건 중 하나로 선택하여 정상 데이터처럼 반환하지 않는다.
+
+미션 객체는 다음 값으로 조합한다.
+
+| 응답 필드 | 데이터 출처 및 규칙 |
+| --- | --- |
+| `mission.missionId` | `TREASURE_MISSION.id` 또는 `COOPERATIVE_MISSION.id`. 공통 `MISSION.id`가 아니다. |
+| `mission.missionType` | 보물찾기이면 `TREASURE`, 협동이면 `COOPERATIVE` |
+| `mission.missionTitle` | 세부 미션의 `mission_id`로 연결된 `MISSION.mission_title` |
+| `mission.isCompleted` | 현재 사용자가 해당 미션을 한 번이라도 완료했는지 여부 |
+| `mission.rewardDetail` | 세부 미션의 `reward_detail`로 조합한 전체 보상과 현재 사용자의 보상별 수령 여부 |
+
+미션 제목과 유형을 얻기 위해 세부 미션의 `mission_id`로 `MISSION`을 조회한다. 연결된 공통 미션이 없거나 `MISSION.mission_type`이 세부 미션 유형과 일치하지 않으면 정상 미션으로 조합하지 않는다.
+
+#### 미션 완료 여부
+
+완료 여부는 보상 수령 여부와 분리하여 판단한다. `app/mission/completion.py`의 `is_mission_completed()`를 사용하며, 지도 모달 서비스에 유형별 완료 쿼리를 다시 구현하지 않는다.
+
+- 보물찾기는 현재 사용자의 해당 세부 미션 진행도 중 `mission_status = COMPLETED`인 행이 하나라도 있으면 `true`다.
+- 협동 미션은 현재 사용자가 삭제되지 않은 `ACCEPTED` 참가자로 연결된 삭제되지 않은 진행도 중 `mission_status = COMPLETED`인 행이 하나라도 있으면 `true`다.
+- 진행도가 없거나 `IN_PROGRESS` 진행도만 있으면 `false`다.
+- 여러 번 진행한 경우 가장 최근 진행도 하나가 아니라 모든 진행도 이력을 확인한다.
+
+#### 전체 보상과 수령 여부
+
+`rewardDetail`은 아직 받지 않은 보상만 반환하는 `remainingReward`가 아니다. 수령 여부와 관계없이 미션에 설정된 AR 캐릭터, 포인트, 쿠폰 세 종류의 정보를 모두 반환하고, 각 항목의 `isReceived`로 현재 사용자의 수령 여부를 구분한다.
+
+| 보상 항목 | 보상 정보 출처 | `isReceived` 판정 컬럼 |
+| --- | --- | --- |
+| AR 캐릭터 | `reward_detail.ar_character_id`로 조회한 `AR_CHARACTER`의 id, 이름, 이미지 URL | `ar_character_reward_granted` |
+| 포인트 | `reward_detail.point` | `point_reward_granted` |
+| 쿠폰 | `reward_detail.coupon_location`, `reward_detail.coupon_price` | `coupon_reward_granted` |
+
+보상 수령 여부는 현재 사용자의 해당 세부 미션에 대한 모든 진행도 이력을 대상으로 논리 OR로 계산한다.
+
+```text
+isReceived = 관련 진행도 중 해당 reward_granted 컬럼이 TRUE인 행이 하나라도 존재함
+```
+
+- 진행도 이력이 없으면 세 보상의 `isReceived`는 모두 `false`다.
+- 같은 미션을 여러 번 진행했더라도 어느 한 진행도에서 지급된 보상은 `true`다.
+- 보상 정보를 `null`로 바꾸거나 응답에서 제외하여 수령 여부를 표현하지 않는다.
+- `isCompleted`와 보상별 `isReceived`는 서로 독립적으로 계산한다.
+- 보상 정보 조합은 `app/common/rewards.py`, 지급 이력 집계는 `app/mission/reward_history.py`의 공통 로직을 재사용한다. 공통 로직이 지도 모달 응답 형태와 다르면 지도 전용 응답 스키마에서 전체 보상 정보와 `GrantedRewards`의 boolean을 결합한다.
+- 협동 미션 보상 이력은 현재 사용자가 해당 진행도에 삭제되지 않은 `ACCEPTED` 참가자로 연결된 경우만 포함한다.
+- 이 API는 조회 전용이다. 보상을 실제 지급하거나 사용자 포인트·캐릭터·쿠폰을 변경하지 않으며, 진행도의 보상 지급 여부 컬럼도 변경하지 않는다.
+
 ### 장소 방명록 개수
 
 다음 조건을 만족하는 방명록 전체 개수를 `guestbooksCount`로 반환한다.
@@ -477,14 +536,29 @@ GUESTBOOK.id DESC
 4. `targetType`에 따라 삭제되지 않은 조회 대상을 찾는다.
 5. 조회 대상이 없으면 `404 MAP_MODAL_TARGET_NOT_FOUND`를 반환한다.
 6. 사용자 좌표와 대상 좌표로 거리와 예상 이동 시간을 계산한다.
-7. `LOCATION`이면 삭제되지 않은 전체 방명록 개수와 최신 방명록 최대 3개를 조회한다.
-8. 장소 방명록의 작성자와 연결된 공통 미션 정보를 함께 조회하여 응답을 조합한다.
-9. `ROAD_GUESTBOOK`이면 작성자 정보와 저장된 콘텐츠를 조합한다.
-10. 대상 유형에 맞는 응답을 `200 OK`로 반환한다.
+7. `LOCATION`이면 장소에 연결된 보물찾기 또는 협동 미션을 조회한다.
+8. 연결된 미션이 있으면 공통 미션 정보, 현재 사용자의 완료 이력과 보상별 지급 이력을 조회하여 단일 `mission` 객체를 조합한다.
+9. `LOCATION`이면 삭제되지 않은 전체 방명록 개수와 최신 방명록 최대 3개를 조회한다.
+10. 장소 방명록의 작성자와 연결된 공통 미션 정보를 함께 조회하여 응답을 조합한다.
+11. `ROAD_GUESTBOOK`이면 작성자 정보와 저장된 콘텐츠를 조합한다.
+12. 대상 유형에 맞는 응답을 `200 OK`로 반환한다.
 
-장소의 최신 방명록을 조회할 때 작성자와 미션을 방명록마다 반복 조회하지 않도록 JOIN 또는 일괄 조회를 사용하여 N+1 문제를 방지한다. 이 API는 조회 전용이므로 DB 데이터를 생성하거나 변경하지 않는다.
+장소 미션의 세부 정보, 완료 이력과 보상 이력을 각각 진행도마다 반복 조회하지 않는다. 장소의 최신 방명록도 작성자와 미션을 방명록마다 반복 조회하지 않도록 JOIN 또는 일괄 조회를 사용하여 N+1 문제를 방지한다. 이 API는 조회 전용이므로 DB 데이터를 생성하거나 변경하지 않는다.
 
-## 7. 오류 처리
+## 7. 필수 테스트
+
+- 미션이 없는 장소는 `mission = null`로 반환한다.
+- 보물찾기 미션이 있는 장소는 세부 미션 ID와 `TREASURE` 유형을 단일 객체로 반환한다.
+- 협동 미션이 있는 장소는 세부 미션 ID와 `COOPERATIVE` 유형을 단일 객체로 반환한다.
+- 완료 이력이 없으면 `isCompleted = false`, 완료 이력이 하나라도 있으면 `true`다.
+- 진행도 이력이 없으면 보상 세 종류의 `isReceived`가 모두 `false`다.
+- 서로 다른 과거 진행도에서 각각 지급된 보상도 종류별 OR 결과에 따라 `true`가 된다.
+- 이미 수령한 보상도 상세 정보가 그대로 반환되고 `isReceived`만 `true`가 된다.
+- 협동 미션의 삭제된 참가자, `PENDING` 참가자와 삭제된 진행도는 현재 사용자의 완료·보상 이력에서 제외한다.
+- 모달 조회 전후로 사용자 보유 보상과 진행도 보상 지급 여부가 변경되지 않는다.
+- 미션이 없는 장소나 방명록이 없는 장소도 `404`가 아닌 정상 응답을 반환한다.
+
+## 8. 오류 처리
 
 ### 400 `INVALID_REQUEST`
 

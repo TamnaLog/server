@@ -161,10 +161,63 @@ class LocationModalGuestbookResponse(CamelModel):
     content_writing: str | None = None
 
 
+class MapModalArCharacterRewardResponse(CamelModel):
+    """AR 캐릭터 보상. 이미 받았어도 정보를 그대로 주고 `is_received` 로만 구분한다."""
+
+    id: int
+    name: str
+    image_url: str
+    is_received: bool
+
+
+class MapModalPointRewardResponse(CamelModel):
+    """포인트 보상."""
+
+    amount: int
+    is_received: bool
+
+
+class MapModalCouponRewardResponse(CamelModel):
+    """쿠폰 보상."""
+
+    coupon_location: str
+    coupon_price: int
+    is_received: bool
+
+
+class MapModalRewardDetailResponse(CamelModel):
+    """미션의 **전체** 보상 정보.
+
+    아직 안 받은 보상만 주는 `RemainingRewardResponse` 와 달리 수령 여부와 관계없이
+    세 종류를 모두 담고, 각 항목의 `is_received` 로 현재 사용자의 수령 여부를 구분한다.
+    미션에 설정되지 않은 보상 항목만 `null` 이다.
+    """
+
+    ar_character: MapModalArCharacterRewardResponse | None = None
+    point: MapModalPointRewardResponse | None = None
+    coupon: MapModalCouponRewardResponse | None = None
+
+
+class MapModalMissionResponse(CamelModel):
+    """장소에 연결된 미션.
+
+    `mission_id` 는 공통 `MISSION.id` 가 아니라 유형별 세부 미션 id 다.
+    장소를 갖는 미션은 보물찾기/협동뿐이라 유형도 둘 중 하나다.
+    `is_completed` 와 보상별 `is_received` 는 서로 독립적으로 계산한다.
+    """
+
+    mission_id: int
+    mission_type: MissionType
+    mission_title: str
+    is_completed: bool
+    reward_detail: MapModalRewardDetailResponse
+
+
 class LocationModalResponse(CamelModel):
     """`targetType = LOCATION` 모달 응답.
 
     `guestbooks_count` 는 아래 목록의 길이가 아니라 그 장소의 전체 방명록 개수다.
+    연결된 미션이 없으면 `mission` 은 `null` 이다.
     """
 
     id: int
@@ -172,6 +225,7 @@ class LocationModalResponse(CamelModel):
     location_category: str
     distance_meter: int
     duration_minutes: int
+    mission: MapModalMissionResponse | None = None
     guestbooks_count: int = 0
     guestbooks: list[LocationModalGuestbookResponse]
 
