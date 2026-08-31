@@ -35,12 +35,19 @@ COOPERATIVE_TYPE_ID = 2
 TREASURE_TITLE = "오구포구 보물찾기"
 COOPERATIVE_TITLE = "함께 키우는 귤나무"
 
-# 보물찾기 + 협동 미션이 모두 있는 장소
+# 보물찾기 미션이 있는 장소
+# (한 장소에는 보물찾기 "또는" 협동 미션이 최대 하나라 유형별로 장소를 나눈다)
 MISSION_LOCATION_ID = 101
 MISSION_LOCATION_TITLE = "현애원"
 MISSION_LATITUDE = 33.4582
 MISSION_LONGITUDE = 126.9331
 MISSION_CONTENT_ID = 126273
+
+# 협동 미션이 있는 장소
+COOPERATIVE_LOCATION_ID = 105
+COOPERATIVE_LATITUDE = 33.4700
+COOPERATIVE_LONGITUDE = 126.9500
+COOPERATIVE_CONTENT_ID = 555
 
 # 미션은 없고 방명록만 있는 장소
 GUESTBOOK_LOCATION_ID = 102
@@ -183,6 +190,13 @@ def map_data(db_session: Session, users: None) -> None:
             GUESTBOOK_LATITUDE,
             GUESTBOOK_LONGITUDE,
         ),
+        (
+            COOPERATIVE_LOCATION_ID,
+            COOPERATIVE_CONTENT_ID,
+            "협동 장소",
+            COOPERATIVE_LATITUDE,
+            COOPERATIVE_LONGITUDE,
+        ),
         (EMPTY_LOCATION_ID, EMPTY_CONTENT_ID, "빈 장소", EMPTY_LATITUDE, EMPTY_LONGITUDE),
         (OUTSIDE_LOCATION_ID, 777, "화면 밖", OUTSIDE_LATITUDE, OUTSIDE_LONGITUDE),
     ):
@@ -212,7 +226,7 @@ def map_data(db_session: Session, users: None) -> None:
             CooperativeMission(
                 id=COOPERATIVE_MISSION_ID,
                 mission_id=COOPERATIVE_TYPE_ID,
-                location_id=MISSION_LOCATION_ID,
+                location_id=COOPERATIVE_LOCATION_ID,
                 reward_detail={"point": 200},
             ),
             TreasureMission(
@@ -391,12 +405,8 @@ def test_화면_안의_장소를_상세_정보와_함께_반환한다(
             "isCompleted": False,
             "hasWrittenGuestbook": None,
         },
-        "cooperativeMission": {
-            "id": COOPERATIVE_MISSION_ID,
-            "missionTitle": COOPERATIVE_TITLE,
-            "isCompleted": False,
-            "hasWrittenGuestbook": None,
-        },
+        # 한 장소에는 미션이 최대 하나라 다른 유형은 null 이다.
+        "cooperativeMission": None,
         "guestbooksCount": 2,
         "representativeImageUrl": REPRESENTATIVE_IMAGE_URL,
     }
@@ -438,6 +448,50 @@ def test_미션이_없는_장소는_두_미션이_모두_null이다(
     assert location["representativeImageUrl"] is None
 
 
+def test_한_장소에_두_유형이_다_있으면_보물찾기만_반환한다(
+    client: TestClient, db_session: Session, map_data: None
+) -> None:
+    # 명세상 한 장소에는 미션이 최대 하나지만, 데이터가 어긋난 경우를 확인한다.
+    db_session.add(
+        CooperativeMission(
+            id=999,
+            mission_id=COOPERATIVE_TYPE_ID,
+            location_id=MISSION_LOCATION_ID,
+            reward_detail={"point": 200},
+        )
+    )
+    db_session.commit()
+
+    location = _location(_get(client), MISSION_LOCATION_ID)
+
+    assert location["treasureMission"]["id"] == TREASURE_MISSION_ID
+    assert location["cooperativeMission"] is None
+
+
+def test_클러스터링에서_두_유형이_다_있으면_보물찾기를_쓴다(
+    client: TestClient, db_session: Session, map_data: None
+) -> None:
+    db_session.add(
+        CooperativeMission(
+            id=999,
+            mission_id=COOPERATIVE_TYPE_ID,
+            location_id=MISSION_LOCATION_ID,
+            reward_detail={"point": 200},
+        )
+    )
+    db_session.commit()
+
+    body = _get(client, is_clustered=True)
+
+    mission_location = next(
+        location
+        for location in body["locations"]
+        if location["id"] == MISSION_LOCATION_ID
+    )
+    assert mission_location["missionId"] == TREASURE_MISSION_ID
+    assert mission_location["missionType"] == "TREASURE"
+
+
 def test_미션도_방명록도_없는_장소도_반환한다(
     client: TestClient, map_data: None
 ) -> None:
@@ -445,7 +499,12 @@ def test_미션도_방명록도_없는_장소도_반환한다(
 
     location_ids = sorted(location["id"] for location in _locations(body))
     assert location_ids == sorted(
-        [MISSION_LOCATION_ID, GUESTBOOK_LOCATION_ID, EMPTY_LOCATION_ID]
+        [
+            MISSION_LOCATION_ID,
+            GUESTBOOK_LOCATION_ID,
+            COOPERATIVE_LOCATION_ID,
+            EMPTY_LOCATION_ID,
+        ]
     )
 
     # 미션도 방명록도 없으면 미션은 null, 개수는 0 이다.
@@ -531,7 +590,7 @@ def test_협동_미션을_완료하면_isCompleted가_true다(
 ) -> None:
     _add_cooperative_progress(db_session)
 
-    cooperative = _location(_get(client), MISSION_LOCATION_ID)["cooperativeMission"]
+    cooperative = _location(_get(client), COOPERATIVE_LOCATION_ID)["cooperativeMission"]
 
     assert cooperative["isCompleted"] is True
     assert cooperative["hasWrittenGuestbook"] is False
@@ -558,7 +617,7 @@ def test_협동_미션_완료로_보지_않는_경우(
 ) -> None:
     _add_cooperative_progress(db_session, **kwargs)
 
-    cooperative = _location(_get(client), MISSION_LOCATION_ID)["cooperativeMission"]
+    cooperative = _location(_get(client), COOPERATIVE_LOCATION_ID)["cooperativeMission"]
 
     assert cooperative["isCompleted"] is False
     assert cooperative["hasWrittenGuestbook"] is None
@@ -578,8 +637,8 @@ def test_완료한_미션의_방명록을_쓰면_hasWrittenGuestbook이_true다(
     location = _location(_get(client), MISSION_LOCATION_ID)
 
     assert location["treasureMission"]["hasWrittenGuestbook"] is True
-    # 같은 장소의 협동 미션은 완료도 안 했으므로 null 이다.
-    assert location["cooperativeMission"]["hasWrittenGuestbook"] is None
+    # 이 장소에는 협동 미션이 없다.
+    assert location["cooperativeMission"] is None
 
 
 def test_다른_유형_미션의_방명록은_반영하지_않는다(
@@ -587,13 +646,22 @@ def test_다른_유형_미션의_방명록은_반영하지_않는다(
 ) -> None:
     _add_treasure_progress(db_session)
     _add_cooperative_progress(db_session)
-    # 협동 미션 방명록만 썼다.
+    # 보물찾기 장소에 "협동 미션"을 참조하는 방명록을 쓴다. (유형이 어긋난 방명록)
     _add_guestbook(db_session, guestbook_id=1, mission_id=COOPERATIVE_TYPE_ID)
+    # 협동 장소에는 협동 미션 방명록을 제대로 쓴다.
+    _add_guestbook(
+        db_session,
+        guestbook_id=2,
+        location_id=COOPERATIVE_LOCATION_ID,
+        mission_id=COOPERATIVE_TYPE_ID,
+    )
 
-    location = _location(_get(client), MISSION_LOCATION_ID)
+    body = _get(client)
 
-    assert location["treasureMission"]["hasWrittenGuestbook"] is False
-    assert location["cooperativeMission"]["hasWrittenGuestbook"] is True
+    treasure = _location(body, MISSION_LOCATION_ID)["treasureMission"]
+    cooperative = _location(body, COOPERATIVE_LOCATION_ID)["cooperativeMission"]
+    assert treasure["hasWrittenGuestbook"] is False
+    assert cooperative["hasWrittenGuestbook"] is True
 
 
 @pytest.mark.parametrize(
@@ -718,7 +786,7 @@ def test_TourAPI_이미지를_조회하지_못하면_null로_두고_실패시키
 # ---------------------------------------------------------------------
 
 
-def test_클러스터링이면_좌표만_반환한다(
+def test_클러스터링이면_식별자와_좌표와_미션_정보만_반환한다(
     client: TestClient, db_session: Session, map_data: None
 ) -> None:
     _add_treasure_progress(db_session)
@@ -726,14 +794,70 @@ def test_클러스터링이면_좌표만_반환한다(
 
     body = _get(client, is_clustered=True)
 
-    assert sorted(body["locations"], key=lambda point: point["latitude"]) == [
-        {"latitude": MISSION_LATITUDE, "longitude": MISSION_LONGITUDE},
-        {"latitude": GUESTBOOK_LATITUDE, "longitude": GUESTBOOK_LONGITUDE},
-        {"latitude": EMPTY_LATITUDE, "longitude": EMPTY_LONGITUDE},
+    assert sorted(body["locations"], key=lambda location: location["id"]) == [
+        {
+            "id": MISSION_LOCATION_ID,
+            "latitude": MISSION_LATITUDE,
+            "longitude": MISSION_LONGITUDE,
+            "missionId": TREASURE_MISSION_ID,
+            "missionType": "TREASURE",
+        },
+        {
+            "id": GUESTBOOK_LOCATION_ID,
+            "latitude": GUESTBOOK_LATITUDE,
+            "longitude": GUESTBOOK_LONGITUDE,
+            "missionId": None,
+            "missionType": None,
+        },
+        {
+            "id": EMPTY_LOCATION_ID,
+            "latitude": EMPTY_LATITUDE,
+            "longitude": EMPTY_LONGITUDE,
+            "missionId": None,
+            "missionType": None,
+        },
+        {
+            "id": COOPERATIVE_LOCATION_ID,
+            "latitude": COOPERATIVE_LATITUDE,
+            "longitude": COOPERATIVE_LONGITUDE,
+            "missionId": COOPERATIVE_MISSION_ID,
+            "missionType": "COOPERATIVE",
+        },
     ]
+    # 길바닥 방명록은 별칭·이미지 없이 식별자와 좌표만 준다.
     assert body["roadGuestbooks"] == [
-        {"latitude": MISSION_LATITUDE, "longitude": MISSION_LONGITUDE}
+        {
+            "id": ROAD_GUESTBOOK_ID,
+            "latitude": MISSION_LATITUDE,
+            "longitude": MISSION_LONGITUDE,
+        }
     ]
+
+
+def test_클러스터링의_미션_id는_LOCATION_id가_아니라_세부_미션_id다(
+    client: TestClient, map_data: None
+) -> None:
+    body = _get(client, is_clustered=True)
+
+    treasure = next(
+        location
+        for location in body["locations"]
+        if location["id"] == MISSION_LOCATION_ID
+    )
+    assert treasure["missionId"] == TREASURE_MISSION_ID
+    assert treasure["missionId"] != treasure["id"]
+
+
+def test_클러스터링에서_미션이_없는_장소는_두_필드가_모두_null이다(
+    client: TestClient, map_data: None
+) -> None:
+    body = _get(client, is_clustered=True)
+
+    empty = next(
+        location for location in body["locations"] if location["id"] == EMPTY_LOCATION_ID
+    )
+    assert empty["missionId"] is None
+    assert empty["missionType"] is None
 
 
 def test_클러스터링에서도_미션도_방명록도_없는_장소를_반환한다(
@@ -757,9 +881,14 @@ def test_클러스터링이_아니면_장소마다_TourAPI를_호출한다(
 ) -> None:
     _get(client)
 
-    # 화면 안 장소 3곳을 조회한다. (화면 밖 장소는 조회하지 않는다)
+    # 화면 안 장소 4곳을 조회한다. (화면 밖 장소는 조회하지 않는다)
     assert sorted(stub_location_image) == sorted(
-        [MISSION_CONTENT_ID, GUESTBOOK_CONTENT_ID, EMPTY_CONTENT_ID]
+        [
+            MISSION_CONTENT_ID,
+            GUESTBOOK_CONTENT_ID,
+            COOPERATIVE_CONTENT_ID,
+            EMPTY_CONTENT_ID,
+        ]
     )
 
 

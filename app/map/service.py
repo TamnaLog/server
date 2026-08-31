@@ -19,7 +19,9 @@ from app.map import (
 from app.map.location_missions import LocationMission
 from app.map.models import Location
 from app.map.schemas import (
+    ClusteredLocationResponse,
     ClusteredMapContentsResponse,
+    ClusteredRoadGuestbookResponse,
     LocationDetailResponse,
     LocationGuestbookResponse,
     LocationMissionResponse,
@@ -31,7 +33,6 @@ from app.map.schemas import (
     MapMissionResponse,
     MapModalQuery,
     MapModalTargetType,
-    MapPointResponse,
     MapRoadGuestbookResponse,
     MapSearchQuery,
     MapSearchResponse,
@@ -50,22 +51,16 @@ def get_map_contents(
 ) -> MapContentsResponse | ClusteredMapContentsResponse:
     """지도 홈 조회.
 
-    지도 화면 안에서 미션이나 방명록이 있는 장소와 길바닥 방명록을 내려준다.
-    클러스터링 상태(`isClustered = true`)에서는 좌표만 내려주고
-    거리 계산·미션 완료 여부·방명록 집계·TourAPI 이미지 조회는 아예 하지 않는다.
+    지도 화면 안의 장소와 길바닥 방명록을 내려준다.
+    클러스터링 상태(`isClustered = true`)에서는 식별자·좌표와 장소의 미션 id/유형만 주고
+    거리 계산·미션 제목/완료 여부·방명록 집계·TourAPI 이미지 조회는 아예 하지 않는다.
     """
     viewport = _to_viewport(query)
     locations = _find_locations_in_viewport(db, viewport)
     road_guestbooks = _find_road_guestbooks_in_viewport(db, viewport)
 
     if query.is_clustered:
-        return ClusteredMapContentsResponse(
-            locations=[_to_point(location.my, location.mx) for location in locations],
-            road_guestbooks=[
-                _to_point(road_guestbook.my, road_guestbook.mx)
-                for road_guestbook in road_guestbooks
-            ],
-        )
+        return _to_clustered_response(db, locations, road_guestbooks)
 
     return MapContentsResponse(
         locations=_to_location_responses(db, current_user_id, locations, query),
@@ -126,8 +121,44 @@ def _find_road_guestbooks_in_viewport(
     ]
 
 
-def _to_point(latitude: float, longitude: float) -> MapPointResponse:
-    return MapPointResponse(latitude=latitude, longitude=longitude)
+def _to_clustered_response(
+    db: Session, locations: list[Location], road_guestbooks: list[RoadGuestbook]
+) -> ClusteredMapContentsResponse:
+    """클러스터링 응답을 만든다.
+
+    프론트가 마커 모양을 정할 수 있게 장소의 미션 id/유형까지만 함께 준다.
+    공통 `MISSION` 제목, 사용자 진행도, 방명록, TourAPI 는 조회하지 않는다.
+    """
+    mission_refs = location_missions.find_location_mission_refs(
+        db, [location.id for location in locations]
+    )
+    return ClusteredMapContentsResponse(
+        locations=[
+            _to_clustered_location(location, mission_refs.get(location.id))
+            for location in locations
+        ],
+        road_guestbooks=[
+            ClusteredRoadGuestbookResponse(
+                id=road_guestbook.id,
+                latitude=road_guestbook.my,
+                longitude=road_guestbook.mx,
+            )
+            for road_guestbook in road_guestbooks
+        ],
+    )
+
+
+def _to_clustered_location(
+    location: Location, mission_ref: location_missions.LocationMissionRef | None
+) -> ClusteredLocationResponse:
+    """미션이 없는 장소는 `mission_id` 와 `mission_type` 을 함께 비운다."""
+    return ClusteredLocationResponse(
+        id=location.id,
+        latitude=location.my,
+        longitude=location.mx,
+        mission_id=mission_ref.id if mission_ref else None,
+        mission_type=mission_ref.mission_type if mission_ref else None,
+    )
 
 
 def _to_location_responses(
@@ -138,6 +169,7 @@ def _to_location_responses(
 ) -> list[MapLocationResponse]:
     """장소 상세 응답을 만든다.
 
+    한 장소에는 보물찾기 또는 협동 미션이 최대 하나라, 두 미션 필드 중 하나만 값이 있다.
     미션·완료 이력·방명록은 장소마다 다시 조회하지 않고 한 번에 가져와 맞춘다. (N+1 방지)
     """
     location_ids = [location.id for location in locations]
@@ -167,17 +199,23 @@ def _to_location_responses(
                 longitude=location.mx,
                 distance_meter=distance_meter,
                 duration_minutes=distance.calculate_duration_minutes(distance_meter),
+                # 한 장소에는 미션이 최대 하나라 둘 중 하나만 값이 있다.
                 treasure_mission=_to_mission_response(
                     location_id=location.id,
                     mission=treasure_missions.get(location.id),
                     completed_mission_ids=completed_treasure_ids,
                     written_guestbooks=written_guestbooks,
                 ),
-                cooperative_mission=_to_mission_response(
-                    location_id=location.id,
-                    mission=cooperative_missions.get(location.id),
-                    completed_mission_ids=completed_cooperative_ids,
-                    written_guestbooks=written_guestbooks,
+                cooperative_mission=(
+                    _to_mission_response(
+                        location_id=location.id,
+                        mission=cooperative_missions.get(location.id),
+                        completed_mission_ids=completed_cooperative_ids,
+                        written_guestbooks=written_guestbooks,
+                    )
+                    # 데이터 이상으로 두 유형이 다 있으면 보물찾기를 쓰고 이쪽은 비운다.
+                    if location.id not in treasure_missions
+                    else None
                 ),
                 guestbooks_count=guestbook_counts.get(location.id, 0),
                 # 이미지 조회에 실패해도 지도 조회 전체를 실패시키지 않고 null 로 둔다.

@@ -239,18 +239,29 @@ ROAD_GUESTBOOK.deleted_at IS NULL
 
 ## 9. `isClustered = true` 응답
 
-클러스터링 상태에서는 대량 데이터 전송을 줄이기 위해 장소와 길바닥 방명록의 좌표만 반환한다.
+클러스터링 상태에서는 대량 데이터 전송을 줄이기 위해 장소와 길바닥 방명록의 식별자와 좌표만 반환한다. 장소에는 프론트가 보물찾기와 협동 미션을 구분할 수 있도록 연결된 세부 미션의 ID와 유형도 함께 반환한다.
 
 ```json
 {
   "locations": [
     {
+      "id": 101,
       "latitude": 33.4582,
-      "longitude": 126.9331
+      "longitude": 126.9331,
+      "missionId": 301,
+      "missionType": "TREASURE"
+    },
+    {
+      "id": 102,
+      "latitude": 33.4561,
+      "longitude": 126.9295,
+      "missionId": null,
+      "missionType": null
     }
   ],
   "roadGuestbooks": [
     {
+      "id": 131,
       "latitude": 33.4582,
       "longitude": 126.9331
     }
@@ -258,24 +269,39 @@ ROAD_GUESTBOOK.deleted_at IS NULL
 }
 ```
 
+각 필드는 다음 기준으로 구성한다.
+
+| 응답 필드 | 데이터 출처 및 규칙 |
+| --- | --- |
+| `locations[].id` | `LOCATION.id` |
+| `locations[].latitude` | `LOCATION.my` |
+| `locations[].longitude` | `LOCATION.mx` |
+| `locations[].missionId` | 보물찾기이면 `TREASURE_MISSION.id`, 협동 미션이면 `COOPERATIVE_MISSION.id`, 연결된 미션이 없으면 `null` |
+| `locations[].missionType` | 보물찾기이면 `TREASURE`, 협동 미션이면 `COOPERATIVE`, 연결된 미션이 없으면 `null` |
+| `roadGuestbooks[].id` | `ROAD_GUESTBOOK.id` |
+| `roadGuestbooks[].latitude` | `ROAD_GUESTBOOK.my` |
+| `roadGuestbooks[].longitude` | `ROAD_GUESTBOOK.mx` |
+
+하나의 `LOCATION`에는 보물찾기 또는 협동 미션이 최대 하나만 존재한다고 전제한다. `missionId`와 `missionType`은 항상 한 쌍으로 반환하며, 미션이 없는 장소에서는 두 필드를 모두 `null`로 반환한다. `locations[].id`는 LOCATION ID이고 `locations[].missionId`는 유형별 세부 미션 ID이므로 서로 다른 값이다.
+
 다음 정보는 조회하거나 응답에 포함하지 않는다.
 
-- 장소 id와 장소명
+- 장소명
 - 사용자와 장소 사이의 거리 및 예상 이동 시간
-- 미션 정보, 완료 여부와 미션 방명록 작성 여부
+- 공통 미션 정보와 제목, 완료 여부 및 미션 방명록 작성 여부
 - 장소 방명록 개수
 - TourAPI 대표 이미지
-- 길바닥 방명록 id와 위치 별칭
+- 길바닥 방명록 위치 별칭
 - 길바닥 방명록 대표 이미지
 
-`isClustered = true`일 때는 거리·시간 계산, 미션 및 진행도 조회, 미션 방명록 작성 여부 조회, 방명록 개수 집계와 TourAPI 이미지 조회를 생략한다. 백엔드는 좌표를 클러스터 단위로 합치거나 개수를 계산하지 않고 원본 좌표 목록만 반환하며, 실제 클러스터 구성과 표시 개수 계산은 프론트가 담당한다.
+`isClustered = true`일 때는 각 LOCATION에 연결된 보물찾기 또는 협동 미션의 세부 ID와 유형만 일괄 조회한다. 공통 `MISSION` 정보, 사용자 진행도, 미션 방명록 작성 여부는 조회하지 않는다. 거리·시간 계산, 방명록 개수 집계와 TourAPI 이미지 조회도 생략한다. 백엔드는 데이터를 클러스터 단위로 합치거나 개수를 계산하지 않고 식별자와 원본 좌표 목록을 반환하며, 실제 클러스터 구성과 표시 개수 계산은 프론트가 담당한다.
 
 ## 10. 처리 순서
 
 1. Query 필드의 누락 여부, 타입과 지도 꼭짓점 및 사용자 좌표 범위를 검증한다.
 2. 네 꼭짓점 좌표로 지도 조회 영역을 구성한다.
 3. 조회 영역 안의 `LOCATION`과 삭제되지 않은 `ROAD_GUESTBOOK`을 조회한다.
-4. `isClustered = true`이면 두 목록을 좌표 응답으로 변환하여 즉시 반환한다.
+4. `isClustered = true`이면 장소별 보물찾기 또는 협동 미션의 세부 ID와 유형만 일괄 조회하고, 두 목록을 ID·좌표·미션 식별 정보 응답으로 변환하여 즉시 반환한다.
 5. `isClustered = false`이면 각 장소까지의 `distanceMeter`와 `durationMinutes`를 공통 모듈로 계산한다.
 6. 각 장소의 보물찾기 미션과 협동 미션을 조회하고 공통 `MISSION`에서 제목을 가져온다.
 7. 현재 사용자의 유형별 미션 완료 여부를 일괄 조회한다.

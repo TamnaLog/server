@@ -11,11 +11,11 @@
 
 백엔드는 전달받은 네 꼭짓점 좌표로 지도 화면의 조회 영역을 계산하고, 그 영역 안에 포함되는 장소, 길바닥 방명록을 반환한다.
 
-장소는 조회 영역 안의 내부 LOCATION 데이터를 `locations`로 반환한다. 미션이나 방명록이 없는 장소도 걸러내지 않고 함께 반환하며, 이 경우 `treasureMission`과 `cooperativeMission`은 `null`, `guestbooksCount`는 `0`이 된다. 각 LOCATION에는 보물찾기 미션과 협동 미션이 유형별로 최대 하나씩 존재한다고 전제한다.
+장소는 조회 영역 안의 내부 LOCATION 데이터를 `locations`로 반환한다. 미션이나 방명록이 없는 장소도 걸러내지 않고 함께 반환하며, 이 경우 `treasureMission`과 `cooperativeMission`은 `null`, `guestbooksCount`는 `0`이 된다. 하나의 LOCATION에는 보물찾기 또는 협동 미션이 최대 하나만 존재한다고 전제한다.
 
 특정 LOCATION에 속하지 않고 사용자가 작성한 위치에 표시되는 길바닥 방명록은 `roadGuestbooks`로 반환한다.
 
-`isClustered=true`인 경우에는 지도에서 항목 클릭이 불가능한 상태이므로 id와 상세 정보 없이 좌표만 반환한다.
+`isClustered=true`인 경우에는 클러스터링에 필요한 LOCATION 또는 길바닥 방명록 ID와 좌표를 반환하고, LOCATION에는 연결된 세부 미션의 `missionId`와 보물찾기인지 협동 미션인지 구분하는 `missionType`을 함께 반환한다.
 
 `isClustered=false`인 경우에는 지도에서 항목 클릭 또는 모달 조회가 가능하도록 필요한 상세 정보를 반환한다.
 
@@ -35,7 +35,7 @@
 | number | `rightBottomLongitude` | 필수 | 지도 화면 우하단 경도 |
 | number | `userLatitude` | 필수 | 현재 사용자 위치의 위도. 장소까지의 거리와 예상 이동 시간 계산에 사용 |
 | number | `userLongitude` | 필수 | 현재 사용자 위치의 경도. 장소까지의 거리와 예상 이동 시간 계산에 사용 |
-| boolean | `isClustered` | 필수 | 클러스터링 여부. `true`이면 좌표만, `false`이면 상세 정보를 반환 |
+| boolean | `isClustered` | 필수 | 클러스터링 여부. `true`이면 ID·좌표·장소 미션 ID·유형만, `false`이면 상세 정보를 반환 |
 
 **요청 예시**
 
@@ -75,24 +75,24 @@ Status Code : `200 OK`
 | number | `locations[].longitude` | 장소 경도 |
 | integer | `locations[].distanceMeter` | 현재 사용자 위치에서 장소까지의 직선거리(m) |
 | integer | `locations[].durationMinutes` | 현재 사용자 위치에서 장소까지의 예상 이동 시간(분) |
-| object | null | `locations[].treasureMission` | 해당 장소의 보물찾기 미션 정보. 보물찾기 미션이 없으면 `null` |
+| object | null | `locations[].treasureMission` | 해당 장소의 보물찾기 미션 정보. 없으면 null |
 | integer | `locations[].treasureMission.id` | 보물찾기 미션 ID. `TREASURE_MISSION.id` |
 | string | `locations[].treasureMission.missionTitle` | 보물찾기 미션 제목 |
 | boolean | `locations[].treasureMission.isCompleted` | 현재 사용자의 보물찾기 미션 완료 여부 |
-| boolean | null | `locations[].treasureMission.hasWrittenGuestbook` | 현재 사용자가 완료한 해당 미션을 참조하는 방명록을 작성했는지 여부. 미션 미완료이면 `null` |
-| object | null | `locations[].cooperativeMission` | 해당 장소의 협동 미션 정보. 협동 미션이 없으면 `null` |
+| boolean | null | `locations[].treasureMission.hasWrittenGuestbook` | 완료한 미션을 참조하는 방명록 작성 여부. 미션 미완료이면 null |
+| object | null | `locations[].cooperativeMission` | 해당 장소의 협동 미션 정보. 없으면 null |
 | integer | `locations[].cooperativeMission.id` | 협동 미션 ID. `COOPERATIVE_MISSION.id` |
 | string | `locations[].cooperativeMission.missionTitle` | 협동 미션 제목 |
 | boolean | `locations[].cooperativeMission.isCompleted` | 현재 사용자의 협동 미션 완료 여부 |
-| boolean | null | `locations[].cooperativeMission.hasWrittenGuestbook` | 현재 사용자가 완료한 해당 미션을 참조하는 방명록을 작성했는지 여부. 미션 미완료이면 `null` |
+| boolean | null | `locations[].cooperativeMission.hasWrittenGuestbook` | 완료한 미션을 참조하는 방명록 작성 여부. 미션 미완료이면 null |
 | integer | `locations[].guestbooksCount` | 해당 장소에 존재하는 방명록 개수. 없으면 0 |
-| string | null | `locations[].representativeImageUrl` | 대표 방명록 이미지 URL. 이미지가 없으면 null |
+| string | null | `locations[].representativeImageUrl` | TourAPI 장소 대표 이미지 URL. 이미지가 없으면 null |
 | array | `roadGuestbooks` | 특정 LOCATION에 속하지 않고 작성 위치에 표시되는 길바닥 방명록 목록 |
 | integer | `roadGuestbooks[].id` | 길바닥 방명록 ID |
 | number | `roadGuestbooks[].latitude` | 길바닥 방명록 위도 |
 | number | `roadGuestbooks[].longitude` | 길바닥 방명록 경도 |
 | string | `roadGuestbooks[].locationAlias` | 길바닥 방명록에 표시할 위치 별칭 |
-| string | null | `roadGuestbooks[].representativeGuestbookImageUrl` | 대표 방명록 이미지 URL. 이미지가 없으면 null |
+| string | null | `roadGuestbooks[].representativeGuestbookImageUrl` | 길바닥 방명록 이미지 배열의 첫 번째 URL. 이미지가 없으면 null |
 
 ```json
 {
@@ -112,7 +112,7 @@ Status Code : `200 OK`
       },
       "cooperativeMission": null,
       "guestbooksCount": 2,
-      "representativeImageUrl": "https://example.com/guestbooks/45/1.jpg"
+      "representativeImageUrl": "<https://example.com/guestbooks/45/1.jpg>"
     }
   ],
   "roadGuestbooks": [
@@ -121,15 +121,16 @@ Status Code : `200 OK`
       "latitude": 33.4582,
       "longitude": 126.9331,
       "locationAlias": "성산 바다 앞",
-      "representativeGuestbookImageUrl": "https://example.com/guestbooks/45/1.jpg"
+      "representativeGuestbookImageUrl": "<https://example.com/guestbooks/45/1.jpg>"
     }
   ]
 }
 ```
 
-- 각 LOCATION에는 보물찾기 미션과 협동 미션이 유형별로 최대 하나씩 존재한다고 전제한다.
-- 해당 유형의 미션이 없으면 `treasureMission` 또는 `cooperativeMission`을 `null`로 반환한다.
-- 한 장소에 보물찾기 미션과 협동 미션이 모두 존재하면 두 미션 객체를 모두 반환한다.
+- 하나의 LOCATION에는 보물찾기 또는 협동 미션이 최대 하나만 존재한다고 전제한다.
+- 보물찾기 미션이 존재하면 `treasureMission`만 객체로 반환하고 `cooperativeMission`은 null로 반환한다.
+- 협동 미션이 존재하면 `cooperativeMission`만 객체로 반환하고 `treasureMission`은 null로 반환한다.
+- 미션이 없으면 두 필드를 모두 null로 반환한다.
 - `isCompleted`는 Bearer 토큰으로 식별한 현재 사용자의 완료 이력을 기준으로 판단한다.
 - `hasWrittenGuestbook`은 미션을 완료한 경우에만 현재 사용자가 해당 장소와 미션을 참조하여 작성한 삭제되지 않은 방명록이 있는지 확인한다. 미션을 완료하지 않았다면 `null`을 반환한다.
 - `distanceMeter`와 `durationMinutes`는 공통 거리 모듈을 사용해 사용자 위치와 장소 좌표로 계산한다.
@@ -141,10 +142,14 @@ Status Code : `200 OK`
 
 | 자료형 | 변수명 | 설명 |
 | --- | --- | --- |
-| array | `locations` | 조회 영역 안의 LOCATION 좌표 목록. 미션과 방명록이 없는 장소도 포함 |
+| array | `locations` | 조회 영역 안의 LOCATION 클러스터링 목록. 미션과 방명록이 없는 장소도 포함 |
+| integer | `locations[].id` | LOCATION ID. 미션 ID가 아님 |
 | number | `locations[].latitude` | 장소 위도 |
 | number | `locations[].longitude` | 장소 경도 |
-| array | `roadGuestbooks` | 조회 영역 안의 길바닥 방명록 좌표 목록 |
+| integer | null | `locations[].missionId` | 장소에 연결된 세부 미션 ID. `TREASURE_MISSION.id` 또는 `COOPERATIVE_MISSION.id`. 미션이 없으면 null |
+| string | null | `locations[].missionType` | 장소에 연결된 미션 유형. `TREASURE | COOPERATIVE`. 미션이 없으면 null |
+| array | `roadGuestbooks` | 조회 영역 안의 길바닥 방명록 클러스터링 목록 |
+| integer | `roadGuestbooks[].id` | 길바닥 방명록 ID |
 | number | `roadGuestbooks[].latitude` | 길바닥 방명록 위도 |
 | number | `roadGuestbooks[].longitude` | 길바닥 방명록 경도 |
 
@@ -152,12 +157,30 @@ Status Code : `200 OK`
 {
   "locations": [
     {
+      "id": 101,
       "latitude": 33.4582,
-      "longitude": 126.9331
+      "longitude": 126.9331,
+      "missionId": 301,
+      "missionType": "TREASURE"
+    },
+    {
+      "id": 102,
+      "latitude": 33.4561,
+      "longitude": 126.9295,
+      "missionId": 401,
+      "missionType": "COOPERATIVE"
+    },
+    {
+      "id": 103,
+      "latitude": 33.4518,
+      "longitude": 126.9252,
+      "missionId": null,
+      "missionType": null
     }
   ],
   "roadGuestbooks": [
     {
+      "id": 131,
       "latitude": 33.4582,
       "longitude": 126.9331
     }
@@ -165,8 +188,13 @@ Status Code : `200 OK`
 }
 ```
 
-- 일정 줌 아웃 상태 이상에서는 좌표만 반환한다.
-- `isClustered=true`에서는 id, 장소 이름, 거리·예상 시간, 미션 정보 및 방명록 상세 정보를 반환하지 않는다.
+- 일정 줌 아웃 상태 이상에서는 클러스터링에 필요한 ID, 좌표와 장소의 미션 ID·유형만 반환한다.
+- `locations[].id`는 LOCATION ID이다.
+- `locations[].missionId`는 `missionType`에 대응하는 세부 미션 ID이다. `TREASURE`이면 `TREASURE_MISSION.id`, `COOPERATIVE`이면 `COOPERATIVE_MISSION.id`를 반환한다.
+- 하나의 LOCATION에는 보물찾기 또는 협동 미션이 최대 하나만 존재한다고 전제한다.
+- 장소에 보물찾기 미션이 있으면 `missionId`와 `missionType = TREASURE`, 협동 미션이 있으면 `missionId`와 `missionType = COOPERATIVE`를 반환한다. 미션이 없으면 두 필드를 모두 `null`로 반환한다.
+- `roadGuestbooks[].id`는 길바닥 방명록 ID이다.
+- `isClustered=true`에서는 장소 이름, 거리·예상 시간, 미션 상세 정보, 방명록 수, 이미지 및 길바닥 방명록 상세 정보를 반환하지 않는다.
 
 ---
 
