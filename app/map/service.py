@@ -16,6 +16,7 @@ from app.guestbook.models import Guestbook, RoadGuestbook
 from app.map import (
     location_missions,
     mission_completion,
+    mission_detail,
     mission_recommender,
     search_classifier,
 )
@@ -25,6 +26,7 @@ from app.map.schemas import (
     ClusteredLocationResponse,
     ClusteredMapContentsResponse,
     ClusteredRoadGuestbookResponse,
+    LocationDetailQuery,
     LocationDetailResponse,
     LocationGuestbookResponse,
     LocationMissionResponse,
@@ -34,13 +36,10 @@ from app.map.schemas import (
     MapContentsResponse,
     MapLocationResponse,
     MapMissionResponse,
-    MapModalArCharacterRewardResponse,
-    MapModalCouponRewardResponse,
     MapModalMissionResponse,
-    MapModalPointRewardResponse,
     MapModalQuery,
-    MapModalRewardDetailResponse,
     MapModalTargetType,
+    NearbyMissionResponse,
     MapRoadGuestbookResponse,
     MapSearchQuery,
     MapSearchResponse,
@@ -51,7 +50,11 @@ from app.mission import reward_history
 from app.mission.completion import is_mission_completed
 from app.mission.models import Mission
 from app.mission.schemas import MissionType
-from app.services.kto import get_location_image_url, get_location_overview
+from app.services.kto import (
+    get_location_detail_image_urls,
+    get_location_image_url,
+    get_location_overview,
+)
 from app.treasure_mission.models import TreasureMission
 from app.user.models import User
 
@@ -374,93 +377,20 @@ def _to_location_modal(
 def _find_modal_mission(
     db: Session, current_user_id: int, location_id: int
 ) -> MapModalMissionResponse | None:
-    """장소 모달에 넣을 미션 하나를 조합한다. 연결된 미션이 없으면 `None`.
+    """장소 모달에 넣을 미션. 연결된 미션이 없으면 `None`.
 
-    한 장소에 두 유형이 함께 연결된 상태는 데이터 무결성 문제라, 임의로 하나를 고르지 않고
-    예외를 올려 500 으로 드러낸다.
+    조합 규칙은 장소 상세와 같고, 모달 응답에는 미션 설명이 없는 것만 다르다.
     """
-    found = {
-        MissionType.TREASURE: location_missions.find_treasure_missions(
-            db, [location_id]
-        ).get(location_id),
-        MissionType.COOPERATIVE: location_missions.find_cooperative_missions(
-            db, [location_id]
-        ).get(location_id),
-    }
-    matched = [
-        (mission_type, location_mission)
-        for mission_type, location_mission in found.items()
-        if location_mission is not None
-    ]
-    if not matched:
-        return None
-    if len(matched) > 1:
-        raise RuntimeError(f"장소 {location_id} 에 미션이 여러 유형으로 연결돼 있습니다.")
-
-    mission_type, location_mission = matched[0]
-    mission = db.get(Mission, location_mission.mission_id)
-    detail_mission: TreasureMission | CooperativeMission | None = (
-        db.get(TreasureMission, location_mission.id)
-        if mission_type is MissionType.TREASURE
-        else db.get(CooperativeMission, location_mission.id)
-    )
-    if mission is None or detail_mission is None:
-        return None
-    if mission.mission_type != mission_type.value:
-        # 세부 미션과 공통 미션의 유형이 어긋난 데이터는 정상 미션으로 보지 않는다.
+    found = mission_detail.find_location_mission(db, current_user_id, location_id)
+    if found is None:
         return None
 
-    granted = reward_history.get_granted_rewards(
-        db, mission_type, location_mission.id, current_user_id
-    )
     return MapModalMissionResponse(
-        mission_id=location_mission.id,
-        mission_type=mission_type,
-        mission_title=location_mission.mission_title,
-        # 완료 여부와 보상 수령 여부는 서로 독립적으로 계산한다.
-        is_completed=is_mission_completed(db, current_user_id, mission),
-        reward_detail=_to_modal_reward_detail(db, detail_mission.reward_detail, granted),
-    )
-
-
-def _to_modal_reward_detail(
-    db: Session, reward_detail: dict[str, Any] | None, granted: GrantedRewards
-) -> MapModalRewardDetailResponse:
-    """미션에 설정된 보상 전체와 현재 사용자의 수령 여부를 함께 담는다.
-
-    이미 받은 보상도 정보를 지우지 않고 `is_received` 로만 구분한다.
-    미션에 아예 없는 보상 항목만 `null` 이다.
-    """
-    reward = reward_detail or {}
-    ar_character = rewards.to_ar_character(db, reward.get("ar_character_id"))
-    coupon = rewards.to_coupon(reward)
-    point = reward.get("point") or 0
-
-    return MapModalRewardDetailResponse(
-        ar_character=(
-            MapModalArCharacterRewardResponse(
-                id=ar_character.id,
-                name=ar_character.name,
-                image_url=ar_character.image_url,
-                is_received=granted.ar_character,
-            )
-            if ar_character
-            else None
-        ),
-        point=(
-            MapModalPointRewardResponse(amount=point, is_received=granted.point)
-            if point > 0
-            else None
-        ),
-        coupon=(
-            MapModalCouponRewardResponse(
-                coupon_location=coupon.coupon_location,
-                coupon_price=coupon.coupon_price,
-                is_received=granted.coupon,
-            )
-            if coupon
-            else None
-        ),
+        mission_id=found.mission_id,
+        mission_type=found.mission_type,
+        mission_title=found.mission_title,
+        is_completed=found.is_completed,
+        reward_detail=found.reward_detail,
     )
 
 
@@ -559,14 +489,19 @@ def _to_content_list(values: list[str] | None) -> list[str] | None:
 
 LOCATION_NOT_FOUND = "LOCATION_NOT_FOUND"
 
+# 장소 상세에 노출할 TourAPI 상세 이미지 개수
+LOCATION_DETAIL_IMAGE_LIMIT = 5
+
 
 def get_location_detail(
-    db: Session, current_user_id: int, location_id: int
+    db: Session, current_user_id: int, location_id: int, query: LocationDetailQuery
 ) -> LocationDetailResponse:
     """장소 상세 화면 데이터를 조회한다.
 
-    모달을 거쳐 들어오는 화면이라 모달에서 이미 준 값(장소명·분류·거리·시간)은 빼고,
-    주소·상세 설명·추천 미션·전체 방명록·이 장소의 미션만 내려준다.
+    모달에서 이미 준 값(장소명·분류·거리·시간)도 상세에서 다시 모두 내려준다.
+    상세 API 는 모달 요청의 좌표를 들고 있지 않아서 거리는 요청 좌표로 다시 계산한다.
+    TourAPI 설명·이미지는 부가 정보라 실패해도 해당 필드만 `null` 이고 전체는 200 이다.
+    조회 전용이라 보상을 지급하거나 지급 여부를 바꾸지 않는다.
     """
     location = db.get(Location, location_id)
     if location is None:
@@ -574,14 +509,57 @@ def get_location_detail(
             LOCATION_NOT_FOUND, detail=f"장소 {location_id} 를 찾을 수 없습니다."
         )
 
-    return LocationDetailResponse(
-        location_address=location.location_address,
-        # 상세 설명을 못 가져와도 장소 상세 조회 전체를 실패시키지 않는다.
-        location_description=get_location_overview(location.content_id),
-        nearby_missions=mission_recommender.recommend_nearby_missions(db, current_user_id),
-        guestbooks=_find_location_guestbooks(db, location.id),
-        location_mission=_find_location_mission(db, location.id),
+    distance_meter = distance.calculate_distance_meter(
+        query.user_latitude, query.user_longitude, location.my, location.mx
     )
+    return LocationDetailResponse(
+        location_title=location.location_title,
+        location_category=location.location_category,
+        distance_meter=distance_meter,
+        duration_minutes=distance.calculate_duration_minutes(distance_meter),
+        location_address=location.location_address,
+        location_description=get_location_overview(location.content_id),
+        location_image_urls=get_location_detail_image_urls(
+            location.content_id, LOCATION_DETAIL_IMAGE_LIMIT
+        ),
+        nearby_missions=_recommend_nearby_missions(db, current_user_id),
+        guestbooks=_find_location_guestbooks(db, location.id),
+        location_mission=_find_location_mission(db, current_user_id, location.id),
+    )
+
+
+def _recommend_nearby_missions(
+    db: Session, current_user_id: int
+) -> list[NearbyMissionResponse]:
+    """추천 모듈이 고른 미션에 상세 정보와 장소 대표 이미지를 붙인다.
+
+    어떤 미션을 보여줄지는 추천 모듈이 정하고, 여기서는 응답 값만 만든다.
+    """
+    missions = []
+    for recommended in mission_recommender.recommend_nearby_missions(db, current_user_id):
+        found = mission_detail.build(
+            db, current_user_id, recommended.mission_type, recommended.id
+        )
+        if found is None:
+            continue
+
+        missions.append(
+            NearbyMissionResponse(
+                mission_id=found.mission_id,
+                mission_type=found.mission_type,
+                mission_title=found.mission_title,
+                description=found.description,
+                is_completed=found.is_completed,
+                reward_detail=found.reward_detail,
+                # 추천 미션은 각각 다른 장소라 미션마다 그 장소의 이름과 대표 이미지를 쓴다.
+                location_title=found.location_title,
+                representative_image_url=get_location_image_url(
+                    found.location_content_id
+                ),
+            )
+        )
+
+    return missions
 
 
 def _find_location_guestbooks(
@@ -607,6 +585,7 @@ def _find_location_guestbooks(
             id=guestbook.id,
             mission_title=mission_title,
             representative_image_url=_first_image_url(guestbook.content_img_url),
+            user_id=guestbook.user_id,
             user_nickname=nickname or "",
             visited_at=guestbook.visited_at,
             content_writing=guestbook.content_writing,
@@ -616,30 +595,24 @@ def _find_location_guestbooks(
 
 
 def _find_location_mission(
-    db: Session, location_id: int
+    db: Session, current_user_id: int, location_id: int
 ) -> LocationMissionResponse | None:
     """이 장소에 직접 연결된 미션을 찾는다. 없으면 `None`.
 
-    한 장소에는 보물찾기 또는 협동 미션이 최대 하나라는 전제라,
-    데이터 이상으로 둘 이상이면 유형과 관계없이 세부 미션 id 가 가장 작은 하나만 쓴다.
+    조합 규칙은 지도 모달과 같고, 상세 응답에는 미션 설명이 더 붙는다.
     """
-    missions = [
-        LocationMissionResponse(id=mission_id, mission_type=MissionType.TREASURE)
-        for mission_id in db.scalars(
-            select(TreasureMission.id).where(TreasureMission.location_id == location_id)
-        ).all()
-    ] + [
-        LocationMissionResponse(id=mission_id, mission_type=MissionType.COOPERATIVE)
-        for mission_id in db.scalars(
-            select(CooperativeMission.id).where(
-                CooperativeMission.location_id == location_id
-            )
-        ).all()
-    ]
-    if not missions:
+    found = mission_detail.find_location_mission(db, current_user_id, location_id)
+    if found is None:
         return None
 
-    return min(missions, key=lambda mission: mission.id)
+    return LocationMissionResponse(
+        mission_id=found.mission_id,
+        mission_type=found.mission_type,
+        mission_title=found.mission_title,
+        description=found.description,
+        is_completed=found.is_completed,
+        reward_detail=found.reward_detail,
+    )
 
 
 # ---------------------------------------------------------------------

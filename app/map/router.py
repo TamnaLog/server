@@ -13,6 +13,7 @@ from app.core.deps import get_current_user_id
 from app.map import service
 from app.map.schemas import (
     ClusteredMapContentsResponse,
+    LocationDetailQuery,
     LocationDetailResponse,
     LocationModalResponse,
     MapContentsQuery,
@@ -121,12 +122,13 @@ def get_location_detail(
     db: Annotated[Session, Depends(get_db)],
     current_user_id: Annotated[int, Depends(get_current_user_id)],
     location_id: Annotated[int, Path(ge=1, description="상세 조회할 LOCATION.id")],
+    query: Annotated[LocationDetailQuery, Query()],
 ) -> LocationDetailResponse:
     """GET /api/v1/map/locations/{locationId} - 지도 장소 상세 조회.
 
-    모달에서 이미 준 장소명·분류·거리·예상 시간은 다시 내려주지 않는다.
+    거리와 예상 이동 시간은 모달 응답을 재사용하지 않고 요청 좌표로 다시 계산한다.
     추천 미션은 토큰으로 식별한 현재 사용자가 완료하지 않은 미션 중에서 고른다.
     """
     return service.get_location_detail(
-        db=db, current_user_id=current_user_id, location_id=location_id
+        db=db, current_user_id=current_user_id, location_id=location_id, query=query
     )

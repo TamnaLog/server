@@ -416,15 +416,29 @@ Status Code : `404 Not Found`
 
 사용자가 장소 모달에서 상세보기를 눌러 장소 상세 화면에 진입할 때 호출한다.
 
-Path로 전달받은 `locationId`로 LOCATION을 조회하고, 모달 조회 API에서 이미 반환한 장소명, 장소 분류, 거리와 예상 이동 시간은 중복해서 반환하지 않는다.
+Path로 전달받은 `locationId`로 LOCATION을 조회하고, 현재 사용자 좌표를 사용해 장소까지의 거리와 예상 이동 시간을 다시 계산한다.
 
-장소 주소, TourAPI `detailCommon2`의 `overview`, 임시 추천 미션, 해당 장소에 작성된 전체 방명록과 해당 장소에 직접 연결된 미션 정보를 반환한다.
+장소명, 장소 분류, 거리, 예상 이동 시간, 주소, TourAPI 상세 설명과 상세 이미지, 근처 추천 미션, 해당 장소의 전체 방명록과 해당 장소에 직접 연결된 미션 정보를 반환한다.
+
+장소 및 미션 이미지는 부가 정보이므로 TourAPI 인증키 미설정, 통신 실패 또는 이미지 없음으로 조회하지 못해도 전체 API를 실패시키지 않고 해당 이미지 필드만 null로 반환한다.
 
 ---
 
 ### 요청 Query
 
-없음
+| 자료형 | 변수명 | 필수 여부 | 설명 |
+| --- | --- | --- | --- |
+| number | `userLatitude` | 필수 | 현재 사용자 위치의 위도. `-90~90` |
+| number | `userLongitude` | 필수 | 현재 사용자 위치의 경도. `-180~180` |
+
+**요청 예시**
+
+```
+GET /api/v1/map/locations/39?userLatitude=33.4524&userLongitude=126.9248
+```
+
+- 상세 API는 이전 모달 요청의 좌표를 서버에 보관하지 않으므로 거리와 예상 이동 시간을 계산하기 위해 사용자 좌표를 다시 받는다.
+- 위도와 경도의 소수 부분을 최대한 보존해서 전송한다.
 
 ---
 
@@ -433,12 +447,6 @@ Path로 전달받은 `locationId`로 LOCATION을 조회하고, 모달 조회 API
 | 자료형 | 변수명 | 설명 |
 | --- | --- | --- |
 | integer | `locationId` | 상세 조회할 LOCATION ID |
-
-**요청 예시**
-
-```
-GET /api/v1/map/locations/39
-```
 
 ---
 
@@ -454,82 +462,169 @@ Status Code : `200 OK`
 
 | 자료형 | 변수명 | 설명 |
 | --- | --- | --- |
+| string | `locationTitle` | 장소 이름. `LOCATION.location_title` |
+| string | `locationCategory` | 장소 분류. `LOCATION.location_category` |
+| integer | `distanceMeter` | 현재 사용자 위치와 장소 사이의 직선거리(m) |
+| integer | `durationMinutes` | 현재 사용자 위치에서 장소까지의 예상 이동 시간(분) |
 | string | `locationAddress` | 장소 주소. `LOCATION.location_address` |
-| string | null | `locationDescription` | TourAPI `detailCommon2`의 `overview`에서 HTML 태그·엔티티와 불필요한 공백을 정리한 일반 문자열. 값이 없거나 조회하지 못하면 null |
-| array | `nearbyMissions` | 근처에서 할 수 있는 임시 추천 미션 목록. 최대 3개 |
-| integer | `nearbyMissions[].id` | 미션 유형별 세부 미션 ID |
+| string | null | `locationDescription` | TourAPI `detailCommon2.overview`에서 HTML 태그·엔티티와 불필요한 공백을 정리한 일반 문자열. 값이 없거나 조회하지 못하면 null |
+| string[] | null | `locationImageUrls` | TourAPI `detailImage2.originimgurl` 상세 이미지 URL 목록. 최대 5장이고 이미지가 없거나 조회하지 못하면 null |
+| array | `nearbyMissions` | 근처에서 할 수 있는 임시 추천 미션 목록. 최대 3개이며 없으면 빈 배열 |
+| integer | `nearbyMissions[].missionId` | `missionType`에 해당하는 유형별 세부 미션 ID |
 | string | `nearbyMissions[].missionType` | 미션 유형. `TREASURE | COOPERATIVE` |
 | string | `nearbyMissions[].missionTitle` | 미션 제목 |
-| array | `guestbooks` | 해당 장소를 참조하는 삭제되지 않은 전체 방명록 목록 |
+| string | null | `nearbyMissions[].description` | 미션 설명. 없으면 null |
+| boolean | `nearbyMissions[].isCompleted` | 현재 사용자의 해당 미션 완료 여부 |
+| object | `nearbyMissions[].rewardDetail` | 해당 미션의 전체 보상 정보와 보상별 수령 여부 |
+| object | `nearbyMissions[].rewardDetail.arCharacter` | AR 캐릭터 보상 정보 |
+| integer | `nearbyMissions[].rewardDetail.arCharacter.id` | AR 캐릭터 ID |
+| string | `nearbyMissions[].rewardDetail.arCharacter.name` | AR 캐릭터 이름 |
+| string | `nearbyMissions[].rewardDetail.arCharacter.imageUrl` | AR 캐릭터 이미지 URL |
+| boolean | `nearbyMissions[].rewardDetail.arCharacter.isReceived` | 현재 사용자의 AR 캐릭터 보상 수령 여부 |
+| object | `nearbyMissions[].rewardDetail.point` | 포인트 보상 정보 |
+| integer | `nearbyMissions[].rewardDetail.point.amount` | 포인트 보상량 |
+| boolean | `nearbyMissions[].rewardDetail.point.isReceived` | 현재 사용자의 포인트 보상 수령 여부 |
+| object | `nearbyMissions[].rewardDetail.coupon` | 쿠폰 보상 정보 |
+| string | `nearbyMissions[].rewardDetail.coupon.couponLocation` | 쿠폰 사용처 |
+| integer | `nearbyMissions[].rewardDetail.coupon.couponPrice` | 쿠폰 금액 |
+| boolean | `nearbyMissions[].rewardDetail.coupon.isReceived` | 현재 사용자의 쿠폰 보상 수령 여부 |
+| string | `nearbyMissions[].locationTitle` | 해당 미션이 진행되는 장소 이름. `LOCATION.location_title` |
+| string | null | `nearbyMissions[].representativeImageUrl` | 해당 미션 장소의 TourAPI `firstimage`. 이미지가 없거나 조회하지 못하면 null |
+| array | `guestbooks` | 해당 장소를 참조하는 삭제되지 않은 전체 방명록 목록. 없으면 빈 배열 |
 | integer | `guestbooks[].id` | 방명록 ID |
 | string | null | `guestbooks[].missionTitle` | 방명록이 참조하는 미션 제목. 참조하는 미션이 없으면 null |
 | string | null | `guestbooks[].representativeImageUrl` | 방명록 이미지 배열의 첫 번째 이미지 URL. 이미지가 없으면 null |
+| integer | `guestbooks[].userId` | 방명록 작성자 사용자 ID |
 | string | `guestbooks[].userNickname` | 방명록 작성자 닉네임 |
 | string | `guestbooks[].visitedAt` | 방문·작성일. `GUESTBOOK.visited_at` 기준, `YYYY-MM-DD` 형식 |
 | string | null | `guestbooks[].contentWriting` | 방명록 글 내용. 없으면 null |
-| object | null | `locationMission` | 해당 장소에 직접 연결된 미션 정보. 없으면 null |
-| integer | `locationMission.id` | 미션 유형별 세부 미션 ID |
+| object | null | `locationMission` | 해당 장소에 직접 연결된 단일 미션 정보. 없으면 null |
+| integer | `locationMission.missionId` | `missionType`에 해당하는 유형별 세부 미션 ID |
 | string | `locationMission.missionType` | 미션 유형. `TREASURE | COOPERATIVE` |
+| string | `locationMission.missionTitle` | 미션 제목 |
+| string | null | `locationMission.description` | 미션 설명. 없으면 null |
+| boolean | `locationMission.isCompleted` | 현재 사용자의 해당 미션 완료 여부 |
+| object | `locationMission.rewardDetail` | 해당 미션의 전체 보상 정보와 보상별 수령 여부 |
+| object | `locationMission.rewardDetail.arCharacter` | AR 캐릭터 보상 정보 |
+| integer | `locationMission.rewardDetail.arCharacter.id` | AR 캐릭터 ID |
+| string | `locationMission.rewardDetail.arCharacter.name` | AR 캐릭터 이름 |
+| string | `locationMission.rewardDetail.arCharacter.imageUrl` | AR 캐릭터 이미지 URL |
+| boolean | `locationMission.rewardDetail.arCharacter.isReceived` | 현재 사용자의 AR 캐릭터 보상 수령 여부 |
+| object | `locationMission.rewardDetail.point` | 포인트 보상 정보 |
+| integer | `locationMission.rewardDetail.point.amount` | 포인트 보상량 |
+| boolean | `locationMission.rewardDetail.point.isReceived` | 현재 사용자의 포인트 보상 수령 여부 |
+| object | `locationMission.rewardDetail.coupon` | 쿠폰 보상 정보 |
+| string | `locationMission.rewardDetail.coupon.couponLocation` | 쿠폰 사용처 |
+| integer | `locationMission.rewardDetail.coupon.couponPrice` | 쿠폰 금액 |
+| boolean | `locationMission.rewardDetail.coupon.isReceived` | 현재 사용자의 쿠폰 보상 수령 여부 |
 
 ```json
 {
+  "locationTitle": "성산일출봉",
+  "locationCategory": "관광지",
+  "distanceMeter": 1200,
+  "durationMinutes": 15,
   "locationAddress": "제주특별자치도 서귀포시 성산읍 일출로 284-12",
   "locationDescription": "제주 동쪽 바다 위로 솟아오른 응회구로, 정상에서 분화구와 해안 풍경을 함께 볼 수 있습니다.",
+  "locationImageUrls": [
+    "https://example.com/images/locations/39/detail-1.jpg",
+    "https://example.com/images/locations/39/detail-2.jpg",
+    "https://example.com/images/locations/39/detail-3.jpg"
+  ],
   "nearbyMissions": [
     {
-      "id": 2,
+      "missionId": 2,
       "missionType": "COOPERATIVE",
-      "missionTitle": "함께 키우는 귤나무"
-    },
-    {
-      "id": 1,
-      "missionType": "TREASURE",
-      "missionTitle": "오구포구 보물찾기"
-    },
-    {
-      "id": 3,
-      "missionType": "TREASURE",
-      "missionTitle": "성산일출봉 돌멍이 찾기"
+      "missionTitle": "함께 키우는 귤나무",
+      "description": "역할을 나누어 제주 귤나무를 함께 완성하는 미션입니다.",
+      "isCompleted": false,
+      "rewardDetail": {
+        "arCharacter": {
+          "id": 4,
+          "name": "귤밭 지킴이",
+          "imageUrl": "https://example.com/images/ar-characters/4.png",
+          "isReceived": false
+        },
+        "point": {
+          "amount": 150,
+          "isReceived": false
+        },
+        "coupon": {
+          "couponLocation": "성산 기념품점",
+          "couponPrice": 5000,
+          "isReceived": false
+        }
+      },
+      "locationTitle": "귤림성",
+      "representativeImageUrl": "https://example.com/images/locations/12/firstimage.jpg"
     }
   ],
   "guestbooks": [
     {
       "id": 300,
-      "missionTitle": "함께 키우는 귤나무",
+      "missionTitle": "성산일출봉 보물찾기",
       "representativeImageUrl": "https://example.com/images/guestbooks/guestbook-300.jpg",
+      "userId": 1,
       "userNickname": "활발한 귤돌이",
       "visitedAt": "2026-01-15",
-      "contentWriting": "귤나무 심기 체험이 정말 재미있었어요!"
+      "contentWriting": "정상에서 보는 풍경이 정말 좋았어요."
     },
     {
       "id": 302,
       "missionTitle": null,
       "representativeImageUrl": null,
+      "userId": 2,
       "userNickname": "씩씩한 고래",
       "visitedAt": "2026-01-12",
       "contentWriting": null
     }
   ],
   "locationMission": {
-    "id": 1,
-    "missionType": "TREASURE"
+    "missionId": 1,
+    "missionType": "TREASURE",
+    "missionTitle": "성산일출봉 보물찾기",
+    "description": "성산일출봉 곳곳에 숨겨진 보물을 찾아보세요.",
+    "isCompleted": true,
+    "rewardDetail": {
+      "arCharacter": {
+        "id": 3,
+        "name": "점박이 물범",
+        "imageUrl": "https://example.com/images/ar-characters/3.png",
+        "isReceived": true
+      },
+      "point": {
+        "amount": 100,
+        "isReceived": true
+      },
+      "coupon": {
+        "couponLocation": "성산 카페",
+        "couponPrice": 3000,
+        "isReceived": false
+      }
+    }
   }
 }
 ```
 
+- `locationImageUrls`는 `LOCATION.content_id`로 TourAPI `detailImage2`를 조회하고 비어 있지 않은 `originimgurl`을 최대 5개 반환한다. 이미지가 1~4장이면 조회된 수만큼만 반환하고, 이미지가 없거나 조회에 실패하면 빈 배열이 아니라 null을 반환한다.
+- 상세 이미지는 TourAPI 응답의 `serialnum ASC` 순서로 정렬하고, 같은 URL은 한 번만 포함한다.
 - `nearbyMissions`는 별도 추천 함수에서 조회하며, 정식 추천 로직이 적용되기 전까지 보물찾기와 협동 미션 중 최대 3개를 중복 없이 임의로 선택한다.
-- 현재 장소에 연결된 미션도 추천 후보에 포함한다.
+- 현재 장소에 연결된 미션도 추천 후보에 포함할 수 있다.
 - 현재 사용자가 이미 완료한 미션은 추천 후보에서 제외한다.
 - 요청할 때마다 추천 결과가 달라져도 된다.
 - 추천 가능한 미션이 없으면 `nearbyMissions`는 빈 배열을 반환한다.
+- `nearbyMissions[].locationTitle`은 추천 미션이 진행되는 장소 이름이며, 상세 조회 중인 장소의 이름이 아니다. 추천 대상은 장소를 가진 보물찾기·협동 미션뿐이므로 항상 값이 있다.
+- `locationMission`은 상세 조회 중인 장소의 미션이므로 최상위 `locationTitle`과 중복되는 장소 이름을 따로 반환하지 않는다.
+- `nearbyMissions[].representativeImageUrl`은 미션이 연결된 `LOCATION.content_id`로 TourAPI `detailCommon2`를 직접 조회하여 `firstimage`를 사용한다. `firstimage`가 없으면 `firstimage2`를 사용하고, 둘 다 없거나 조회에 실패하면 null이다. 장소명 기반 `searchKeyword2`는 사용하지 않는다.
+- `locationMission`과 `nearbyMissions[]`의 `missionId`는 공통 MISSION ID가 아니라 `missionType`에 해당하는 유형별 세부 미션 ID다.
+- 두 미션 응답의 `rewardDetail`은 수령 여부와 관계없이 AR 캐릭터, 포인트, 쿠폰 전체 정보를 반환하며, 각 `isReceived`는 현재 사용자가 해당 미션의 모든 진행도 중 그 보상을 한 번이라도 지급받았는지를 나타낸다.
+- 두 미션 응답의 `isCompleted`는 현재 사용자가 해당 미션을 한 번이라도 완료했는지를 나타내며 보상 수령 여부와 독립적으로 계산한다.
 - `guestbooks`는 해당 장소를 참조하는 삭제되지 않은 방명록을 `visited_at DESC`, 같은 날짜에는 방명록 ID 내림차순으로 모두 반환한다.
 - 방명록에 연결된 미션이 없으면 `missionTitle`은 null이다.
 - 방명록 이미지 배열이 없거나 비어 있으면 `representativeImageUrl`은 null이다.
 - 방명록에 글이 없으면 `contentWriting`은 null이다.
 - 하나의 장소에는 보물찾기 또는 협동 미션이 최대 하나만 존재한다고 전제한다.
-- 데이터 이상으로 둘 이상 조회되면 유형과 관계없이 유형별 세부 미션 ID를 `id ASC`로 정렬한 첫 번째 미션만 반환한다.
 - 해당 장소에 직접 연결된 미션이 없으면 `locationMission = null`을 반환한다.
-- `nearbyMissions[].id`와 `locationMission.id`는 공통 MISSION ID가 아니라 `missionType`에 해당하는 유형별 세부 미션 ID다.
 
 ---
 

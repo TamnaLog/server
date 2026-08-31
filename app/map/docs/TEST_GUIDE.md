@@ -7,6 +7,7 @@
 | `GET /api/v1/map/contents` (지도 홈 조회) | `app/map/tests/test_get_map_contents.py` |
 | `GET /api/v1/map/modals` (지도 모달 조회) | `app/map/tests/test_get_map_modal.py` |
 | `GET /api/v1/map/locations/{locationId}` (지도 장소 상세 조회) | `app/map/tests/test_get_location_detail.py` |
+| TourAPI 상세 이미지 정리 (장소 상세 조회 보조) | `app/map/tests/test_location_detail_images.py` |
 | `GET /api/v1/map/search` (지도 검색 결과 조회) | `app/map/tests/test_search_map.py` |
 | TourAPI 상세 설명(`overview`) 정리 | `app/map/tests/test_location_overview.py` |
 
@@ -224,18 +225,25 @@ DB에서는 범위로 후보만 좁히고 실제 사각형 안인지 다시 판�
 
 ## 테스트 의도
 
-상세 조회에서 조심할 곳은 세 군데다.
+상세 조회는 한 응답에 **DB 값 / 계산 값 / 외부 API 값**이 섞여 있어서, 조심할 곳이 네 군데다.
 
-첫째, **모달에서 이미 준 값을 다시 주면 안 된다.**
-장소명·분류·거리·예상 시간은 상세 응답에 없어야 한다.
-필드를 하나씩 확인하면 "없어야 할 게 생긴" 경우를 놓치므로 **응답 키 집합을 통째로** 비교한다.
+첫째, **거리와 예상 시간을 요청 좌표로 다시 계산**한다는 점이다.
+모달을 거쳐 들어오는 화면이지만 서버는 모달 요청의 좌표를 들고 있지 않다.
+그래서 사용자 좌표를 Query로 다시 받고, 상세 응답에도 장소명·분류·거리·시간을 모두 다시 담는다.
 
-둘째, **방명록에 개수 제한이 없다.**
+둘째, **TourAPI가 실패해도 200**이어야 한다는 점이다.
+설명·상세 이미지·추천 미션 대표 이미지 세 군데가 모두 외부 호출이라,
+하나라도 예외가 새면 장소 상세 화면 전체가 죽는다. 셋 다 실패하는 장소로 한 번에 확인한다.
+특히 상세 이미지는 **없을 때 `[]`가 아니라 `null`**이라 빈 배열과 구분해서 본다.
+
+셋째, **미션 응답이 모달과 같은 규칙**이라는 점이다.
+`isCompleted`와 보상별 `isReceived`는 서로 독립이고, `isReceived`는 진행도 이력 전체의 OR다.
+`rewardDetail`은 남은 보상만 주는 `remainingReward`와 반대로 **받은 보상도 지우지 않는다.**
+`locationMission`과 `nearbyMissions[]`가 같은 조합 함수를 쓰므로 양쪽에서 확인한다.
+
+넷째, **방명록에 개수 제한이 없다**는 점이다.
 모달 조회는 최대 3개인데 상세는 전부다. 같은 정렬 규칙을 쓰지만 자르면 안 된다.
 그래서 10개를 넣고 10개가 다 오는지 확인한다.
-
-셋째, **`locationMission`은 유형과 무관하게 세부 미션 id가 가장 작은 하나**다.
-보물찾기 5 / 협동 3이면 협동이 나온다. 유형 우선순위로 착각해 보물찾기를 먼저 고르면 틀린다.
 
 추천 미션은 랜덤이라 값 자체가 아니라 **후보 안에 있는지 / 제외돼야 할 게 빠졌는지**로 본다.
 
@@ -243,40 +251,71 @@ DB에서는 범위로 후보만 좁히고 실제 사각형 안인지 다시 판�
 
 ### 1. 정상 응답
 
-- 응답 키는 **정확히 5개**다.
-  (`locationAddress` / `locationDescription` / `nearbyMissions` / `guestbooks` / `locationMission`)
-- `locationDescription`은 TourAPI 결과다. 조회하지 못하면 `null`이고 전체 조회는 200이다.
-- 상세 설명 조회에는 그 장소의 `content_id`를 쓴다.
+- 응답 10개 필드를 **통째로 비교**한다.
+  (`locationTitle` / `locationCategory` / `distanceMeter` / `durationMinutes` /
+  `locationAddress` / `locationDescription` / `locationImageUrls` /
+  `nearbyMissions` / `guestbooks` / `locationMission`)
+- 거리·시간은 `app/common/distance.py` 결과와 같다. 사용자 좌표가 장소와 같으면 0이다.
+- 미션도 방명록도 없는 장소도 404가 아니라 **200 + `null` / 빈 배열**이다.
 
-### 2. 방명록
+### 2. TourAPI 설명·상세 이미지
+
+- `locationDescription`은 조회하지 못하면 `null`이고 전체 조회는 200이다.
+- 설명과 상세 이미지 모두 **그 장소의 `content_id`**로 조회하고, 이미지는 `limit = 5`로 요청한다.
+- 상세 이미지가 없거나 실패하면 **빈 배열이 아니라 `null`**이다.
+- 설명·상세 이미지·추천 미션 이미지가 **모두 실패해도** 나머지 값은 그대로 담아 200이다.
+
+### 3. 방명록
 
 - **개수 제한 없이 전부** 반환한다. (10개 넣으면 10개)
 - 정렬은 `visited_at DESC`, 같으면 `id DESC`.
   저장 시각이 더 최신이어도 방문일이 과거면 뒤로 간다.
 - 삭제된 방명록과 다른 장소의 방명록은 빠진다.
+- 작성자는 **`userId`와 `userNickname`을 함께** 준다.
 - 이미지 배열이 없거나 비어 있으면 `representativeImageUrl`은 `null`.
 - 미션을 참조하지 않으면 `missionTitle`은 `null`.
 
-### 3. `locationMission`
+### 4. `locationMission`
 
 - 미션이 없으면 `null`.
-- 유형 하나만 있으면 그 미션.
-- **두 유형이 다 있으면 세부 미션 id가 작은 쪽**. (보물찾기 5 / 협동 3 → 협동)
-- 같은 유형이 둘 이상이어도 id가 작은 쪽.
+- 보물찾기 / 협동 각각 **단일 객체**로 반환하고, 제목·설명·완료 여부·보상 세 종류를 모두 담는다.
+- `missionId`는 공통 `MISSION.id`가 아니라 **유형별 세부 미션 id**다.
+- 두 유형이 같은 장소에 걸린 비정상 데이터는 **임의로 하나를 고르지 않고 500**으로 드러낸다.
+  (한 장소에 최대 한 건이라는 무결성 전제를 지키는지 확인)
 - 다른 장소의 미션은 잡히지 않는다.
+- 보고 있는 장소의 이름과 이미지는 최상위 `locationTitle` / `locationImageUrls`가 담당하므로
+  `locationTitle`과 `representativeImageUrl`을 미션 객체에 붙이지 않는다.
 
-### 4. `nearbyMissions` (임시 추천)
+### 5. 미션 완료 여부와 보상 수령 여부
+
+`locationMission`과 `nearbyMissions[]`가 공유하는 조합 규칙이라 지도 모달과 같은 항목을 본다.
+
+- 완료 이력이 있으면 `isCompleted = true`, `IN_PROGRESS`만 있으면 `false`.
+- 완료했어도 보상을 안 받았으면 `isReceived`는 `false`다. (둘은 독립)
+- 진행도 이력이 없으면 세 보상 모두 `false`.
+- 서로 다른 진행도에서 각각 지급된 보상은 **종류별 OR**로 판정한다.
+- 이미 받은 보상도 상세 정보를 그대로 주고 `isReceived`만 `true`가 된다.
+- 미션에 설정되지 않은 보상 항목만 `null`이다.
+- 다른 사용자의 완료·보상 이력은 반영되지 않는다.
+- 협동 미션은 **삭제되지 않은 `ACCEPTED` 참가자**로 연결된 **삭제되지 않은 진행도**만 본다.
+- **조회 전용**: 상세를 조회해도 진행도의 보상 지급 여부와 사용자 포인트가 그대로다.
+
+### 6. `nearbyMissions` (임시 추천)
 
 - 후보가 없으면 빈 배열.
 - 반환값은 DB에 있는 미션 중 하나여야 한다. (id / 유형 / 제목 조합으로 확인)
+- 현재 장소의 미션과 **같은 필드**에 `locationTitle`과 `representativeImageUrl`이 더 붙는다.
+- 장소명과 대표 이미지는 보고 있는 장소가 아니라 **그 미션이 있는 장소** 기준이다.
+  (다른 장소의 미션을 추천했을 때 그 장소 이름과 `content_id`가 쓰이는지 확인)
 - **최대 3개**이고 같은 미션이 두 번 나오지 않는다.
 - **현재 사용자가 완료한 미션은 빠진다.** (보물찾기 / 협동 각각)
 - 완료로 보지 않는 경우는 추천에 남는다.
   - 보물찾기: 진행 중 / 다른 사용자의 완료
   - 협동: 진행 중인 방 / 다른 사용자의 방 / `PENDING` 참가자 / 삭제된 방 / 나간 참가자
+- 추천에 남은 미션도 `isCompleted`를 생략하지 않는다. (제외 정책은 추천 모듈이 바꿀 수 있다)
 - **지금 보고 있는 장소의 미션도 후보**이고, 다른 장소의 미션도 후보다.
 
-### 5. TourAPI `overview` 정리
+### 7. TourAPI `overview` 정리
 
 상세 조회 API 테스트는 이 함수를 스텁으로 막기 때문에 정리 규칙이 검증되지 않는다.
 그래서 HTTP 호출만 대신하고 정리 로직은 실제로 태우는 테스트를 따로 뒀다.
@@ -286,10 +325,25 @@ DB에서는 범위로 후보만 좁히고 실제 사각형 안인지 다시 판�
 - 정리 결과가 비면(`""` / 공백만 / 태그만 / `overview` 없음 / 문자열이 아님) `null`.
 - TourAPI 조회 자체에 실패해도 `null`.
 
-### 6. 404 / 400 / 401
+### 8. TourAPI 상세 이미지 정리
+
+`overview`와 같은 이유로 HTTP 호출만 대신하고 정리 로직은 실제로 태운다.
+(`app/map/tests/test_location_detail_images.py`)
+
+- `originimgurl`을 **`serialnum` 오름차순**으로 정렬한다.
+  숫자가 아닌 `serialnum`은 받은 순서를 유지한 채 뒤로 간다.
+- **같은 URL은 한 번만** 남기고, 중복을 지운 **뒤에** 개수를 센다.
+- 5개보다 많으면 5개, 1~4개면 있는 만큼만 반환한다.
+- 쓸 이미지가 없으면(조회 실패 / 빈 목록 / URL 없음 / 빈 URL) **빈 배열이 아니라 `None`**.
+- `limit`으로 개수를 줄일 수 있고, 양수가 아니면 `ValueError`다.
+
+### 9. 404 / 400 / 401
 
 - 장소가 없으면 **404 `LOCATION_NOT_FOUND`**
-- `locationId`가 정수가 아니거나 1보다 작으면 **400 `INVALID_REQUEST`**
+- 다음이면 **400 `INVALID_REQUEST`**
+  - `locationId`가 정수가 아니거나 1보다 작음
+  - 사용자 위도·경도 누락
+  - 사용자 위도·경도가 범위 밖이거나 숫자가 아님
 - 인증 헤더가 없거나 토큰의 사용자가 없으면 **401 `UNAUTHORIZED_USER`**
 
 # 지도 검색 결과 조회

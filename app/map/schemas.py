@@ -141,6 +141,48 @@ class ClusteredMapContentsResponse(CamelModel):
 
 
 # ---------------------------------------------------------------------
+# 미션 응답 공통 (지도 모달 조회 / 지도 장소 상세 조회)
+# ---------------------------------------------------------------------
+
+
+class MapArCharacterRewardResponse(CamelModel):
+    """AR 캐릭터 보상. 이미 받았어도 정보를 그대로 주고 `is_received` 로만 구분한다."""
+
+    id: int
+    name: str
+    image_url: str
+    is_received: bool
+
+
+class MapPointRewardResponse(CamelModel):
+    """포인트 보상."""
+
+    amount: int
+    is_received: bool
+
+
+class MapCouponRewardResponse(CamelModel):
+    """쿠폰 보상."""
+
+    coupon_location: str
+    coupon_price: int
+    is_received: bool
+
+
+class MapRewardDetailResponse(CamelModel):
+    """미션의 **전체** 보상 정보.
+
+    아직 안 받은 보상만 주는 `RemainingRewardResponse` 와 달리 수령 여부와 관계없이
+    세 종류를 모두 담고, 각 항목의 `is_received` 로 현재 사용자의 수령 여부를 구분한다.
+    미션에 설정되지 않은 보상 항목만 `null` 이다.
+    """
+
+    ar_character: MapArCharacterRewardResponse | None = None
+    point: MapPointRewardResponse | None = None
+    coupon: MapCouponRewardResponse | None = None
+
+
+# ---------------------------------------------------------------------
 # 지도 모달 조회
 # ---------------------------------------------------------------------
 
@@ -179,43 +221,6 @@ class LocationModalGuestbookResponse(CamelModel):
     content_writing: str | None = None
 
 
-class MapModalArCharacterRewardResponse(CamelModel):
-    """AR 캐릭터 보상. 이미 받았어도 정보를 그대로 주고 `is_received` 로만 구분한다."""
-
-    id: int
-    name: str
-    image_url: str
-    is_received: bool
-
-
-class MapModalPointRewardResponse(CamelModel):
-    """포인트 보상."""
-
-    amount: int
-    is_received: bool
-
-
-class MapModalCouponRewardResponse(CamelModel):
-    """쿠폰 보상."""
-
-    coupon_location: str
-    coupon_price: int
-    is_received: bool
-
-
-class MapModalRewardDetailResponse(CamelModel):
-    """미션의 **전체** 보상 정보.
-
-    아직 안 받은 보상만 주는 `RemainingRewardResponse` 와 달리 수령 여부와 관계없이
-    세 종류를 모두 담고, 각 항목의 `is_received` 로 현재 사용자의 수령 여부를 구분한다.
-    미션에 설정되지 않은 보상 항목만 `null` 이다.
-    """
-
-    ar_character: MapModalArCharacterRewardResponse | None = None
-    point: MapModalPointRewardResponse | None = None
-    coupon: MapModalCouponRewardResponse | None = None
-
-
 class MapModalMissionResponse(CamelModel):
     """장소에 연결된 미션.
 
@@ -228,7 +233,7 @@ class MapModalMissionResponse(CamelModel):
     mission_type: MissionType
     mission_title: str
     is_completed: bool
-    reward_detail: MapModalRewardDetailResponse
+    reward_detail: MapRewardDetailResponse
 
 
 class LocationModalResponse(CamelModel):
@@ -272,22 +277,45 @@ class RoadGuestbookModalResponse(CamelModel):
 # ---------------------------------------------------------------------
 
 
-class NearbyMissionResponse(CamelModel):
-    """근처에서 할 수 있는 추천 미션.
+class LocationDetailQuery(CamelModel):
+    """GET /api/v1/map/locations/{locationId} 요청 Query.
 
-    `id` 는 공통 `MISSION.id` 가 아니라 `mission_type` 에 해당하는 세부 미션 테이블의 id다.
+    상세 API 는 모달 요청의 좌표를 서버에 들고 있지 않으므로 사용자 좌표를 다시 받는다.
     """
 
-    id: int
-    mission_type: MissionType
-    mission_title: str
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, extra="forbid"
+    )
+
+    user_latitude: float = Field(ge=-90, le=90, description="현재 사용자 위치의 위도")
+    user_longitude: float = Field(ge=-180, le=180, description="현재 사용자 위치의 경도")
 
 
 class LocationMissionResponse(CamelModel):
-    """이 장소에 직접 연결된 미션. 제목 없이 유형과 id 만 내려준다."""
+    """장소 상세에 보여줄 미션.
 
-    id: int
+    `mission_id` 는 공통 `MISSION.id` 가 아니라 유형별 세부 미션 id 다.
+    `is_completed` 와 보상별 `is_received` 는 서로 독립적으로 계산한다.
+    """
+
+    mission_id: int
     mission_type: MissionType
+    mission_title: str
+    description: str | None = None
+    is_completed: bool
+    reward_detail: MapRewardDetailResponse
+
+
+class NearbyMissionResponse(LocationMissionResponse):
+    """근처에서 할 수 있는 추천 미션.
+
+    현재 장소의 미션과 달리 각 미션이 서로 다른 장소에 있어서
+    그 장소의 이름과 대표 이미지를 함께 준다.
+    추천 대상은 장소를 가진 보물찾기/협동 미션뿐이라 장소명은 항상 있다.
+    """
+
+    location_title: str
+    representative_image_url: str | None = None
 
 
 class LocationGuestbookResponse(CamelModel):
@@ -296,6 +324,7 @@ class LocationGuestbookResponse(CamelModel):
     id: int
     mission_title: str | None = None
     representative_image_url: str | None = None
+    user_id: int
     user_nickname: str
     # 작성일은 `created_at`/`saved_at` 이 아니라 방문일(`visited_at`) 기준이다.
     visited_at: date
@@ -305,11 +334,17 @@ class LocationGuestbookResponse(CamelModel):
 class LocationDetailResponse(CamelModel):
     """GET /api/v1/map/locations/{locationId} 정상 응답.
 
-    장소명·분류·거리·예상 시간은 모달 조회에서 이미 내려줬으므로 여기서 다시 주지 않는다.
+    모달에서 이미 준 장소명·분류·거리·예상 시간도 상세에서 다시 모두 내려준다.
+    TourAPI 에서 오는 설명과 이미지는 부가 정보라 조회에 실패해도 `null` 로만 채운다.
     """
 
+    location_title: str
+    location_category: str
+    distance_meter: int
+    duration_minutes: int
     location_address: str
     location_description: str | None = None
+    location_image_urls: list[str] | None = None
     nearby_missions: list[NearbyMissionResponse]
     guestbooks: list[LocationGuestbookResponse]
     location_mission: LocationMissionResponse | None = None

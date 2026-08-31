@@ -2,7 +2,10 @@
 
 추천 기준이 확정되기 전까지는 현재 사용자가 아직 완료하지 않은 미션 중
 랜덤으로 최대 3개를 고른다. 기준이 정해지면 이 모듈 안만 바꾸면 된다.
-(app/map/docs/BUSINESS_RULES.md - 지도 장소 상세 조회 3. 임시 추천 미션)
+(app/map/docs/BUSINESS_RULES.md - 지도 장소 상세 조회 5. 임시 추천 미션)
+
+이 모듈은 "어떤 미션을 보여줄지" 고르는 일만 한다.
+제목·설명·완료 여부·보상 같은 응답 값은 `app/map/mission_detail.py` 가 조합한다.
 
 추천 대상은 장소를 가진 보물찾기와 협동 미션이다.
 문화 미션은 장소를 참조하지 않아 후보가 아니고, 지금 보고 있는 장소의 미션도 후보에 넣는다.
@@ -16,8 +19,6 @@ from sqlalchemy.orm import Session
 
 from app.cooperative_mission.models import CooperativeMission
 from app.map import mission_completion
-from app.map.schemas import NearbyMissionResponse
-from app.mission.models import Mission
 from app.mission.schemas import MissionType
 from app.treasure_mission.models import TreasureMission
 
@@ -27,18 +28,17 @@ RECOMMEND_COUNT = 3
 
 
 @dataclass(frozen=True)
-class _Candidate:
-    """추천 후보 미션. 유형별 세부 미션 한 행을 공통 형태로 감싼 값이다."""
+class RecommendedMission:
+    """추천된 미션. 유형별 세부 미션 한 행을 가리키는 값이다."""
 
     # 공통 MISSION.id 가 아니라 유형별 세부 미션 테이블의 id
     id: int
     mission_type: MissionType
-    mission_title: str
 
 
 def recommend_nearby_missions(
     db: Session, current_user_id: int, count: int = RECOMMEND_COUNT
-) -> list[NearbyMissionResponse]:
+) -> list[RecommendedMission]:
     """현재 사용자가 완료하지 않은 미션 중 최대 `count` 개를 무작위로 고른다.
 
     후보가 `count` 보다 적으면 있는 만큼만, 하나도 없으면 빈 배열을 반환한다.
@@ -49,17 +49,10 @@ def recommend_nearby_missions(
     if len(candidates) > count:
         candidates = random.sample(candidates, count)
 
-    return [
-        NearbyMissionResponse(
-            id=candidate.id,
-            mission_type=candidate.mission_type,
-            mission_title=candidate.mission_title,
-        )
-        for candidate in candidates
-    ]
+    return candidates
 
 
-def _load_candidates(db: Session, current_user_id: int) -> list[_Candidate]:
+def _load_candidates(db: Session, current_user_id: int) -> list[RecommendedMission]:
     """완료하지 않은 추천 후보를 모은다."""
     treasure = _load_missions(db, TreasureMission, MissionType.TREASURE)
     cooperative = _load_missions(db, CooperativeMission, MissionType.COOPERATIVE)
@@ -89,14 +82,10 @@ def _load_missions(
     db: Session,
     mission_model: type[CooperativeMission] | type[TreasureMission],
     mission_type: MissionType,
-) -> list[_Candidate]:
-    """유형별 세부 미션과 공통 미션 제목을 함께 읽어온다."""
-    statement = (
-        select(mission_model.id, Mission.mission_title)
-        .join(Mission, Mission.id == mission_model.mission_id)
-        .order_by(mission_model.id)
-    )
+) -> list[RecommendedMission]:
+    """유형별 세부 미션 id 를 읽어온다."""
+    statement = select(mission_model.id).order_by(mission_model.id)
     return [
-        _Candidate(id=mission_id, mission_type=mission_type, mission_title=mission_title)
-        for mission_id, mission_title in db.execute(statement).all()
+        RecommendedMission(id=mission_id, mission_type=mission_type)
+        for mission_id in db.scalars(statement).all()
     ]
