@@ -3,10 +3,13 @@
 기준 문서: app/map/docs/API_SPEC.md, app/map/docs/BUSINESS_RULES.md
 """
 
+from typing import Any
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.common import distance
+from app.common import distance, rewards
+from app.common.rewards import GrantedRewards
 from app.cooperative_mission.models import CooperativeMission
 from app.core.errors import InvalidRequestError, NotFoundError
 from app.guestbook.models import Guestbook, RoadGuestbook
@@ -29,7 +32,12 @@ from app.map.schemas import (
     MapContentsResponse,
     MapLocationResponse,
     MapMissionResponse,
+    MapModalArCharacterRewardResponse,
+    MapModalCouponRewardResponse,
+    MapModalMissionResponse,
+    MapModalPointRewardResponse,
     MapModalQuery,
+    MapModalRewardDetailResponse,
     MapModalTargetType,
     MapPointResponse,
     MapRoadGuestbookResponse,
@@ -38,6 +46,8 @@ from app.map.schemas import (
     RoadGuestbookModalResponse,
 )
 from app.map.viewport import Point, Viewport
+from app.mission import reward_history
+from app.mission.completion import is_mission_completed
 from app.mission.models import Mission
 from app.mission.schemas import MissionType
 from app.services.kto import get_location_image_url, get_location_overview
@@ -280,20 +290,27 @@ MAP_MODAL_TARGET_NOT_FOUND = "MAP_MODAL_TARGET_NOT_FOUND"
 
 
 def get_map_modal(
-    db: Session, query: MapModalQuery
+    db: Session, current_user_id: int, query: MapModalQuery
 ) -> LocationModalResponse | RoadGuestbookModalResponse:
     """지도에서 아이콘을 눌렀을 때 띄울 모달 정보를 조회한다.
 
     조회 대상은 장소와 길바닥 방명록 두 가지뿐이고, 유형에 따라 응답 형태가 다르다.
-    조회만 하고 데이터를 바꾸지 않는다.
+    장소 모달의 미션 완료/보상 수령 여부는 현재 사용자 기준으로 판단한다.
+    조회만 하고 데이터를 바꾸지 않는다. (보상을 지급하거나 지급 여부를 바꾸지 않는다)
     """
     if query.target_type is MapModalTargetType.LOCATION:
-        return _to_location_modal(db, query)
+        return _to_location_modal(db, current_user_id, query)
     return _to_road_guestbook_modal(db, query)
 
 
-def _to_location_modal(db: Session, query: MapModalQuery) -> LocationModalResponse:
-    """장소 모달 응답을 만든다. 방명록이 없어도 오류가 아니라 개수 0 / 빈 배열이다."""
+def _to_location_modal(
+    db: Session, current_user_id: int, query: MapModalQuery
+) -> LocationModalResponse:
+    """장소 모달 응답을 만든다.
+
+    방명록이 없어도, 연결된 미션이 없어도 오류가 아니다.
+    (각각 개수 0 / 빈 배열, `mission = null`)
+    """
     location = db.get(Location, query.target_id)
     if location is None:
         raise NotFoundError(
@@ -310,8 +327,102 @@ def _to_location_modal(db: Session, query: MapModalQuery) -> LocationModalRespon
         location_category=location.location_category,
         distance_meter=distance_meter,
         duration_minutes=distance.calculate_duration_minutes(distance_meter),
+        mission=_find_modal_mission(db, current_user_id, location.id),
         guestbooks_count=_count_guestbooks(db, location.id),
         guestbooks=_find_latest_guestbooks(db, location.id),
+    )
+
+
+def _find_modal_mission(
+    db: Session, current_user_id: int, location_id: int
+) -> MapModalMissionResponse | None:
+    """장소 모달에 넣을 미션 하나를 조합한다. 연결된 미션이 없으면 `None`.
+
+    한 장소에 두 유형이 함께 연결된 상태는 데이터 무결성 문제라, 임의로 하나를 고르지 않고
+    예외를 올려 500 으로 드러낸다.
+    """
+    found = {
+        MissionType.TREASURE: location_missions.find_treasure_missions(
+            db, [location_id]
+        ).get(location_id),
+        MissionType.COOPERATIVE: location_missions.find_cooperative_missions(
+            db, [location_id]
+        ).get(location_id),
+    }
+    matched = [
+        (mission_type, location_mission)
+        for mission_type, location_mission in found.items()
+        if location_mission is not None
+    ]
+    if not matched:
+        return None
+    if len(matched) > 1:
+        raise RuntimeError(f"장소 {location_id} 에 미션이 여러 유형으로 연결돼 있습니다.")
+
+    mission_type, location_mission = matched[0]
+    mission = db.get(Mission, location_mission.mission_id)
+    detail_mission: TreasureMission | CooperativeMission | None = (
+        db.get(TreasureMission, location_mission.id)
+        if mission_type is MissionType.TREASURE
+        else db.get(CooperativeMission, location_mission.id)
+    )
+    if mission is None or detail_mission is None:
+        return None
+    if mission.mission_type != mission_type.value:
+        # 세부 미션과 공통 미션의 유형이 어긋난 데이터는 정상 미션으로 보지 않는다.
+        return None
+
+    granted = reward_history.get_granted_rewards(
+        db, mission_type, location_mission.id, current_user_id
+    )
+    return MapModalMissionResponse(
+        mission_id=location_mission.id,
+        mission_type=mission_type,
+        mission_title=location_mission.mission_title,
+        # 완료 여부와 보상 수령 여부는 서로 독립적으로 계산한다.
+        is_completed=is_mission_completed(db, current_user_id, mission),
+        reward_detail=_to_modal_reward_detail(db, detail_mission.reward_detail, granted),
+    )
+
+
+def _to_modal_reward_detail(
+    db: Session, reward_detail: dict[str, Any] | None, granted: GrantedRewards
+) -> MapModalRewardDetailResponse:
+    """미션에 설정된 보상 전체와 현재 사용자의 수령 여부를 함께 담는다.
+
+    이미 받은 보상도 정보를 지우지 않고 `is_received` 로만 구분한다.
+    미션에 아예 없는 보상 항목만 `null` 이다.
+    """
+    reward = reward_detail or {}
+    ar_character = rewards.to_ar_character(db, reward.get("ar_character_id"))
+    coupon = rewards.to_coupon(reward)
+    point = reward.get("point") or 0
+
+    return MapModalRewardDetailResponse(
+        ar_character=(
+            MapModalArCharacterRewardResponse(
+                id=ar_character.id,
+                name=ar_character.name,
+                image_url=ar_character.image_url,
+                is_received=granted.ar_character,
+            )
+            if ar_character
+            else None
+        ),
+        point=(
+            MapModalPointRewardResponse(amount=point, is_received=granted.point)
+            if point > 0
+            else None
+        ),
+        coupon=(
+            MapModalCouponRewardResponse(
+                coupon_location=coupon.coupon_location,
+                coupon_price=coupon.coupon_price,
+                is_received=granted.coupon,
+            )
+            if coupon
+            else None
+        ),
     )
 
 

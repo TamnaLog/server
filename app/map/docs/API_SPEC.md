@@ -185,6 +185,8 @@ Status Code : `200 OK`
 
 지도에서 장소 또는 길바닥 방명록 아이콘을 선택하면 호출한다.
 
+이 API는 `Authorization: Bearer {accessToken}` 헤더가 필수이며, 백엔드는 액세스 토큰으로 현재 사용자를 식별하고 실제 사용자 존재 여부를 검증한다. 응답에 사용자별 데이터가 없더라도 인증된 사용자만 호출할 수 있다.
+
 조회 대상은 `LOCATION | ROAD_GUESTBOOK`만 지원하며, 선택한 대상의 ID와 사용자의 현재 GPS 좌표를 Query로 전송한다.
 
 `LOCATION`을 조회하면 장소 기본 정보와 해당 장소를 참조하는 최신 방명록을 최대 3개 반환하고, `ROAD_GUESTBOOK`을 조회하면 해당 길바닥 방명록의 상세 콘텐츠를 반환한다.
@@ -237,6 +239,24 @@ Status Code : `200 OK`
 | string | `locationCategory` | 장소 분류 |
 | number | `distanceMeter` | 사용자의 현재 위치와 장소 사이의 직선거리(m) |
 | integer | `durationMinutes` | 사용자의 현재 위치에서 장소까지의 예상 이동 시간(분) |
+| object | null | `mission` | 해당 장소에 연결된 미션 정보. 미션이 없으면 null |
+| integer | `mission.missionId` | `missionType`에 해당하는 유형별 세부 미션 ID |
+| string | `mission.missionType` | 장소에 연결된 미션 유형. `TREASURE | COOPERATIVE` |
+| string | `mission.missionTitle` | 미션 이름 |
+| boolean | `mission.isCompleted` | 현재 사용자의 해당 미션 완료 여부 |
+| object | `mission.rewardDetail` | 해당 미션의 전체 보상 정보. 수령 여부와 관계없이 AR 캐릭터, 포인트, 쿠폰을 모두 포함 |
+| object | `mission.rewardDetail.arCharacter` | AR 캐릭터 보상 정보 |
+| integer | `mission.rewardDetail.arCharacter.id` | AR 캐릭터 ID |
+| string | `mission.rewardDetail.arCharacter.name` | AR 캐릭터 이름 |
+| string | `mission.rewardDetail.arCharacter.imageUrl` | AR 캐릭터 이미지 URL |
+| boolean | `mission.rewardDetail.arCharacter.isReceived` | 현재 사용자의 해당 AR 캐릭터 보상 수령 여부 |
+| object | `mission.rewardDetail.point` | 포인트 보상 정보 |
+| integer | `mission.rewardDetail.point.amount` | 포인트 보상량 |
+| boolean | `mission.rewardDetail.point.isReceived` | 현재 사용자의 해당 포인트 보상 수령 여부 |
+| object | `mission.rewardDetail.coupon` | 쿠폰 보상 정보 |
+| string | `mission.rewardDetail.coupon.couponLocation` | 쿠폰 사용처 |
+| integer | `mission.rewardDetail.coupon.couponPrice` | 쿠폰 금액 |
+| boolean | `mission.rewardDetail.coupon.isReceived` | 현재 사용자의 해당 쿠폰 보상 수령 여부 |
 | integer | `guestbooksCount` | 해당 장소를 참조하는 방명록 전체 개수. 없으면 0 |
 | array | `guestbooks` | 해당 장소를 참조하는 방명록 중 `visited_at` 최신순 최대 3개. 없으면 빈 배열 |
 | integer | `guestbooks[].id` | 방명록 ID |
@@ -253,6 +273,29 @@ Status Code : `200 OK`
   "locationCategory": "관광지",
   "distanceMeter": 1200,
   "durationMinutes": 15,
+  "mission": {
+    "missionId": 12,
+    "missionType": "TREASURE",
+    "missionTitle": "현애원의 숨은 보물 찾기",
+    "isCompleted": true,
+    "rewardDetail": {
+      "arCharacter": {
+        "id": 3,
+        "name": "점박이 물범",
+        "imageUrl": "https://example.com/images/ar-characters/3.png",
+        "isReceived": true
+      },
+      "point": {
+        "amount": 100,
+        "isReceived": true
+      },
+      "coupon": {
+        "couponLocation": "현애원 카페",
+        "couponPrice": 3000,
+        "isReceived": false
+      }
+    }
+  },
   "guestbooksCount": 10,
   "guestbooks": [
     {
@@ -275,6 +318,10 @@ Status Code : `200 OK`
 }
 ```
 
+- `mission.missionId`는 공통 MISSION ID가 아니라 `missionType`에 해당하는 유형별 세부 미션 ID다.
+- `rewardDetail`은 보상 수령 여부와 관계없이 미션에 설정된 AR 캐릭터, 포인트, 쿠폰 정보를 모두 반환한다.
+- 각 보상의 `isReceived`는 현재 사용자가 해당 미션의 과거 및 현재 진행도에서 그 보상을 한 번이라도 지급받았는지를 나타낸다.
+- `isCompleted`와 보상 수령 여부는 서로 독립적으로 계산한다.
 - `guestbooksCount`는 반환 목록의 길이가 아니라 해당 장소를 참조하는 전체 방명록 개수다.
 - `guestbooks`는 `visited_at DESC`로 정렬하고, 날짜가 같으면 방명록 ID가 큰 순서로 최대 3개를 반환한다.
 - 대표 이미지는 방명록의 이미지 URL 배열 첫 번째 값을 사용하며, 배열이 없거나 비어 있으면 null이다.

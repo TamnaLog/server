@@ -56,9 +56,6 @@ def get_map_contents(
     status_code=status.HTTP_200_OK,
     response_model=LocationModalResponse | RoadGuestbookModalResponse,
     response_model_by_alias=True,
-    # 응답에 현재 사용자별로 갈리는 값은 없지만 로그인한 사용자만 호출할 수 있다.
-    # 서비스에서 쓰지 않으므로 인자로 받지 않고 의존성으로만 검증한다.
-    dependencies=[Depends(get_current_user_id)],
     responses={
         status.HTTP_404_NOT_FOUND: {
             "description": "조회 대상을 찾을 수 없음",
@@ -72,14 +69,16 @@ def get_map_contents(
 )
 def get_map_modal(
     db: Annotated[Session, Depends(get_db)],
+    current_user_id: Annotated[int, Depends(get_current_user_id)],
     query: Annotated[MapModalQuery, Query()],
 ) -> LocationModalResponse | RoadGuestbookModalResponse:
     """GET /api/v1/map/modals - 지도 모달 조회.
 
     `targetType` 에 따라 응답 형태가 다르다.
-    `LOCATION` 이면 장소 정보와 최신 방명록, `ROAD_GUESTBOOK` 이면 방명록 상세를 내려준다.
+    `LOCATION` 이면 장소 정보와 미션·최신 방명록, `ROAD_GUESTBOOK` 이면 방명록 상세를 내려준다.
+    미션의 완료/보상 수령 여부는 토큰으로 식별한 현재 사용자 기준이다.
     """
-    return service.get_map_modal(db=db, query=query)
+    return service.get_map_modal(db=db, current_user_id=current_user_id, query=query)
 
 
 @router.get(

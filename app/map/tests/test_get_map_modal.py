@@ -10,10 +10,22 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.common import distance
+from app.cooperative_mission.models import (
+    CooperativeMission,
+    CooperativeMissionParticipant,
+    CooperativeMissionProgress,
+    ParticipantRole,
+    ParticipantStatus,
+)
 from app.guestbook.models import Guestbook, RoadGuestbook
 from app.map.models import Location
 from app.map.service import LOCATION_MODAL_GUESTBOOK_LIMIT
-from app.mission.models import Mission
+from app.mission.models import Mission, MissionStatus
+from app.treasure_mission.models import (
+    ArCharacter,
+    TreasureMission,
+    TreasureMissionProgress,
+)
 from app.user.models import User
 from conftest import CURRENT_USER_ID, access_token_hash, auth_headers
 
@@ -30,6 +42,26 @@ LOCATION_LATITUDE = 33.4582
 LOCATION_LONGITUDE = 126.9331
 
 OTHER_LOCATION_ID = 40
+
+TREASURE_MISSION_ID = 12
+COOPERATIVE_MISSION_ID = 21
+COOPERATIVE_COMMON_MISSION_ID = 2
+COOPERATIVE_MISSION_TITLE = "현애원 협동 미션"
+
+AR_CHARACTER_ID = 3
+AR_CHARACTER_NAME = "점박이 물범"
+AR_CHARACTER_IMAGE_URL = "https://example.com/ar-characters/3.png"
+COUPON_LOCATION = "현애원 카페"
+COUPON_PRICE = 3000
+REWARD_POINT = 100
+
+# 세 종류 보상이 모두 설정된 미션.
+REWARD_DETAIL = {
+    "ar_character_id": AR_CHARACTER_ID,
+    "point": REWARD_POINT,
+    "coupon_location": COUPON_LOCATION,
+    "coupon_price": COUPON_PRICE,
+}
 
 ROAD_GUESTBOOK_ID = 100
 ROAD_GUESTBOOK_ALIAS = "성산 바다 앞"
@@ -213,6 +245,7 @@ def test_장소_모달을_조회하면_기본_정보와_방명록을_반환한�
         "locationCategory": LOCATION_CATEGORY,
         "distanceMeter": expected_distance,
         "durationMinutes": distance.calculate_duration_minutes(expected_distance),
+        "mission": None,
         "guestbooksCount": 2,
         "guestbooks": [
             {
@@ -383,6 +416,473 @@ def test_사용자_좌표가_장소와_같으면_거리가_0이다(
     )
 
     assert body["distanceMeter"] == 0
+
+
+# ---------------------------------------------------------------------
+# 장소 미션
+# ---------------------------------------------------------------------
+
+
+def _add_ar_character(db_session: Session) -> None:
+    """보상 캐릭터. 두 유형 미션을 함께 만드는 경우를 위해 한 번만 넣는다."""
+    if db_session.get(ArCharacter, AR_CHARACTER_ID) is not None:
+        return
+
+    db_session.add(
+        ArCharacter(
+            id=AR_CHARACTER_ID,
+            character_name=AR_CHARACTER_NAME,
+            character_description="설명",
+            acquire_condition="미션 완료",
+            character_img_url=AR_CHARACTER_IMAGE_URL,
+            hashtags=["#물범"],
+        )
+    )
+    db_session.commit()
+
+
+def _add_treasure_mission(
+    db_session: Session,
+    *,
+    location_id: int = LOCATION_ID,
+    reward_detail: dict[str, object] | None = None,
+) -> None:
+    """장소에 보물찾기 미션을 붙인다. (fixture 의 공통 미션이 TREASURE 유형이다)"""
+    _add_ar_character(db_session)
+    db_session.add(
+        TreasureMission(
+            id=TREASURE_MISSION_ID,
+            mission_id=MISSION_ID,
+            location_id=location_id,
+            item_total_count=3,
+            reward_detail=REWARD_DETAIL if reward_detail is None else reward_detail,
+        )
+    )
+    db_session.commit()
+
+
+def _add_treasure_progress(
+    db_session: Session,
+    *,
+    progress_id: int,
+    user_id: int = CURRENT_USER_ID,
+    mission_status: MissionStatus = MissionStatus.IN_PROGRESS,
+    ar_character_granted: bool = False,
+    point_granted: bool = False,
+    coupon_granted: bool = False,
+) -> None:
+    db_session.add(
+        TreasureMissionProgress(
+            id=progress_id,
+            treasure_mission_id=TREASURE_MISSION_ID,
+            user_id=user_id,
+            item_detail=[
+                {"index": 1, "mx": LOCATION_LONGITUDE, "my": LOCATION_LATITUDE}
+            ],
+            current_found_item_idx=[],
+            current_step=1,
+            mission_status=mission_status.value,
+            ar_character_reward_granted=ar_character_granted,
+            point_reward_granted=point_granted,
+            coupon_reward_granted=coupon_granted,
+        )
+    )
+    db_session.commit()
+
+
+def _add_cooperative_mission(
+    db_session: Session,
+    *,
+    location_id: int = LOCATION_ID,
+    reward_detail: dict[str, object] | None = None,
+) -> None:
+    """장소에 협동 미션을 붙인다. 공통 미션도 COOPERATIVE 유형으로 함께 만든다."""
+    _add_ar_character(db_session)
+    db_session.add_all(
+        [
+            Mission(
+                id=COOPERATIVE_COMMON_MISSION_ID,
+                mission_type="COOPERATIVE",
+                mission_title=COOPERATIVE_MISSION_TITLE,
+                description="설명",
+                step_detail=[{"step": 1, "step_title": "시작", "description": "설명"}],
+            ),
+            CooperativeMission(
+                id=COOPERATIVE_MISSION_ID,
+                mission_id=COOPERATIVE_COMMON_MISSION_ID,
+                location_id=location_id,
+                reward_detail=REWARD_DETAIL if reward_detail is None else reward_detail,
+            ),
+        ]
+    )
+    db_session.commit()
+
+
+def _add_cooperative_progress(
+    db_session: Session,
+    *,
+    progress_id: int,
+    mission_status: MissionStatus = MissionStatus.IN_PROGRESS,
+    ar_character_granted: bool = False,
+    point_granted: bool = False,
+    coupon_granted: bool = False,
+    deleted_at: datetime | None = None,
+) -> None:
+    db_session.add(
+        CooperativeMissionProgress(
+            id=progress_id,
+            cooperative_mission_id=COOPERATIVE_MISSION_ID,
+            current_step=1,
+            mission_status=mission_status.value,
+            team_token=f"team-token-{progress_id}",
+            ar_character_reward_granted=ar_character_granted,
+            point_reward_granted=point_granted,
+            coupon_reward_granted=coupon_granted,
+            deleted_at=deleted_at,
+        )
+    )
+    db_session.commit()
+
+
+def _add_participant(
+    db_session: Session,
+    *,
+    participant_id: int,
+    progress_id: int,
+    user_id: int = CURRENT_USER_ID,
+    participant_status: ParticipantStatus = ParticipantStatus.ACCEPTED,
+    deleted_at: datetime | None = None,
+) -> None:
+    db_session.add(
+        CooperativeMissionParticipant(
+            id=participant_id,
+            cooperative_mission_progress_id=progress_id,
+            user_id=user_id,
+            participant_status=participant_status.value,
+            participant_role=ParticipantRole.HOST.value,
+            joined_at=datetime(2026, 8, 25, 12, 0, 0),
+            deleted_at=deleted_at,
+        )
+    )
+    db_session.commit()
+
+
+def _mission(client: TestClient) -> dict | None:
+    return _get(client, _params())["mission"]
+
+
+def test_미션이_없는_장소는_mission이_null이다(
+    client: TestClient, modal_data: None
+) -> None:
+    assert _mission(client) is None
+
+
+def test_보물찾기_미션이_있으면_세부_미션_id와_TREASURE를_반환한다(
+    client: TestClient, db_session: Session, modal_data: None
+) -> None:
+    _add_treasure_mission(db_session)
+
+    # 배열이 아니라 단일 객체이고, missionId 는 공통 MISSION.id 가 아니라 세부 미션 id 다.
+    assert _mission(client) == {
+        "missionId": TREASURE_MISSION_ID,
+        "missionType": "TREASURE",
+        "missionTitle": MISSION_TITLE,
+        "isCompleted": False,
+        "rewardDetail": {
+            "arCharacter": {
+                "id": AR_CHARACTER_ID,
+                "name": AR_CHARACTER_NAME,
+                "imageUrl": AR_CHARACTER_IMAGE_URL,
+                "isReceived": False,
+            },
+            "point": {"amount": REWARD_POINT, "isReceived": False},
+            "coupon": {
+                "couponLocation": COUPON_LOCATION,
+                "couponPrice": COUPON_PRICE,
+                "isReceived": False,
+            },
+        },
+    }
+
+
+def test_협동_미션이_있으면_세부_미션_id와_COOPERATIVE를_반환한다(
+    client: TestClient, db_session: Session, modal_data: None
+) -> None:
+    _add_cooperative_mission(db_session)
+
+    mission = _mission(client)
+
+    assert mission is not None
+    assert mission["missionId"] == COOPERATIVE_MISSION_ID
+    assert mission["missionType"] == "COOPERATIVE"
+    assert mission["missionTitle"] == COOPERATIVE_MISSION_TITLE
+    assert mission["isCompleted"] is False
+
+
+def test_다른_장소의_미션은_섞이지_않는다(
+    client: TestClient, db_session: Session, modal_data: None
+) -> None:
+    _add_treasure_mission(db_session, location_id=OTHER_LOCATION_ID)
+
+    assert _mission(client) is None
+
+
+def test_미션에_설정되지_않은_보상_항목만_null이다(
+    client: TestClient, db_session: Session, modal_data: None
+) -> None:
+    _add_treasure_mission(db_session, reward_detail={"point": REWARD_POINT})
+
+    mission = _mission(client)
+
+    assert mission is not None
+    assert mission["rewardDetail"] == {
+        "arCharacter": None,
+        "point": {"amount": REWARD_POINT, "isReceived": False},
+        "coupon": None,
+    }
+
+
+# ---------------------------------------------------------------------
+# 장소 미션 - 완료 여부
+# ---------------------------------------------------------------------
+
+
+def test_진행_중_이력만_있으면_isCompleted가_false다(
+    client: TestClient, db_session: Session, modal_data: None
+) -> None:
+    _add_treasure_mission(db_session)
+    _add_treasure_progress(db_session, progress_id=1)
+
+    mission = _mission(client)
+
+    assert mission is not None
+    assert mission["isCompleted"] is False
+
+
+def test_완료_이력이_하나라도_있으면_isCompleted가_true다(
+    client: TestClient, db_session: Session, modal_data: None
+) -> None:
+    _add_treasure_mission(db_session)
+    _add_treasure_progress(db_session, progress_id=1)
+    _add_treasure_progress(
+        db_session, progress_id=2, mission_status=MissionStatus.COMPLETED
+    )
+    # 가장 최근 진행도 하나가 아니라 이력 전체를 본다.
+    _add_treasure_progress(db_session, progress_id=3)
+
+    mission = _mission(client)
+
+    assert mission is not None
+    assert mission["isCompleted"] is True
+
+
+def test_다른_사용자의_완료_이력은_반영되지_않는다(
+    client: TestClient, db_session: Session, modal_data: None
+) -> None:
+    _add_treasure_mission(db_session)
+    _add_treasure_progress(
+        db_session,
+        progress_id=1,
+        user_id=OTHER_USER_ID,
+        mission_status=MissionStatus.COMPLETED,
+        ar_character_granted=True,
+        point_granted=True,
+        coupon_granted=True,
+    )
+
+    mission = _mission(client)
+
+    assert mission is not None
+    assert mission["isCompleted"] is False
+    assert mission["rewardDetail"]["arCharacter"]["isReceived"] is False
+    assert mission["rewardDetail"]["point"]["isReceived"] is False
+    assert mission["rewardDetail"]["coupon"]["isReceived"] is False
+
+
+def test_완료했어도_보상을_안_받았으면_isReceived는_false다(
+    client: TestClient, db_session: Session, modal_data: None
+) -> None:
+    _add_treasure_mission(db_session)
+    _add_treasure_progress(
+        db_session, progress_id=1, mission_status=MissionStatus.COMPLETED
+    )
+
+    mission = _mission(client)
+
+    # isCompleted 와 보상별 isReceived 는 서로 독립적이다.
+    assert mission is not None
+    assert mission["isCompleted"] is True
+    assert mission["rewardDetail"]["arCharacter"]["isReceived"] is False
+
+
+# ---------------------------------------------------------------------
+# 장소 미션 - 보상 수령 여부
+# ---------------------------------------------------------------------
+
+
+def test_진행도_이력이_없으면_보상_수령_여부가_모두_false다(
+    client: TestClient, db_session: Session, modal_data: None
+) -> None:
+    _add_treasure_mission(db_session)
+
+    mission = _mission(client)
+
+    assert mission is not None
+    reward_detail = mission["rewardDetail"]
+    assert [reward["isReceived"] for reward in reward_detail.values()] == [
+        False,
+        False,
+        False,
+    ]
+
+
+def test_서로_다른_진행도에서_지급된_보상은_각각_true가_된다(
+    client: TestClient, db_session: Session, modal_data: None
+) -> None:
+    _add_treasure_mission(db_session)
+    _add_treasure_progress(db_session, progress_id=1, ar_character_granted=True)
+    _add_treasure_progress(db_session, progress_id=2, coupon_granted=True)
+
+    mission = _mission(client)
+
+    # 종류별 OR 이라 포인트만 아직 안 받은 상태로 남는다.
+    assert mission is not None
+    assert mission["rewardDetail"]["arCharacter"]["isReceived"] is True
+    assert mission["rewardDetail"]["point"]["isReceived"] is False
+    assert mission["rewardDetail"]["coupon"]["isReceived"] is True
+
+
+def test_이미_수령한_보상도_상세_정보를_그대로_반환한다(
+    client: TestClient, db_session: Session, modal_data: None
+) -> None:
+    _add_treasure_mission(db_session)
+    _add_treasure_progress(
+        db_session,
+        progress_id=1,
+        ar_character_granted=True,
+        point_granted=True,
+        coupon_granted=True,
+    )
+
+    mission = _mission(client)
+
+    # 수령한 보상을 null 로 바꾸거나 빼지 않는다. (remainingReward 와 다른 점)
+    assert mission is not None
+    assert mission["rewardDetail"] == {
+        "arCharacter": {
+            "id": AR_CHARACTER_ID,
+            "name": AR_CHARACTER_NAME,
+            "imageUrl": AR_CHARACTER_IMAGE_URL,
+            "isReceived": True,
+        },
+        "point": {"amount": REWARD_POINT, "isReceived": True},
+        "coupon": {
+            "couponLocation": COUPON_LOCATION,
+            "couponPrice": COUPON_PRICE,
+            "isReceived": True,
+        },
+    }
+
+
+# ---------------------------------------------------------------------
+# 장소 미션 - 협동 미션 이력 범위
+# ---------------------------------------------------------------------
+
+
+def test_협동_미션은_수락한_참가자의_이력을_반영한다(
+    client: TestClient, db_session: Session, modal_data: None
+) -> None:
+    _add_cooperative_mission(db_session)
+    _add_cooperative_progress(
+        db_session,
+        progress_id=1,
+        mission_status=MissionStatus.COMPLETED,
+        point_granted=True,
+    )
+    _add_participant(db_session, participant_id=1, progress_id=1)
+
+    mission = _mission(client)
+
+    assert mission is not None
+    assert mission["isCompleted"] is True
+    assert mission["rewardDetail"]["point"]["isReceived"] is True
+
+
+@pytest.mark.parametrize(
+    ("participant_status", "participant_deleted_at", "progress_deleted_at"),
+    [
+        pytest.param(
+            ParticipantStatus.ACCEPTED,
+            datetime(2026, 8, 26, 12, 0, 0),
+            None,
+            id="deleted-participant",
+        ),
+        pytest.param(ParticipantStatus.PENDING, None, None, id="pending-participant"),
+        pytest.param(
+            ParticipantStatus.ACCEPTED,
+            None,
+            datetime(2026, 8, 26, 12, 0, 0),
+            id="deleted-progress",
+        ),
+    ],
+)
+def test_협동_미션의_제외_대상_이력은_반영하지_않는다(
+    client: TestClient,
+    db_session: Session,
+    modal_data: None,
+    participant_status: ParticipantStatus,
+    participant_deleted_at: datetime | None,
+    progress_deleted_at: datetime | None,
+) -> None:
+    _add_cooperative_mission(db_session)
+    _add_cooperative_progress(
+        db_session,
+        progress_id=1,
+        mission_status=MissionStatus.COMPLETED,
+        ar_character_granted=True,
+        point_granted=True,
+        coupon_granted=True,
+        deleted_at=progress_deleted_at,
+    )
+    _add_participant(
+        db_session,
+        participant_id=1,
+        progress_id=1,
+        participant_status=participant_status,
+        deleted_at=participant_deleted_at,
+    )
+
+    mission = _mission(client)
+
+    assert mission is not None
+    assert mission["isCompleted"] is False
+    assert mission["rewardDetail"]["point"]["isReceived"] is False
+
+
+# ---------------------------------------------------------------------
+# 장소 미션 - 조회 전용
+# ---------------------------------------------------------------------
+
+
+def test_모달_조회는_보상_지급_여부를_바꾸지_않는다(
+    client: TestClient, db_session: Session, modal_data: None
+) -> None:
+    _add_treasure_mission(db_session)
+    _add_treasure_progress(db_session, progress_id=1, point_granted=True)
+
+    _get(client, _params())
+
+    db_session.expire_all()
+    progress = db_session.get(TreasureMissionProgress, 1)
+    user = db_session.get(User, CURRENT_USER_ID)
+    assert progress is not None
+    assert user is not None
+    # 조회만 하고 보상을 지급하거나 지급 여부를 바꾸지 않는다.
+    assert progress.ar_character_reward_granted is False
+    assert progress.point_reward_granted is True
+    assert progress.coupon_reward_granted is False
+    assert progress.mission_status == MissionStatus.IN_PROGRESS.value
+    assert user.point == 0
 
 
 # ---------------------------------------------------------------------
