@@ -649,44 +649,108 @@ DB 조회, 거리 계산 또는 응답 구성 중 예상하지 못한 오류가 
 
 # 지도 장소 상세 조회 비즈니스 룰
 
-## 1. 요청과 화면 진입 전제
+## 1. 요청
 
 - HTTP 메서드: `GET`
 - 엔드포인트: `/api/v1/map/locations/{locationId}`
-- Request Query와 Body는 받지 않는다.
+- Request Body는 받지 않는다.
 - `locationId`는 `LOCATION.id`다.
 - 현재 사용자는 Authorization Bearer 토큰의 `get_current_user_id()`로 식별한다.
-- 상세 화면은 지도 모달을 거쳐서 진입한다고 전제한다.
+- 프론트는 거리와 예상 이동 시간을 다시 계산할 수 있도록 `userLatitude`, `userLongitude`를 Query로 전달한다.
+- 상세 API는 이전 지도 모달 요청의 사용자 좌표나 응답을 서버 세션에 저장해 재사용하지 않는다.
 
-지도 모달 조회에서 이미 전달한 다음 정보는 상세 응답에서 중복 반환하지 않는다.
+| Query 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `userLatitude` | number | O | 현재 사용자 위치의 위도. `-90~90` |
+| `userLongitude` | number | O | 현재 사용자 위치의 경도. `-180~180` |
 
-- 장소 이름
-- 장소 카테고리
-- 사용자와 장소 사이의 거리
-- 예상 이동 시간
-
-## 2. 장소 기본 정보와 TourAPI 상세 설명
+## 2. 장소 조회와 기본 정보
 
 `LOCATION.id = locationId`인 장소를 조회한다. 장소가 존재하지 않으면 `404 LOCATION_NOT_FOUND`를 반환한다.
 
 | 응답 필드 | 데이터 출처 |
 | --- | --- |
+| `locationTitle` | `LOCATION.location_title` |
+| `locationCategory` | `LOCATION.location_category` |
+| `distanceMeter` | 현재 사용자 좌표와 `LOCATION.my`, `LOCATION.mx` 사이의 직선거리(m) |
+| `durationMinutes` | `distanceMeter`에 따른 예상 이동 시간(분) |
 | `locationAddress` | `LOCATION.location_address` |
-| `locationDescription` | TourAPI `detailCommon2` 응답의 `overview` |
 
-TourAPI 호출에는 `LOCATION.content_id`를 사용한다. `overview`는 프론트가 그대로 표시할 수 있는 일반 문자열로 정리한 후 반환한다.
+거리와 예상 이동 시간은 `app/common/distance.py`의 `calculate_distance_meter()`와 `calculate_duration_minutes()`를 사용한다. 지도 상세 서비스에 거리 공식, 이동 속도와 반올림 규칙을 중복 구현하지 않는다.
+
+지도 모달에서 같은 정보를 반환했더라도 상세 응답에 장소명, 장소 분류, 거리와 예상 이동 시간을 모두 다시 포함한다.
+
+## 3. TourAPI 장소 설명과 상세 이미지
+
+TourAPI 호출에는 `LOCATION.content_id`를 사용한다. 외부 API의 이미지와 설명은 부가 정보이므로 인증키 미설정, 통신 오류, 잘못된 JSON, 빈 응답 또는 값 누락이 발생해도 장소 상세 조회 전체를 실패시키지 않는다.
+
+### 장소 설명
+
+`locationDescription`은 기존 `app/services/kto.py`의 `get_location_overview(content_id)`를 사용하여 TourAPI `detailCommon2.overview`에서 가져온다.
 
 1. HTML 엔티티를 일반 문자로 변환한다.
 2. HTML 태그를 제거한다.
 3. 연속된 공백과 줄바꿈을 하나의 공백으로 정리한다.
 4. 앞뒤 공백을 제거한다.
-5. 정리한 결과가 빈 문자열이면 `null`을 반환한다.
+5. 결과가 빈 문자열이거나 조회에 실패하면 `locationDescription = null`을 반환한다.
 
-TourAPI에 `overview`가 없거나 상세 설명 조회에 실패하더라도 장소 상세 조회 전체를 실패시키지 않고 `locationDescription = null`로 반환한다.
+### 장소 상세 이미지
 
-## 3. 임시 추천 미션
+`app/services/kto.py`에 다음 공통 함수를 추가한다.
 
-추천 로직은 지도 서비스에서 직접 작성하지 않고 별도 추천 모듈로 분리한다. 구현 시 `app/map/mission_recommender.py`에서 담당하며, 정식 추천 정책이 적용되기 전까지 다음 임시 규칙을 사용한다.
+```python
+def get_location_detail_image_urls(
+    content_id: int,
+    limit: int = 5,
+) -> list[str] | None:
+    ...
+```
+
+이 함수는 TourAPI `/detailImage2`를 `contentId = LOCATION.content_id`로 호출하고 응답의 `originimgurl`을 사용한다.
+
+1. 비어 있지 않은 `originimgurl`만 사용한다.
+2. `serialnum`을 숫자로 해석할 수 있는 항목은 `serialnum ASC`로 정렬한다.
+3. 같은 URL이 여러 번 나오면 처음 한 건만 남긴다.
+4. 정렬과 중복 제거를 마친 결과에서 최대 `limit`개를 반환한다.
+5. 이미지가 1~4장이면 조회된 수만큼만 반환한다.
+6. 이미지가 없거나 조회에 실패하면 빈 배열이 아니라 `None`을 반환하여 API의 `locationImageUrls = null`로 직렬화한다.
+
+`limit`은 양수만 허용하며 장소 상세 서비스에서는 `5`를 전달한다. `get_location_image_url()`은 `detailCommon2.firstimage` 기반 대표 이미지 한 장을 위한 함수이므로 상세 이미지 배열에 재사용하지 않는다.
+
+## 4. 공통 미션 상세 조합 규칙
+
+`locationMission`과 `nearbyMissions[]`는 같은 미션 상세 조합 함수를 사용한다. 지도 모달의 단일 `mission` 객체도 동일한 조합 규칙을 재사용하며, API마다 완료 및 보상 이력 조회를 다시 구현하지 않는다.
+
+| 응답 필드 | 데이터 출처 및 규칙 |
+| --- | --- |
+| `missionId` | `TREASURE_MISSION.id` 또는 `COOPERATIVE_MISSION.id`. 공통 `MISSION.id`가 아니다. |
+| `missionType` | 보물찾기이면 `TREASURE`, 협동이면 `COOPERATIVE` |
+| `missionTitle` | 세부 미션의 `mission_id`로 연결된 `MISSION.mission_title` |
+| `description` | 세부 미션의 `mission_id`로 연결된 `MISSION.description` |
+| `isCompleted` | 현재 사용자가 해당 세부 미션을 한 번이라도 완료했는지 여부 |
+| `rewardDetail` | 세부 미션의 전체 보상 정보와 현재 사용자의 보상별 수령 여부 |
+
+완료 여부는 `app/mission/completion.py`의 `is_mission_completed()`를 사용한다. 여러 진행도 중 완료 이력이 하나라도 있으면 `true`이며, 진행도가 없거나 `IN_PROGRESS` 진행도만 있으면 `false`다.
+
+`rewardDetail`에는 AR 캐릭터, 포인트, 쿠폰 세 종류를 항상 포함한다. 모든 세부 미션의 `reward_detail`에 세 보상이 존재하는 것을 데이터 규칙으로 전제한다.
+
+| 보상 | 정보 출처 | 수령 여부 판정 |
+| --- | --- | --- |
+| AR 캐릭터 | `reward_detail.ar_character_id`로 연결된 `AR_CHARACTER`의 id, 이름, 이미지 URL | 모든 관련 진행도의 `ar_character_reward_granted`를 OR |
+| 포인트 | `reward_detail.point` | 모든 관련 진행도의 `point_reward_granted`를 OR |
+| 쿠폰 | `reward_detail.coupon_location`, `reward_detail.coupon_price` | 모든 관련 진행도의 `coupon_reward_granted`를 OR |
+
+- 진행도 이력이 없으면 세 보상의 `isReceived`는 모두 `false`다.
+- 같은 미션을 여러 번 진행했다면 가장 최근 진행도 하나가 아니라 현재 사용자의 모든 진행도 이력을 확인한다.
+- 이미 수령한 보상도 전체 보상 정보를 그대로 반환하고 `isReceived = true`로 표시한다.
+- `isCompleted`와 보상별 `isReceived`는 독립적으로 계산한다.
+- 보상 조합은 `app/common/rewards.py`, 지급 이력은 `app/mission/reward_history.py`를 재사용하고 지도 응답 전용 조합 함수에서 전체 보상 정보와 `GrantedRewards`를 결합한다.
+- 협동 미션은 현재 사용자가 삭제되지 않은 `ACCEPTED` 참가자로 연결된 삭제되지 않은 진행도만 완료 및 보상 이력에 포함한다.
+- 이 조회 API는 보상을 새로 지급하지 않고 보상 지급 여부 컬럼도 변경하지 않는다.
+
+## 5. 임시 추천 미션
+
+추천 대상 선택은 `app/map/mission_recommender.py`에서 담당한다. 정식 추천 정책이 적용되기 전까지 기존 임시 규칙을 유지한다.
 
 - 추천 대상은 보물찾기와 협동 미션이다.
 - 현재 장소에 연결된 미션도 추천 후보에 포함한다.
@@ -696,19 +760,26 @@ TourAPI에 `overview`가 없거나 상세 설명 조회에 실패하더라도 �
 - 후보가 3개보다 적으면 존재하는 후보만 반환한다.
 - 후보가 없으면 `nearbyMissions = []`를 반환한다.
 
-완료 여부는 지도 홈 조회에서 사용하는 사용자별 미션 완료 판정 규칙과 동일하게 판단한다. 보물찾기는 현재 사용자의 `COMPLETED` 진행도, 협동 미션은 현재 사용자의 삭제되지 않은 `ACCEPTED` 참가자 데이터와 삭제되지 않은 `COMPLETED` 진행도를 기준으로 한다.
+선택한 각 미션에는 4절의 공통 미션 상세 조합 규칙을 적용한다. 완료 미션 제외 정책은 추후 추천 모듈에서 변경할 수 있으므로 `nearbyMissions[].isCompleted` 필드는 생략하지 않는다.
 
-각 추천 미션은 다음 값만 반환한다.
+추천 미션은 각각 다른 장소에서 진행되므로 4절의 공통 필드에 더해 그 장소 정보를 함께 반환한다.
 
-| 응답 필드 | 데이터 출처 |
+| 응답 필드 | 데이터 출처 및 규칙 |
 | --- | --- |
-| `nearbyMissions[].id` | `TREASURE_MISSION.id` 또는 `COOPERATIVE_MISSION.id` |
-| `nearbyMissions[].missionType` | `TREASURE` 또는 `COOPERATIVE` |
-| `nearbyMissions[].missionTitle` | 세부 미션의 `mission_id`로 연결된 `MISSION.mission_title` |
+| `nearbyMissions[].locationTitle` | 세부 미션의 `location_id`로 연결된 `LOCATION.location_title` |
+| `nearbyMissions[].representativeImageUrl` | 같은 장소의 `LOCATION.content_id`로 조회한 TourAPI 대표 이미지 |
 
-`nearbyMissions[].id`는 공통 `MISSION.id`가 아니라 `missionType`에 해당하는 유형별 세부 미션 ID다.
+추천 대상은 장소를 가진 보물찾기와 협동 미션뿐이므로 `locationTitle`은 항상 값이 있다. 상세 조회 중인 장소의 이름을 그대로 넣지 않고 각 미션이 연결된 장소의 이름을 사용한다.
 
-## 4. 장소 방명록 전체 조회
+`locationMission`은 상세 조회 중인 장소의 미션이므로 최상위 `locationTitle`과 중복되는 장소 이름과 대표 이미지를 따로 반환하지 않는다.
+
+각 추천 미션의 `representativeImageUrl`은 해당 세부 미션의 `location_id`로 연결된 `LOCATION.content_id`를 기존 `app/services/kto.py`의 `get_location_image_url(content_id)`에 전달하여 조회한다.
+
+- `get_location_image_url()`은 TourAPI `detailCommon2.firstimage`를 우선 사용하고, 없으면 `firstimage2`를 사용한다.
+- 장소명 기반 `searchKeyword2`는 사용하지 않는다.
+- 이미지가 없거나 조회에 실패하면 `representativeImageUrl = null`로 두고 전체 상세 조회는 정상 처리한다.
+
+## 6. 장소 방명록 전체 조회
 
 다음 조건을 만족하는 방명록을 개수 제한과 페이지네이션 없이 모두 반환한다.
 
@@ -717,37 +788,27 @@ GUESTBOOK.location_id = LOCATION.id
 AND GUESTBOOK.deleted_at IS NULL
 ```
 
-방명록은 다음 순서로 정렬한다.
-
-```text
-GUESTBOOK.visited_at DESC,
-GUESTBOOK.id DESC
-```
-
-- 최신 여부는 `created_at`이나 `saved_at`이 아니라 `visited_at`을 기준으로 판단한다.
-- `visited_at`이 같으면 `id`가 큰 방명록을 먼저 반환한다.
-- 조회된 방명록이 없으면 `guestbooks = []`를 반환한다.
-
-각 방명록은 다음 값을 반환한다.
+정렬 순서는 `GUESTBOOK.visited_at DESC, GUESTBOOK.id DESC`다. 조회 결과가 없으면 `guestbooks = []`를 반환한다.
 
 | 응답 필드 | 데이터 출처 및 규칙 |
 | --- | --- |
 | `guestbooks[].id` | `GUESTBOOK.id` |
 | `guestbooks[].missionTitle` | `GUESTBOOK.mission_id`로 연결된 `MISSION.mission_title` |
 | `guestbooks[].representativeImageUrl` | `GUESTBOOK.content_img_url` 배열의 첫 번째 URL |
+| `guestbooks[].userId` | `GUESTBOOK.user_id` |
 | `guestbooks[].userNickname` | `GUESTBOOK.user_id`로 연결된 `USER.nickname` |
 | `guestbooks[].visitedAt` | `GUESTBOOK.visited_at`, `YYYY-MM-DD` 형식 |
 | `guestbooks[].contentWriting` | `GUESTBOOK.content_writing` |
 
-- 방명록이 미션을 참조하지 않으면 `missionTitle = null`을 반환한다.
-- 이미지 배열이 `null`이거나 비어 있으면 `representativeImageUrl = null`을 반환한다.
-- 이미지가 있으면 배열의 첫 번째 URL을 그대로 반환한다.
-- 글이 없으면 `contentWriting = null`을 반환한다.
+- 방명록이 미션을 참조하지 않으면 `missionTitle = null`이다.
+- 이미지 배열이 `null`이거나 비어 있으면 `representativeImageUrl = null`이다.
+- 글이 없으면 `contentWriting = null`이다.
 - `GUESTBOOK.mission_id`는 유형별 세부 미션 ID가 아니라 공통 `MISSION.id`를 참조한다.
+- 작성자와 미션을 방명록마다 다시 조회하지 않도록 JOIN 또는 일괄 조회를 사용한다.
 
-## 5. 현재 장소의 미션
+## 7. 현재 장소의 미션
 
-하나의 장소에는 보물찾기 또는 협동 미션이 최대 하나만 존재한다고 전제한다. 다음 두 조건에 해당하는 미션을 함께 조회한다.
+장소에는 보물찾기 미션 또는 협동 미션이 최대 한 건만 연결되는 것을 데이터 무결성 규칙으로 전제한다.
 
 ```text
 TREASURE_MISSION.location_id = LOCATION.id
@@ -755,35 +816,44 @@ OR COOPERATIVE_MISSION.location_id = LOCATION.id
 ```
 
 - 조회 결과가 없으면 `locationMission = null`을 반환한다.
-- 하나만 조회되면 해당 미션을 반환한다.
-- 데이터 이상으로 둘 이상 조회되면 유형과 관계없이 유형별 세부 미션 ID를 기준으로 `id ASC` 정렬한 첫 번째 미션만 반환한다.
+- 미션이 있으면 배열이 아닌 단일 객체에 4절의 공통 미션 상세 조합 규칙을 적용한다.
+- 보물찾기와 협동 미션이 동시에 조회되는 비정상 데이터를 임의로 정렬해 하나만 선택하지 않는다.
 
-| 응답 필드 | 데이터 출처 |
-| --- | --- |
-| `locationMission.id` | `TREASURE_MISSION.id` 또는 `COOPERATIVE_MISSION.id` |
-| `locationMission.missionType` | `TREASURE` 또는 `COOPERATIVE` |
+## 8. 처리 순서
 
-`locationMission.id`는 공통 `MISSION.id`가 아니라 `missionType`에 해당하는 유형별 세부 미션 ID다.
-
-## 6. 처리 순서
-
-1. `locationId`의 타입과 범위를 검증한다.
+1. `locationId`, `userLatitude`, `userLongitude`의 타입과 범위를 검증한다.
 2. Bearer 토큰으로 현재 사용자를 식별한다.
 3. `LOCATION.id = locationId`인 장소를 조회한다.
 4. 장소가 없으면 `404 LOCATION_NOT_FOUND`를 반환한다.
-5. `LOCATION.content_id`로 TourAPI `detailCommon2`의 `overview`를 조회하고 일반 문자열로 정리한다.
-6. 별도 추천 모듈로 현재 사용자가 완료하지 않은 보물찾기·협동 미션을 최대 3개 무작위 선택한다.
-7. 장소를 참조하는 삭제되지 않은 전체 방명록과 작성자·미션 정보를 일괄 조회한다.
-8. 장소에 직접 연결된 미션을 조회하고 첫 번째 미션을 선택한다.
-9. 응답을 조합하여 `200 OK`를 반환한다.
+5. 공통 거리 모듈로 `distanceMeter`, `durationMinutes`를 계산한다.
+6. `LOCATION.content_id`로 TourAPI 설명과 상세 이미지 최대 5개를 조회한다.
+7. 추천 모듈로 보물찾기·협동 미션을 최대 3개 무작위 선택한다.
+8. 추천 미션의 공통 정보, 완료 여부, 보상 정보와 지급 이력을 조합하고 각 미션 장소의 대표 이미지를 조회한다.
+9. 장소를 참조하는 전체 방명록과 작성자·미션 정보를 일괄 조회한다.
+10. 현재 장소의 단일 미션을 조회하고 공통 미션 상세 정보를 조합한다.
+11. 응답을 조합하여 `200 OK`를 반환한다.
 
-작성자와 미션을 방명록마다 반복 조회하지 않도록 JOIN 또는 일괄 조회를 사용하여 N+1 문제를 방지한다. 이 API는 조회 전용이므로 DB 데이터를 생성하거나 변경하지 않는다.
+이 API는 조회 전용이다. DB 데이터를 생성·수정하거나 보상을 지급하지 않는다. TourAPI 호출 병렬화와 캐시 정책은 현재 범위에서 강제하지 않는다.
 
-## 7. 오류 처리
+## 9. 필수 테스트
+
+- 유효한 사용자 좌표로 장소명, 분류, 거리, 예상 시간과 주소를 반환한다.
+- `detailImage2.originimgurl`이 5개보다 많으면 정렬·중복 제거 후 최대 5개만 반환한다.
+- 상세 이미지가 1~4개면 존재하는 만큼 반환하고, 없거나 TourAPI 호출에 실패하면 `locationImageUrls = null`이다.
+- 방명록마다 `userId`와 `userNickname`을 함께 반환한다.
+- 현재 장소 미션이 없으면 `locationMission = null`이다.
+- 현재 장소 미션과 추천 미션에 제목, 설명, 완료 여부와 보상 세 종류가 모두 포함된다.
+- 과거 여러 진행도에 나뉘어 지급된 보상도 종류별 OR 결과에 따라 `isReceived = true`다.
+- 추천 미션의 장소명과 이미지는 상세 조회 중인 장소가 아니라 각 미션이 연결된 장소를 기준으로 반환한다.
+- 추천 미션 이미지는 `LOCATION.content_id`로 `get_location_image_url()`을 호출하며 `searchKeyword2`를 호출하지 않는다.
+- TourAPI 설명·상세 이미지·추천 미션 이미지 중 일부가 실패해도 나머지 응답을 포함한 `200 OK`를 반환한다.
+- 조회 전후에 사용자 보유 보상과 진행도의 보상 지급 여부가 변경되지 않는다.
+
+## 10. 오류 처리
 
 ### 400 `INVALID_REQUEST`
 
-`locationId`가 정수가 아니거나 1보다 작은 경우 공통 요청 오류를 반환한다.
+`locationId`가 정수가 아니거나 1보다 작거나, 사용자 위도·경도가 누락되거나 허용 범위를 벗어나면 공통 요청 오류를 반환한다.
 
 ```json
 {
@@ -791,7 +861,7 @@ OR COOPERATIVE_MISSION.location_id = LOCATION.id
 }
 ```
 
-FastAPI의 Path 검증 실패를 기본 `422 Validation Error`로 그대로 반환하지 않고 프로젝트 공통 형식인 `400 INVALID_REQUEST`로 변환한다.
+FastAPI의 Path 또는 Query 검증 실패를 기본 `422 Validation Error`로 그대로 반환하지 않고 프로젝트 공통 형식인 `400 INVALID_REQUEST`로 변환한다.
 
 ### 404 `LOCATION_NOT_FOUND`
 
@@ -805,7 +875,7 @@ FastAPI의 Path 검증 실패를 기본 `422 Validation Error`로 그대로 반�
 
 ### 500 `INTERNAL_SERVER_ERROR`
 
-DB 조회, 추천 미션 조회 또는 응답 구성 중 예상하지 못한 오류가 발생하면 공통 서버 오류를 반환한다. TourAPI 상세 설명 조회 실패는 `locationDescription = null`로 처리하므로 `500`으로 변환하지 않는다.
+DB 조회, 추천 미션 조회 또는 응답 구성 중 예상하지 못한 오류가 발생하면 공통 서버 오류를 반환한다. TourAPI 설명, 상세 이미지 또는 대표 이미지 조회 실패는 해당 필드만 `null`로 처리하므로 `500`으로 변환하지 않는다.
 
 ```json
 {

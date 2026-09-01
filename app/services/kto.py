@@ -61,48 +61,133 @@ def get_location_overview(content_id: int) -> str | None:
     return _to_plain_text(item.get("overview"))
 
 
+# 상세 이미지 기본 조회 개수. 정렬·중복 제거 후 잘라내므로 요청 개수보다 넉넉히 받는다.
+_DETAIL_IMAGE_ROWS = 20
+
+
+def get_location_detail_image_urls(content_id: int, limit: int = 5) -> list[str] | None:
+    """TourAPI 에서 장소 상세 이미지 URL 을 최대 `limit` 개 조회한다.
+
+    대표 이미지 한 장을 주는 `get_location_image_url()` 과 달리
+    `detailImage2` 의 `originimgurl` 목록을 쓴다. (둘은 서로 대체하지 않는다)
+    이미지가 없거나 조회하지 못하면 빈 배열이 아니라 `None` 을 돌려준다.
+    응답에서 "이미지 없음"을 `[]` 가 아니라 `null` 로 내려주기 위해서다.
+    (app/map/docs/BUSINESS_RULES.md - 지도 장소 상세 조회 3장)
+    """
+    if limit <= 0:
+        raise ValueError("limit 은 1 이상이어야 합니다.")
+
+    items = _get_detail_image_items(content_id)
+    if not items:
+        return None
+
+    urls: list[str] = []
+    for item in _sort_by_serial_number(items):
+        url = item.get("originimgurl")
+        # 같은 URL 이 여러 번 오면 처음 한 건만 남긴다.
+        if not isinstance(url, str) or not url.strip() or url in urls:
+            continue
+
+        urls.append(url)
+        if len(urls) == limit:
+            break
+
+    return urls or None
+
+
+def _sort_by_serial_number(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """`serialnum` 오름차순으로 정렬한다.
+
+    숫자로 해석되지 않는 `serialnum` 은 정렬 기준이 없으므로
+    받은 순서를 유지한 채 숫자 항목 뒤에 둔다.
+    """
+    return [
+        item
+        for _, item in sorted(
+            enumerate(items), key=lambda pair: _serial_number_sort_key(*pair)
+        )
+    ]
+
+
+def _serial_number_sort_key(index: int, item: dict[str, Any]) -> tuple[int, int, int]:
+    """정렬 키. 숫자 `serialnum` 이 먼저, 그다음이 원래 순서다."""
+    try:
+        return (0, int(str(item.get("serialnum")).strip()), index)
+    except (TypeError, ValueError):
+        return (1, index, index)
+
+
+def _get_detail_image_items(content_id: int) -> list[dict[str, Any]] | None:
+    """`detailImage2` 에서 장소 상세 이미지 목록을 가져온다. 실패하면 `None`."""
+    body = _get_json(
+        "/detailImage2",
+        {
+            "contentId": str(content_id),
+            # 콘텐츠 이미지를 받으려면 TourAPI 가 요구하는 값이다.
+            "imageYN": "Y",
+            "numOfRows": str(_DETAIL_IMAGE_ROWS),
+            "pageNo": "1",
+        },
+    )
+    if body is None:
+        return None
+
+    return _items(body)
+
+
 def _get_detail_common_item(content_id: int) -> dict[str, Any] | None:
-    """`detailCommon2` 에서 장소 공통 정보 한 건을 가져온다. 실패하면 `None`.
+    """`detailCommon2` 에서 장소 공통 정보 한 건을 가져온다. 실패하면 `None`."""
+    body = _get_json("/detailCommon2", {"contentId": str(content_id)})
+    if body is None:
+        return None
+
+    items = _items(body)
+    return items[0] if items else None
+
+
+def _get_json(path: str, params: dict[str, Any]) -> dict[str, Any] | None:
+    """TourAPI 를 동기로 호출해 응답 JSON 을 돌려준다. 실패하면 `None`.
 
     DB 세션이 동기라 라우트도 동기로 동작하므로 여기서도 동기 클라이언트를 사용한다.
+    TourAPI 값은 부가 정보라, 인증키 미설정·통신 실패·JSON 오류를 예외로 올리지 않는다.
     """
     settings = get_settings()
     if not settings.kto_service_key:
         return None
 
-    params = {
+    request_params = {
         "serviceKey": settings.kto_service_key,
         "MobileOS": settings.kto_mobile_os,
         "MobileApp": settings.kto_mobile_app,
         "_type": "json",
-        "contentId": str(content_id),
+        **params,
     }
 
     try:
         with httpx.Client(base_url=settings.kto_base_url, timeout=5.0) as client:
-            response = client.get("/detailCommon2", params=params)
+            response = client.get(path, params=request_params)
             response.encoding = "utf-8"
             response.raise_for_status()
             body = response.json()
     except (httpx.HTTPError, ValueError):
         return None
 
-    return _first_item(body)
+    return body if isinstance(body, dict) else None
 
 
-def _first_item(body: dict[str, Any]) -> dict[str, Any] | None:
-    """TourAPI 응답에서 첫 번째 item 을 꺼낸다. 형식이 다르면 `None`."""
+def _items(body: dict[str, Any]) -> list[dict[str, Any]]:
+    """TourAPI 응답에서 item 목록을 꺼낸다. 형식이 다르거나 비어 있으면 빈 목록."""
     items = body.get("response", {}).get("body", {}).get("items")
     if not isinstance(items, dict):
-        return None
+        return []
 
     item = items.get("item")
-    if isinstance(item, list):
-        item = item[0] if item else None
-    if not isinstance(item, dict):
-        return None
+    if isinstance(item, dict):
+        item = [item]
+    if not isinstance(item, list):
+        return []
 
-    return item
+    return [row for row in item if isinstance(row, dict)]
 
 
 # HTML 태그. `overview` 에는 <br>, <p> 등이 그대로 들어 있다.
