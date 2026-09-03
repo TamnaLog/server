@@ -3,14 +3,12 @@
 기준 문서: app/guestbook/docs/API_SPEC.md, app/guestbook/docs/BUSINESS_RULES.md
 """
 
-from collections.abc import Generator
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, event, select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -123,6 +121,7 @@ def guestbook_data(db_session: Session) -> None:
                 id=AR_CHARACTER_ID,
                 character_name="돌담 지킴이",
                 character_description="설명",
+                character_story_title="이야기 제목",
                 acquire_condition="미션 완료",
                 character_img_url=AR_CHARACTER_IMAGE_URL,
                 hashtags=["#돌담"],
@@ -256,30 +255,14 @@ def _assign_ar_character(db_session: Session, *, user_id: int) -> None:
     db_session.commit()
 
 
-@pytest.fixture
-def executed_queries(engine: Engine) -> Generator[list[str], None, None]:
-    """실제로 나간 SQL 을 모은다. (방명록 수에 따라 쿼리가 늘어나는지 확인용)"""
-    queries: list[str] = []
-
-    def record(
-        conn: Any,
-        cursor: Any,
-        statement: str,
-        parameters: Any,
-        context: Any,
-        executemany: bool,
-    ) -> None:
-        queries.append(statement)
-
-    event.listen(engine, "before_cursor_execute", record)
-    try:
-        yield queries
-    finally:
-        event.remove(engine, "before_cursor_execute", record)
-
-
-def _get(client: TestClient, user_id: int = CURRENT_USER_ID) -> dict:
-    response = client.get(ENDPOINT, headers=auth_headers(user_id))
+def _get(
+    client: TestClient,
+    user_id: int = CURRENT_USER_ID,
+    *,
+    scope: str | None = None,
+) -> dict:
+    params = {} if scope is None else {"scope": scope}
+    response = client.get(ENDPOINT, params=params, headers=auth_headers(user_id))
     assert response.status_code == 200
     return response.json()
 
@@ -881,7 +864,7 @@ def test_방명록이_늘어도_쿼리_수가_늘지_않는다(
 # ---------------------------------------------------------------------
 
 
-def test_다른_사용자의_방명록도_함께_반환한다(
+def test_scope를_생략하면_다른_사용자의_방명록도_함께_반환한다(
     client: TestClient, db_session: Session, guestbook_data: None
 ) -> None:
     _add_general(db_session, guestbook_id=101, user_id=OTHER_USER_ID)
@@ -889,11 +872,125 @@ def test_다른_사용자의_방명록도_함께_반환한다(
 
     body = _get(client)
 
-    # 목록은 작성자로 거르지 않는다. 내 보관함이 아니라 전체 조회다.
+    # scope 를 생략하면 ALL 이라 작성자로 거르지 않는다.
     assert [item["id"] for item in body["generalGuestbooks"]] == [101]
     assert [item["id"] for item in body["roadGuestbooks"]] == [201]
     assert body["generalGuestbooks"][0]["userId"] == OTHER_USER_ID
     assert body["roadGuestbooks"][0]["userId"] == OTHER_USER_ID
+
+
+def test_scope가_ALL이면_작성자로_거르지_않는다(
+    client: TestClient, db_session: Session, guestbook_data: None
+) -> None:
+    _add_general(db_session, guestbook_id=101, saved_at=LATER_SAVED_AT)
+    _add_general(db_session, guestbook_id=102, user_id=OTHER_USER_ID)
+    _add_road(db_session, guestbook_id=201, saved_at=LATER_SAVED_AT)
+    _add_road(db_session, guestbook_id=202, user_id=OTHER_USER_ID)
+
+    body = _get(client, scope="ALL")
+
+    assert [item["id"] for item in body["generalGuestbooks"]] == [101, 102]
+    assert [item["id"] for item in body["roadGuestbooks"]] == [201, 202]
+
+
+def test_scope가_MINE이면_내가_쓴_방명록만_반환한다(
+    client: TestClient, db_session: Session, guestbook_data: None
+) -> None:
+    _add_general(db_session, guestbook_id=101, saved_at=LATER_SAVED_AT)
+    _add_general(db_session, guestbook_id=102, user_id=OTHER_USER_ID)
+    _add_road(db_session, guestbook_id=201, saved_at=LATER_SAVED_AT)
+    _add_road(db_session, guestbook_id=202, user_id=OTHER_USER_ID)
+
+    body = _get(client, scope="MINE")
+
+    # 두 유형 모두 같은 범위가 걸린다.
+    assert [item["id"] for item in body["generalGuestbooks"]] == [101]
+    assert [item["id"] for item in body["roadGuestbooks"]] == [201]
+
+
+def test_scope가_MINE이면_토큰에_따라_결과가_달라진다(
+    client: TestClient, db_session: Session, guestbook_data: None
+) -> None:
+    _add_general(db_session, guestbook_id=101)
+    _add_general(db_session, guestbook_id=102, user_id=OTHER_USER_ID)
+
+    mine = _get(client, scope="MINE")
+    theirs = _get(client, OTHER_USER_ID, scope="MINE")
+
+    assert [item["id"] for item in mine["generalGuestbooks"]] == [101]
+    assert [item["id"] for item in theirs["generalGuestbooks"]] == [102]
+
+
+def test_scope가_MINE이어도_삭제된_방명록은_제외한다(
+    client: TestClient, db_session: Session, guestbook_data: None
+) -> None:
+    _add_general(db_session, guestbook_id=101, deleted_at=datetime(2026, 8, 23, 10, 0, 0))
+    _add_general(db_session, guestbook_id=102)
+
+    assert [item["id"] for item in _get(client, scope="MINE")["generalGuestbooks"]] == [102]
+
+
+def test_scope가_MINE이어도_좋아요와_방문_장소는_현재_사용자_기준_그대로다(
+    client: TestClient, db_session: Session, guestbook_data: None
+) -> None:
+    _add_general(db_session, guestbook_id=101)
+    _add_like(db_session, guestbook_id=101, user_id=OTHER_USER_ID)
+    _add_like(db_session, guestbook_id=101, user_id=THIRD_USER_ID)
+    _add_visit(db_session)
+
+    body = _get(client, scope="MINE")
+
+    general = body["generalGuestbooks"][0]
+    # 내 방명록이라 내 좋아요는 없지만 남들이 누른 개수는 그대로 센다.
+    assert (general["isLiked"], general["likeCount"]) == (False, 2)
+    # 방문 장소는 범위와 무관하게 항상 현재 사용자 기준이다.
+    assert [item["id"] for item in body["visitedLocations"]] == [LOCATION_ID]
+
+
+def test_scope가_MINE이면_결과가_없어도_세_배열을_반환한다(
+    client: TestClient, db_session: Session, guestbook_data: None
+) -> None:
+    _add_general(db_session, guestbook_id=101, user_id=OTHER_USER_ID)
+    _add_road(db_session, guestbook_id=201, user_id=OTHER_USER_ID)
+
+    assert _get(client, scope="MINE") == {
+        "visitedLocations": [],
+        "generalGuestbooks": [],
+        "roadGuestbooks": [],
+    }
+
+
+@pytest.mark.parametrize(
+    "scope",
+    [
+        pytest.param("EVERYONE", id="정의되지_않은_값"),
+        pytest.param("mine", id="소문자"),
+        pytest.param("", id="빈_문자열"),
+    ],
+)
+def test_scope가_허용값이_아니면_400이다(
+    client: TestClient, db_session: Session, guestbook_data: None, scope: str
+) -> None:
+    _add_general(db_session, guestbook_id=101)
+
+    response = client.get(
+        ENDPOINT, params={"scope": scope}, headers=auth_headers(CURRENT_USER_ID)
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"code": "INVALID_REQUEST"}
+
+
+def test_정의되지_않은_Query는_400이다(
+    client: TestClient, guestbook_data: None
+) -> None:
+    response = client.get(
+        ENDPOINT, params={"page": 1}, headers=auth_headers(CURRENT_USER_ID)
+    )
+
+    # 페이지네이션 Query 는 받지 않는다.
+    assert response.status_code == 400
+    assert response.json() == {"code": "INVALID_REQUEST"}
 
 
 def test_여러_사용자의_방명록이_한_목록에_섞여_나온다(

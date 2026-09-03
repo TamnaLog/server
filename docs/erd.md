@@ -261,6 +261,7 @@ AR_CHARACTER {
 	bigint id PK "NOT NULL"
 	varchar_50 character_name "NOT NULL"
 	varchar_200 character_description "NOT NULL"
+	varchar_200 character_story_title "NOT NULL"
 	varchar_200 acquire_condition "NOT NULL"
 	varchar_500 character_img_url "NOT NULL"
 	json hashtags "NOT NULL, json: string[]"

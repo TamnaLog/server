@@ -5,10 +5,11 @@ DB는 SQLite 인메모리를 사용하고, `get_db` 의존성만 교체해서
 """
 
 from collections.abc import Generator
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -74,6 +75,32 @@ def db_session(session_factory: sessionmaker[Session]) -> Generator[Session, Non
         yield session
     finally:
         session.close()
+
+
+@pytest.fixture
+def executed_queries(engine: Engine) -> Generator[list[str], None, None]:
+    """API 호출 중 실제로 나간 SQL 을 모은다.
+
+    목록 조회에서 데이터가 늘어날 때 쿼리 수가 함께 늘어나는지(N+1) 확인하는 용도다.
+    호출 직전에 `clear()` 해서 테스트 데이터를 만들 때 나간 쿼리를 걸러낸다.
+    """
+    queries: list[str] = []
+
+    def record(
+        conn: Any,
+        cursor: Any,
+        statement: str,
+        parameters: Any,
+        context: Any,
+        executemany: bool,
+    ) -> None:
+        queries.append(statement)
+
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        yield queries
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
 
 
 @pytest.fixture

@@ -112,6 +112,7 @@ def progress_data(db_session: Session) -> None:
                 id=AR_CHARACTER_ID,
                 character_name="돌담이",
                 character_description="돌담을 지키는 캐릭터입니다.",
+                character_story_title="이야기 제목",
                 acquire_condition="문화 미션을 완료하면 만날 수 있어요.",
                 character_img_url=CHARACTER_IMG_URL,
                 hashtags=["#돌담"],

@@ -18,6 +18,7 @@ from app.guestbook.schemas import (
     GuestbookCreateResponse,
     GuestbookLikeRequest,
     GuestbookLikeResponse,
+    GuestbookListQuery,
     GuestbookListResponse,
     GuestbookWriteAvailabilityResponse,
     WriteAvailabilityQuery,
@@ -100,9 +101,12 @@ def create_guestbook(
 def get_guestbooks(
     db: Annotated[Session, Depends(get_db)],
     current_user_id: Annotated[int, Depends(get_current_user_id)],
+    query: Annotated[GuestbookListQuery, Query()],
 ) -> GuestbookListResponse:
     """GET /api/v1/guestbooks - 방명록 조회."""
-    return service.get_guestbooks(db=db, current_user_id=current_user_id)
+    return service.get_guestbooks(
+        db=db, current_user_id=current_user_id, query=query
+    )
 
 
 @router.put(

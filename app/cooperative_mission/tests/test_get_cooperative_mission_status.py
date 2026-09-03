@@ -119,6 +119,7 @@ def status_data(db_session: Session) -> None:
                 id=AR_CHARACTER_ID,
                 character_name="협재 파도지기",
                 character_description="팀의 사진 미션을 응원하는 캐릭터입니다.",
+                character_story_title="이야기 제목",
                 acquire_condition="협동 미션을 완료하면 만날 수 있어요.",
                 character_img_url=CHARACTER_IMG_URL,
                 hashtags=["#협동"],

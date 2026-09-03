@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from fastapi import UploadFile
-from sqlalchemy import Exists, Subquery, func, select
+from sqlalchemy import ColumnElement, Exists, Subquery, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
@@ -29,7 +29,9 @@ from app.guestbook.schemas import (
     GuestbookCreateResponse,
     GuestbookLikeRequest,
     GuestbookLikeResponse,
+    GuestbookListQuery,
     GuestbookListResponse,
+    GuestbookScope,
     GuestbookLocationResponse,
     GuestbookMissionResponse,
     GuestbookType,
@@ -474,11 +476,14 @@ def _liked_by_current_user(
 # ---------------------------------------------------------------------
 
 
-def get_guestbooks(db: Session, current_user_id: int) -> GuestbookListResponse:
-    """저장된 방명록 전체를 유형별로 조회한다.
+def get_guestbooks(
+    db: Session, current_user_id: int, query: GuestbookListQuery
+) -> GuestbookListResponse:
+    """저장된 방명록을 조회 범위에 따라 유형별로 조회한다.
 
-    목록은 **작성자로 거르지 않는다.** 남이 쓴 방명록도 함께 내려주고,
-    현재 사용자는 방문 장소(`visited_locations`)와 방명록별 `is_liked` 계산에만 쓴다.
+    `scope = ALL`(기본)이면 작성자로 거르지 않고, `scope = MINE` 이면 현재 사용자가
+    쓴 방명록만 담는다. 범위와 무관하게 방문 장소(`visited_locations`)와 방명록별
+    `is_liked` 는 **항상 현재 사용자 기준**이고, `like_count` 는 사용자를 가리지 않는다.
 
     페이지네이션 없이 전부 내려주고, 두 목록을 각각 최신순으로 정렬한다.
     지운 방명록(`deleted_at`)은 제외하고, 결과가 없어도 빈 배열로 응답한다.
@@ -488,9 +493,23 @@ def get_guestbooks(db: Session, current_user_id: int) -> GuestbookListResponse:
     """
     return GuestbookListResponse(
         visited_locations=_find_visited_locations(db, current_user_id),
-        general_guestbooks=_find_general_guestbooks(db, current_user_id),
-        road_guestbooks=_find_road_guestbooks(db, current_user_id),
+        general_guestbooks=_find_general_guestbooks(db, current_user_id, query.scope),
+        road_guestbooks=_find_road_guestbooks(db, current_user_id, query.scope),
     )
+
+
+def _scope_conditions(
+    scope: GuestbookScope,
+    user_id_column: InstrumentedAttribute[int],
+    current_user_id: int,
+) -> tuple[ColumnElement[bool], ...]:
+    """조회 범위에 해당하는 `WHERE` 조건. 전체 조회면 조건이 없다.
+
+    일반/길바닥이 같은 규칙을 쓰도록 컬럼만 바꿔 끼운다.
+    """
+    if scope is GuestbookScope.MINE:
+        return (user_id_column == current_user_id,)
+    return ()
 
 
 def _find_visited_locations(
@@ -517,12 +536,12 @@ def _find_visited_locations(
 
 
 def _find_general_guestbooks(
-    db: Session, current_user_id: int
+    db: Session, current_user_id: int, scope: GuestbookScope
 ) -> list[GeneralGuestbookResponse]:
     """일반 방명록을 장소/미션/작성자/좋아요와 함께 한 번의 쿼리로 읽는다. (N+1 방지)
 
-    작성자로 거르지 않고 삭제되지 않은 방명록을 모두 읽는다.
-    `current_user_id` 는 목록 범위가 아니라 `is_liked` 판정에만 쓴다.
+    작성자 조건은 `scope = MINE` 일 때만 건다. `current_user_id` 는 그 외에는
+    목록 범위가 아니라 `is_liked` 판정에만 쓴다.
 
     장소와 작성자는 NOT NULL FK 라 반드시 붙고, 미션과 AR 캐릭터는 없을 수 있어
     OUTER JOIN 한다. 좋아요는 방명록마다 세지 않고 개수 집계는 서브쿼리로,
@@ -547,7 +566,10 @@ def _find_general_guestbooks(
         .outerjoin(Mission, Mission.id == Guestbook.mission_id)
         .outerjoin(ArCharacter, ArCharacter.id == User.ar_character_id)
         .outerjoin(like_counts, like_counts.c.guestbook_id == Guestbook.id)
-        .where(Guestbook.deleted_at.is_(None))
+        .where(
+            Guestbook.deleted_at.is_(None),
+            *_scope_conditions(scope, Guestbook.user_id, current_user_id),
+        )
         .order_by(Guestbook.saved_at.desc(), Guestbook.id.desc())
     )
     return [
@@ -583,12 +605,12 @@ def _find_general_guestbooks(
 
 
 def _find_road_guestbooks(
-    db: Session, current_user_id: int
+    db: Session, current_user_id: int, scope: GuestbookScope
 ) -> list[RoadGuestbookResponse]:
     """길바닥 방명록을 작성자/좋아요와 함께 읽는다. 장소와 미션은 붙이지 않는다.
 
-    일반 방명록과 마찬가지로 작성자로 거르지 않는다.
-    좋아요는 규칙이 같고 테이블만 `ROAD_GUESTBOOK_LIKE` 로 다르다.
+    조회 범위는 일반 방명록과 같은 규칙을 쓴다.
+    좋아요도 규칙이 같고 테이블만 `ROAD_GUESTBOOK_LIKE` 로 다르다.
     개수는 집계 서브쿼리로, 현재 사용자의 좋아요 여부는 `EXISTS` 로 한 번에 가져온다.
     """
     table = _LIKE_TABLES[GuestbookType.ROAD]
@@ -606,7 +628,10 @@ def _find_road_guestbooks(
         .join(User, User.id == RoadGuestbook.user_id)
         .outerjoin(ArCharacter, ArCharacter.id == User.ar_character_id)
         .outerjoin(like_counts, like_counts.c.guestbook_id == RoadGuestbook.id)
-        .where(RoadGuestbook.deleted_at.is_(None))
+        .where(
+            RoadGuestbook.deleted_at.is_(None),
+            *_scope_conditions(scope, RoadGuestbook.user_id, current_user_id),
+        )
         .order_by(RoadGuestbook.saved_at.desc(), RoadGuestbook.id.desc())
     )
     return [

@@ -21,7 +21,9 @@ __all__ = [
     "GuestbookCreateResponse",
     "GuestbookLikeRequest",
     "GuestbookLikeResponse",
+    "GuestbookListQuery",
     "GuestbookListResponse",
+    "GuestbookScope",
     "GuestbookLocationResponse",
     "GuestbookMissionResponse",
     "GuestbookType",
@@ -233,6 +235,31 @@ class RoadGuestbookResponse(CamelModel):
     is_liked: bool = False
     like_count: int = 0
     saved_at: datetime
+
+
+class GuestbookScope(str, Enum):
+    """방명록 조회 범위."""
+
+    # 작성자를 가리지 않고 전부
+    ALL = "ALL"
+    # 현재 사용자가 쓴 것만
+    MINE = "MINE"
+
+
+class GuestbookListQuery(CamelModel):
+    """GET /api/v1/guestbooks 요청 Query.
+
+    조회 범위만 받고 페이지네이션 관련 Query 는 받지 않는다.
+    `scope` 를 생략하면 전체 조회(`ALL`)다.
+    """
+
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, extra="forbid"
+    )
+
+    scope: GuestbookScope = Field(
+        default=GuestbookScope.ALL, description="조회 범위. 생략하면 ALL"
+    )
 
 
 class VisitedLocationSummaryResponse(CamelModel):

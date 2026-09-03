@@ -135,6 +135,7 @@ def progress_data(db_session: Session) -> None:
                 id=AR_CHARACTER_ID,
                 character_name="천지연 물방울",
                 character_description="폭포에서 튀어나온 물방울 캐릭터입니다.",
+                character_story_title="이야기 제목",
                 acquire_condition="보물 찾기 미션을 완료하면 만날 수 있어요.",
                 character_img_url=CHARACTER_IMG_URL,
                 hashtags=["#물방울"],

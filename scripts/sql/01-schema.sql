@@ -446,6 +446,7 @@ CREATE TABLE `AR_CHARACTER` (
     `id`                    BIGINT       NOT NULL AUTO_INCREMENT,
     `character_name`        VARCHAR(50)  NOT NULL,
     `character_description` VARCHAR(200) NOT NULL,
+    `character_story_title` VARCHAR(200) NOT NULL                COMMENT '캐릭터 이야기 제목',
     `acquire_condition`     VARCHAR(200) NOT NULL,
     `character_img_url`     VARCHAR(500) NOT NULL,
     `hashtags`              JSON         NOT NULL                COMMENT 'string[]',

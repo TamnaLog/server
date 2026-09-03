@@ -178,6 +178,7 @@ def detail_data(db_session: Session) -> None:
                 id=AR_CHARACTER_ID,
                 character_name=AR_CHARACTER_NAME,
                 character_description="설명",
+                character_story_title="이야기 제목",
                 acquire_condition="미션 완료",
                 character_img_url=AR_CHARACTER_IMAGE_URL,
                 hashtags=["#물범"],
