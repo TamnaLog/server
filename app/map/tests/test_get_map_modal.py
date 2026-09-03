@@ -18,7 +18,7 @@ from app.cooperative_mission.models import (
     ParticipantStatus,
 )
 from app.guestbook.models import Guestbook, RoadGuestbook
-from app.map.models import Location
+from app.map.models import Location, VisitedLocation
 from app.map.service import LOCATION_MODAL_GUESTBOOK_LIMIT
 from app.mission.models import Mission, MissionStatus
 from app.treasure_mission.models import (
@@ -203,6 +203,35 @@ def _add_road_guestbook(
     db_session.commit()
 
 
+def _add_visited_location(
+    db_session: Session,
+    *,
+    user_id: int = CURRENT_USER_ID,
+    location_id: int = LOCATION_ID,
+    visited_at: datetime = datetime(2026, 8, 25, 10, 0, 0),
+) -> None:
+    db_session.add(
+        VisitedLocation(
+            user_id=user_id, location_id=location_id, visited_at=visited_at
+        )
+    )
+    db_session.commit()
+
+
+def _assign_ar_character(
+    db_session: Session,
+    *,
+    user_id: int,
+    ar_character_id: int | None = AR_CHARACTER_ID,
+) -> None:
+    """방명록 작성자에게 AR 캐릭터를 배정한다. (`USER.ar_character_id`)"""
+    _add_ar_character(db_session)
+    user = db_session.get(User, user_id)
+    assert user is not None
+    user.ar_character_id = ar_character_id
+    db_session.commit()
+
+
 def _get(client: TestClient, params: dict[str, object]) -> dict:
     response = client.get(ENDPOINT, params=params)
     assert response.status_code == 200
@@ -245,13 +274,16 @@ def test_장소_모달을_조회하면_기본_정보와_방명록을_반환한�
         "locationCategory": LOCATION_CATEGORY,
         "distanceMeter": expected_distance,
         "durationMinutes": distance.calculate_duration_minutes(expected_distance),
+        "isVisited": False,
         "mission": None,
         "guestbooksCount": 2,
         "guestbooks": [
             {
                 "id": 300,
                 "representativeImageUrl": "https://example.com/guestbooks/300-1.jpg",
+                "userId": CURRENT_USER_ID,
                 "userNickname": NICKNAME,
+                "characterImgUrl": None,
                 "missionTitle": MISSION_TITLE,
                 "visitedAt": "2026-08-25",
                 "contentWriting": "현애원 산책하기 좋았어요.",
@@ -259,7 +291,9 @@ def test_장소_모달을_조회하면_기본_정보와_방명록을_반환한�
             {
                 "id": 302,
                 "representativeImageUrl": None,
+                "userId": OTHER_USER_ID,
                 "userNickname": OTHER_NICKNAME,
+                "characterImgUrl": None,
                 "missionTitle": None,
                 "visitedAt": "2026-08-23",
                 "contentWriting": None,
@@ -395,6 +429,105 @@ def test_방명록_이미지는_첫_번째_URL을_그대로_쓴다(
     assert body["guestbooks"][0]["representativeImageUrl"] == first
 
 
+def test_방명록마다_작성자_id와_닉네임을_함께_반환한다(
+    client: TestClient, db_session: Session, modal_data: None
+) -> None:
+    _add_guestbook(db_session, guestbook_id=1, user_id=OTHER_USER_ID)
+
+    guestbook = _get(client, _params())["guestbooks"][0]
+
+    assert guestbook["userId"] == OTHER_USER_ID
+    assert guestbook["userNickname"] == OTHER_NICKNAME
+
+
+def test_방명록마다_작성자의_AR_캐릭터_이미지를_함께_반환한다(
+    client: TestClient, db_session: Session, modal_data: None
+) -> None:
+    _assign_ar_character(db_session, user_id=OTHER_USER_ID)
+    _add_guestbook(db_session, guestbook_id=1, user_id=OTHER_USER_ID)
+
+    body = _get(client, _params())
+
+    assert body["guestbooks"][0]["characterImgUrl"] == AR_CHARACTER_IMAGE_URL
+
+
+def test_작성자에게_배정된_AR_캐릭터가_없으면_characterImgUrl은_null이다(
+    client: TestClient, db_session: Session, modal_data: None
+) -> None:
+    # modal_data 의 사용자는 AR 캐릭터를 배정받지 않은 상태다.
+    _add_guestbook(db_session, guestbook_id=1)
+
+    body = _get(client, _params())
+
+    assert body["guestbooks"][0]["characterImgUrl"] is None
+
+
+def test_방명록마다_작성자의_AR_캐릭터를_각각_반환한다(
+    client: TestClient, db_session: Session, modal_data: None
+) -> None:
+    _assign_ar_character(db_session, user_id=CURRENT_USER_ID)
+    _add_guestbook(db_session, guestbook_id=1, visited_at=date(2026, 8, 25))
+    _add_guestbook(
+        db_session, guestbook_id=2, user_id=OTHER_USER_ID, visited_at=date(2026, 8, 23)
+    )
+
+    body = _get(client, _params())
+
+    # 작성자가 다르면 배정된 캐릭터도 각각 따라간다.
+    assert [guestbook["characterImgUrl"] for guestbook in body["guestbooks"]] == [
+        AR_CHARACTER_IMAGE_URL,
+        None,
+    ]
+
+
+def test_방문_기록이_있으면_isVisited가_true다(
+    client: TestClient, db_session: Session, modal_data: None
+) -> None:
+    _add_visited_location(db_session)
+
+    assert _get(client, _params())["isVisited"] is True
+
+
+def test_방문_기록이_여러_건이어도_isVisited는_true다(
+    client: TestClient, db_session: Session, modal_data: None
+) -> None:
+    _add_visited_location(db_session, visited_at=datetime(2026, 8, 25, 10, 0, 0))
+    _add_visited_location(db_session, visited_at=datetime(2026, 8, 27, 9, 0, 0))
+
+    assert _get(client, _params())["isVisited"] is True
+
+
+def test_방문_기록이_없으면_isVisited가_false다(
+    client: TestClient, modal_data: None
+) -> None:
+    assert _get(client, _params())["isVisited"] is False
+
+
+def test_다른_사용자의_방문_기록은_isVisited에_반영되지_않는다(
+    client: TestClient, db_session: Session, modal_data: None
+) -> None:
+    _add_visited_location(db_session, user_id=OTHER_USER_ID)
+
+    assert _get(client, _params())["isVisited"] is False
+
+
+def test_다른_장소의_방문_기록은_isVisited에_반영되지_않는다(
+    client: TestClient, db_session: Session, modal_data: None
+) -> None:
+    _add_visited_location(db_session, location_id=OTHER_LOCATION_ID)
+
+    assert _get(client, _params())["isVisited"] is False
+
+
+def test_방명록만_있고_방문_기록이_없으면_isVisited가_false다(
+    client: TestClient, db_session: Session, modal_data: None
+) -> None:
+    # 방명록 작성 여부는 isVisited 판정에 쓰지 않는다.
+    _add_guestbook(db_session, guestbook_id=1)
+
+    assert _get(client, _params())["isVisited"] is False
+
+
 def test_장소_거리와_예상_시간은_공통_모듈_결과와_같다(
     client: TestClient, modal_data: None
 ) -> None:
@@ -433,6 +566,7 @@ def _add_ar_character(db_session: Session) -> None:
             id=AR_CHARACTER_ID,
             character_name=AR_CHARACTER_NAME,
             character_description="설명",
+            character_story_title="이야기 제목",
             acquire_condition="미션 완료",
             character_img_url=AR_CHARACTER_IMAGE_URL,
             hashtags=["#물범"],
@@ -919,6 +1053,16 @@ def test_길바닥_방명록_모달을_조회하면_상세_콘텐츠를_반환�
         "contentWeather": "SUNNY",
         "contentColorCode": None,
     }
+
+
+def test_길바닥_방명록_응답에는_isVisited를_넣지_않는다(
+    client: TestClient, db_session: Session, modal_data: None
+) -> None:
+    # 방문 여부는 장소 모달에만 있는 값이다.
+    _add_road_guestbook(db_session)
+    _add_visited_location(db_session)
+
+    assert "isVisited" not in _get(client, _road_params())
 
 
 def test_콘텐츠가_없으면_필드를_생략하지_않고_null로_반환한다(

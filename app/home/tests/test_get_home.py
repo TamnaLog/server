@@ -96,6 +96,7 @@ def home_data(db_session: Session) -> None:
                 id=1,
                 character_name="자청비 모티브 탐험가",
                 character_description="기록 탐험가 캐릭터입니다.",
+                character_story_title="이야기 제목",
                 acquire_condition="온보딩에서 기록형 여행 스타일을 선택하면 만날 수 있어요.",
                 character_img_url=CHARACTER_IMG_URL,
                 hashtags=["#인생사진"],

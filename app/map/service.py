@@ -21,7 +21,7 @@ from app.map import (
     search_classifier,
 )
 from app.map.location_missions import LocationMission
-from app.map.models import Location
+from app.map.models import Location, VisitedLocation
 from app.map.schemas import (
     ClusteredLocationResponse,
     ClusteredMapContentsResponse,
@@ -55,7 +55,7 @@ from app.services.kto import (
     get_location_image_url,
     get_location_overview,
 )
-from app.treasure_mission.models import TreasureMission
+from app.treasure_mission.models import ArCharacter, TreasureMission
 from app.user.models import User
 
 
@@ -319,6 +319,22 @@ def _first_image_url(content_img_url: list[str] | None) -> str | None:
     return content_img_url[0]
 
 
+def _is_visited(db: Session, current_user_id: int, location_id: int) -> bool:
+    """현재 사용자가 이 장소를 방문한 기록이 한 건이라도 있는지 본다. (모달/상세 공용)
+
+    `VISITED_LOCATION` 존재 여부만 보고, 방명록 작성 여부나 미션 완료 여부는 쓰지 않는다.
+    """
+    visited_id = db.scalar(
+        select(VisitedLocation.id)
+        .where(
+            VisitedLocation.user_id == current_user_id,
+            VisitedLocation.location_id == location_id,
+        )
+        .limit(1)
+    )
+    return visited_id is not None
+
+
 # ---------------------------------------------------------------------
 # 지도 모달 조회
 # ---------------------------------------------------------------------
@@ -368,6 +384,7 @@ def _to_location_modal(
         location_category=location.location_category,
         distance_meter=distance_meter,
         duration_minutes=distance.calculate_duration_minutes(distance_meter),
+        is_visited=_is_visited(db, current_user_id, location.id),
         mission=_find_modal_mission(db, current_user_id, location.id),
         guestbooks_count=_count_guestbooks(db, location.id),
         guestbooks=_find_latest_guestbooks(db, location.id),
@@ -413,12 +430,20 @@ def _find_latest_guestbooks(
     """장소의 최신 방명록을 최대 3개 가져온다.
 
     최신 기준은 저장 시각이 아니라 방문일(`visited_at`)이고, 같으면 id 가 큰 쪽이 최신이다.
-    작성자와 미션은 방명록마다 다시 조회하지 않고 JOIN 으로 한 번에 가져온다. (N+1 방지)
+    작성자·미션·작성자의 AR 캐릭터 이미지는 방명록마다 다시 조회하지 않고
+    JOIN 으로 한 번에 가져온다. (N+1 방지)
+    작성자에게 배정된 AR 캐릭터가 없으면 이미지는 `null` 이다.
     """
     statement = (
-        select(Guestbook, User.nickname, Mission.mission_title)
+        select(
+            Guestbook,
+            User.nickname,
+            Mission.mission_title,
+            ArCharacter.character_img_url,
+        )
         .join(User, User.id == Guestbook.user_id)
         .outerjoin(Mission, Mission.id == Guestbook.mission_id)
+        .outerjoin(ArCharacter, ArCharacter.id == User.ar_character_id)
         .where(
             Guestbook.location_id == location_id,
             Guestbook.deleted_at.is_(None),
@@ -430,12 +455,16 @@ def _find_latest_guestbooks(
         LocationModalGuestbookResponse(
             id=guestbook.id,
             representative_image_url=_first_image_url(guestbook.content_img_url),
+            user_id=guestbook.user_id,
             user_nickname=nickname or "",
+            character_img_url=character_img_url,
             mission_title=mission_title,
             visited_at=guestbook.visited_at,
             content_writing=guestbook.content_writing,
         )
-        for guestbook, nickname, mission_title in db.execute(statement).all()
+        for guestbook, nickname, mission_title, character_img_url in db.execute(
+            statement
+        ).all()
     ]
 
 
@@ -518,6 +547,7 @@ def get_location_detail(
         distance_meter=distance_meter,
         duration_minutes=distance.calculate_duration_minutes(distance_meter),
         location_address=location.location_address,
+        is_visited=_is_visited(db, current_user_id, location.id),
         location_description=get_location_overview(location.content_id),
         location_image_urls=get_location_detail_image_urls(
             location.content_id, LOCATION_DETAIL_IMAGE_LIMIT
@@ -568,12 +598,20 @@ def _find_location_guestbooks(
     """장소의 방명록을 최신순으로 모두 가져온다. (개수 제한/페이지네이션 없음)
 
     최신 기준은 저장 시각이 아니라 방문일(`visited_at`)이고, 같으면 id 가 큰 쪽이 최신이다.
-    작성자와 미션은 방명록마다 다시 조회하지 않고 JOIN 으로 한 번에 가져온다. (N+1 방지)
+    작성자·미션·작성자의 AR 캐릭터 이미지는 방명록마다 다시 조회하지 않고
+    JOIN 으로 한 번에 가져온다. (N+1 방지)
+    작성자에게 배정된 AR 캐릭터가 없으면 이미지는 `null` 이다.
     """
     statement = (
-        select(Guestbook, User.nickname, Mission.mission_title)
+        select(
+            Guestbook,
+            User.nickname,
+            Mission.mission_title,
+            ArCharacter.character_img_url,
+        )
         .join(User, User.id == Guestbook.user_id)
         .outerjoin(Mission, Mission.id == Guestbook.mission_id)
+        .outerjoin(ArCharacter, ArCharacter.id == User.ar_character_id)
         .where(
             Guestbook.location_id == location_id,
             Guestbook.deleted_at.is_(None),
@@ -587,11 +625,15 @@ def _find_location_guestbooks(
             representative_image_url=_first_image_url(guestbook.content_img_url),
             user_id=guestbook.user_id,
             user_nickname=nickname or "",
+            character_img_url=character_img_url,
             visited_at=guestbook.visited_at,
             content_writing=guestbook.content_writing,
         )
-        for guestbook, nickname, mission_title in db.execute(statement).all()
+        for guestbook, nickname, mission_title, character_img_url in db.execute(
+            statement
+        ).all()
     ]
+
 
 
 def _find_location_mission(

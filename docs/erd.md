@@ -1,3 +1,4 @@
+```mermaid
 erDiagram
 USER {
 	bigint id PK "NOT NULL"
@@ -8,6 +9,7 @@ USER {
 	bigint ar_character_id FK "NULL"
 	varchar_20 nickname "NULL"
 	int point "NOT NULL, DEFAULT: 0"
+	int target_step "NOT NULL, DEFAULT: 10000"
     char_64 access_token_hash UK "NOT NULL, UNIQUE"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
@@ -33,9 +35,8 @@ USER_SETTING {
 
 STEP_COUNT {
 	bigint id PK "NOT NULL"
-	bigint user_id FK "NOT NULL"
-	int target_step "NOT NULL, DEFAULT: 10000"
-	datetime saved_at "NOT NULL"
+	bigint user_id FK "NOT NULL, UNIQUE"
+	datetime saved_at "NOT NULL, UNIQUE"
 	int steps_count "NOT NULL"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
@@ -199,13 +200,23 @@ GUESTBOOK {
 	json content_img_url "NULL, json: string[]"
 	varchar_500 content_writing "NULL"
 	json content_audio_url "NULL, json: string[]"
+	varchar_50 audio_title "NULL"
 	varchar_20 content_weather "NULL"
+	decimal(4,1) content_temperature_celsius "NULL"
 	varchar_20 content_color_code "NULL"
 	datetime saved_at "NOT NULL"
 	bigint mission_id FK "NULL"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
-	datetime deleted_at "NULL"	
+	datetime deleted_at "NULL"
+}
+
+GUESTBOOK_LIKE {
+    bigint id PK "NOT NULL"
+    bigint guestbook_id FK "NOT NULL, UNIQUE"
+    bigint user_id FK "NOT NULL, UNIQUE"
+    datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
+	datetime deleted_at "NULL"
 }
 
 ROAD_GUESTBOOK {
@@ -217,14 +228,24 @@ ROAD_GUESTBOOK {
 	json content_img_url "NULL, json: string[]"
 	varchar_500 content_writing "NULL"
 	json content_audio_url "NULL, json: string[]"
+	varchar_50 audio_title "NULL"
 	varchar_20 content_weather "NULL"
+	decimal(4,1) content_temperature_celsius "NULL"
 	varchar_20 content_color_code "NULL"
 	double mx "NOT NULL"
 	double my "NOT NULL"
 	datetime saved_at "NOT NULL"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
-	datetime deleted_at "NULL"	
+	datetime deleted_at "NULL"
+}
+
+ROAD_GUESTBOOK_LIKE {
+    bigint id PK "NOT NULL"
+    bigint road_guestbook_id FK "NOT NULL, UNIQUE"
+    bigint user_id FK "NOT NULL, UNIQUE"
+    datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
+	datetime deleted_at "NULL"
 }
 
 ACQUIRED_AR_CHARACTER {
@@ -240,6 +261,7 @@ AR_CHARACTER {
 	bigint id PK "NOT NULL"
 	varchar_50 character_name "NOT NULL"
 	varchar_200 character_description "NOT NULL"
+	varchar_200 character_story_title "NOT NULL"
 	varchar_200 acquire_condition "NOT NULL"
 	varchar_500 character_img_url "NOT NULL"
 	json hashtags "NOT NULL, json: string[]"
@@ -279,6 +301,8 @@ USER ||--o{ COOPERATIVE_MISSION_PARTICIPANT : joins
 USER ||--o{ TREASURE_MISSION_PROGRESS : progresses
 USER ||--o{ GUESTBOOK : writes
 USER ||--o{ ROAD_GUESTBOOK : writes
+USER ||--o{ GUESTBOOK_LIKE : likes
+USER ||--o{ ROAD_GUESTBOOK_LIKE : likes
 USER ||--o{ ACQUIRED_AR_CHARACTER : acquires
 USER ||--o{ TRAVEL_ENDING_CONTENT : owns
 USER ||--o{ PICTURE_WITH_CHARACTER : has
@@ -288,6 +312,9 @@ LOCATION ||--o{ GUESTBOOK : contains
 LOCATION o|--o{ ROAD_GUESTBOOK : references
 LOCATION ||--o{ COOPERATIVE_MISSION : hosts
 LOCATION ||--o{ TREASURE_MISSION : hosts
+
+GUESTBOOK ||--o{ GUESTBOOK_LIKE : liked_by
+ROAD_GUESTBOOK ||--o{ ROAD_GUESTBOOK_LIKE : liked_by
 
 MISSION ||--o{ CULTURE_MISSION : categorizes
 MISSION ||--o{ COOPERATIVE_MISSION : categorizes
@@ -306,3 +333,4 @@ TREASURE_MISSION ||--o{ TREASURE_MISSION_PROGRESS : tracks
 
 AR_CHARACTER ||--o{ ACQUIRED_AR_CHARACTER : acquired_as
 AR_CHARACTER o|--o{ USER : assigned_to
+```

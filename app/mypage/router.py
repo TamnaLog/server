@@ -1,33 +1,55 @@
 """마이페이지 도메인 라우터.
 
-노션 API 명세서 기준. 엔드포인트/HTTP 메서드/API 명은 확정값이며,
-요청/응답 스키마는 아직 확정 전이라 TODO로 남겨둔다.
+API 명세: app/mypage/docs/API_SPEC.md
+
+여행 마무리 엽서 저장은 아직 명세가 확정되지 않아 TODO 로 남겨둔다.
 """
 
-from typing import Any
+from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.deps import get_current_user_id
 from app.mypage import service
+from app.mypage.schemas import MyPageResponse, UserProfileUpdateRequest
 
 
 router = APIRouter(prefix="/api/v1/users/me", tags=["mypage"])
 
 
-@router.get("/mypage", summary="마이페이지 조회")
-def get_mypage(db: Session = Depends(get_db)) -> dict[str, Any]:
+@router.get(
+    "/mypage",
+    summary="마이페이지 조회",
+    status_code=status.HTTP_200_OK,
+    response_model=MyPageResponse,
+    response_model_by_alias=True,
+)
+def get_mypage(
+    db: Annotated[Session, Depends(get_db)],
+    current_user_id: Annotated[int, Depends(get_current_user_id)],
+) -> MyPageResponse:
     """GET /api/v1/users/me/mypage - 마이페이지 조회."""
-    # TODO: 요청/응답 스키마 연결 (app/mypage/schemas.py)
-    return service.get_mypage(db)
+    return service.get_mypage(db=db, current_user_id=current_user_id)
 
 
-@router.post("/profile", summary="사용자 정보 변경")
-def update_user_info(db: Session = Depends(get_db)) -> dict[str, Any]:
-    """POST /api/v1/users/me/profile - 사용자 정보 변경."""
-    # TODO: 요청/응답 스키마 연결 (app/mypage/schemas.py)
-    return service.update_user_info(db)
+@router.put(
+    "/profile",
+    summary="사용자 정보 변경",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+def update_user_info(
+    db: Annotated[Session, Depends(get_db)],
+    current_user_id: Annotated[int, Depends(get_current_user_id)],
+    request: UserProfileUpdateRequest,
+) -> Response:
+    """PUT /api/v1/users/me/profile - 사용자 정보 변경."""
+    service.update_user_info(
+        db=db, current_user_id=current_user_id, request=request
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # TODO: POST (엔드포인트 미정) - 여행 마무리 엽서 저장

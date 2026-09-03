@@ -20,7 +20,7 @@ from app.cooperative_mission.models import (
 from app.guestbook.models import Guestbook
 from app.map import service
 from app.map.mission_recommender import RECOMMEND_COUNT
-from app.map.models import Location
+from app.map.models import Location, VisitedLocation
 from app.mission.models import Mission, MissionStatus
 from app.treasure_mission.models import (
     ArCharacter,
@@ -178,6 +178,7 @@ def detail_data(db_session: Session) -> None:
                 id=AR_CHARACTER_ID,
                 character_name=AR_CHARACTER_NAME,
                 character_description="설명",
+                character_story_title="이야기 제목",
                 acquire_condition="미션 완료",
                 character_img_url=AR_CHARACTER_IMAGE_URL,
                 hashtags=["#물범"],
@@ -348,6 +349,34 @@ def _add_guestbook(
     db_session.commit()
 
 
+def _add_visited_location(
+    db_session: Session,
+    *,
+    user_id: int = CURRENT_USER_ID,
+    location_id: int = LOCATION_ID,
+    visited_at: datetime = datetime(2026, 1, 15, 10, 0, 0),
+) -> None:
+    db_session.add(
+        VisitedLocation(
+            user_id=user_id, location_id=location_id, visited_at=visited_at
+        )
+    )
+    db_session.commit()
+
+
+def _assign_ar_character(
+    db_session: Session,
+    *,
+    user_id: int,
+    ar_character_id: int | None = AR_CHARACTER_ID,
+) -> None:
+    """방명록 작성자에게 AR 캐릭터를 배정한다. (`USER.ar_character_id`)"""
+    user = db_session.get(User, user_id)
+    assert user is not None
+    user.ar_character_id = ar_character_id
+    db_session.commit()
+
+
 def _get(
     client: TestClient,
     location_id: object = LOCATION_ID,
@@ -397,6 +426,7 @@ def test_장소_상세를_조회하면_기본_정보와_방명록을_반환한�
         "distanceMeter": expected_distance,
         "durationMinutes": distance.calculate_duration_minutes(expected_distance),
         "locationAddress": LOCATION_ADDRESS,
+        "isVisited": False,
         "locationDescription": OVERVIEW,
         "locationImageUrls": DETAIL_IMAGE_URLS,
         "nearbyMissions": [],
@@ -407,6 +437,7 @@ def test_장소_상세를_조회하면_기본_정보와_방명록을_반환한�
                 "representativeImageUrl": "https://example.com/guestbooks/300.jpg",
                 "userId": CURRENT_USER_ID,
                 "userNickname": NICKNAME,
+                "characterImgUrl": None,
                 "visitedAt": "2026-01-15",
                 "contentWriting": "귤나무 심기 체험이 정말 재미있었어요!",
             },
@@ -416,6 +447,7 @@ def test_장소_상세를_조회하면_기본_정보와_방명록을_반환한�
                 "representativeImageUrl": None,
                 "userId": OTHER_USER_ID,
                 "userNickname": OTHER_NICKNAME,
+                "characterImgUrl": None,
                 "visitedAt": "2026-01-12",
                 "contentWriting": None,
             },
@@ -609,6 +641,42 @@ def test_방명록마다_작성자_id와_닉네임을_함께_반환한다(
     assert guestbook["userNickname"] == OTHER_NICKNAME
 
 
+def test_방명록마다_작성자의_AR_캐릭터_이미지를_함께_반환한다(
+    client: TestClient, db_session: Session, detail_data: None
+) -> None:
+    _assign_ar_character(db_session, user_id=OTHER_USER_ID)
+    _add_guestbook(db_session, guestbook_id=1, user_id=OTHER_USER_ID)
+
+    assert _get(client)["guestbooks"][0]["characterImgUrl"] == AR_CHARACTER_IMAGE_URL
+
+
+def test_작성자에게_배정된_AR_캐릭터가_없으면_characterImgUrl은_null이다(
+    client: TestClient, db_session: Session, detail_data: None
+) -> None:
+    # detail_data 의 사용자는 AR 캐릭터를 배정받지 않은 상태다.
+    _add_guestbook(db_session, guestbook_id=1)
+
+    assert _get(client)["guestbooks"][0]["characterImgUrl"] is None
+
+
+def test_방명록마다_작성자의_AR_캐릭터를_각각_반환한다(
+    client: TestClient, db_session: Session, detail_data: None
+) -> None:
+    _assign_ar_character(db_session, user_id=CURRENT_USER_ID)
+    _add_guestbook(db_session, guestbook_id=1, visited_at=date(2026, 1, 15))
+    _add_guestbook(
+        db_session, guestbook_id=2, user_id=OTHER_USER_ID, visited_at=date(2026, 1, 12)
+    )
+
+    guestbooks = _get(client)["guestbooks"]
+
+    # 작성자가 다르면 배정된 캐릭터도 각각 따라간다.
+    assert [guestbook["characterImgUrl"] for guestbook in guestbooks] == [
+        AR_CHARACTER_IMAGE_URL,
+        None,
+    ]
+
+
 @pytest.mark.parametrize(
     "content_img_url",
     [
@@ -625,6 +693,72 @@ def test_방명록_이미지가_없으면_대표_이미지는_null이다(
     _add_guestbook(db_session, guestbook_id=1, content_img_url=content_img_url)
 
     assert _get(client)["guestbooks"][0]["representativeImageUrl"] is None
+
+
+# ---------------------------------------------------------------------
+# isVisited
+# ---------------------------------------------------------------------
+
+
+def test_방문_기록이_있으면_isVisited가_true다(
+    client: TestClient, db_session: Session, detail_data: None
+) -> None:
+    _add_visited_location(db_session)
+
+    assert _get(client)["isVisited"] is True
+
+
+def test_방문_기록이_여러_건이어도_isVisited는_true다(
+    client: TestClient, db_session: Session, detail_data: None
+) -> None:
+    _add_visited_location(db_session, visited_at=datetime(2026, 1, 15, 10, 0, 0))
+    _add_visited_location(db_session, visited_at=datetime(2026, 2, 3, 9, 0, 0))
+
+    assert _get(client)["isVisited"] is True
+
+
+def test_방문_기록이_없으면_isVisited가_false다(
+    client: TestClient, detail_data: None
+) -> None:
+    assert _get(client)["isVisited"] is False
+
+
+def test_다른_사용자의_방문_기록은_isVisited에_반영되지_않는다(
+    client: TestClient, db_session: Session, detail_data: None
+) -> None:
+    _add_visited_location(db_session, user_id=OTHER_USER_ID)
+
+    assert _get(client)["isVisited"] is False
+
+
+def test_다른_장소의_방문_기록은_isVisited에_반영되지_않는다(
+    client: TestClient, db_session: Session, detail_data: None
+) -> None:
+    _add_visited_location(db_session, location_id=PLAIN_LOCATION_ID)
+
+    assert _get(client)["isVisited"] is False
+
+
+def test_방명록만_있고_방문_기록이_없으면_isVisited가_false다(
+    client: TestClient, db_session: Session, detail_data: None
+) -> None:
+    # 방명록 작성 여부는 isVisited 판정에 쓰지 않는다.
+    _add_guestbook(db_session, guestbook_id=1)
+
+    assert _get(client)["isVisited"] is False
+
+
+def test_미션을_완료해도_방문_기록이_없으면_isVisited가_false다(
+    client: TestClient, db_session: Session, detail_data: None
+) -> None:
+    # 미션 완료 여부도 isVisited 판정에 쓰지 않는다.
+    _add_treasure_mission(db_session)
+    _add_treasure_progress(db_session)
+
+    body = _get(client)
+
+    assert body["locationMission"]["isCompleted"] is True
+    assert body["isVisited"] is False
 
 
 # ---------------------------------------------------------------------

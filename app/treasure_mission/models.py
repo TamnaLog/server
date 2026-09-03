@@ -53,6 +53,7 @@ class ArCharacter(Base):
     id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     character_name: Mapped[str] = mapped_column(String(50), nullable=False)
     character_description: Mapped[str] = mapped_column(String(200), nullable=False)
+    character_story_title: Mapped[str] = mapped_column(String(200), nullable=False)
     acquire_condition: Mapped[str] = mapped_column(String(200), nullable=False)
     character_img_url: Mapped[str] = mapped_column(String(500), nullable=False)
     hashtags: Mapped[list[str]] = mapped_column(JSON, nullable=False)

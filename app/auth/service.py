@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.schemas import AnonymousUserResponse
 from app.core.security import TOKEN_TYPE, generate_access_token, hash_access_token
-from app.user.models import User, UserSetting
+from app.user.models import DEFAULT_TARGET_STEP, User, UserSetting
 
 
 # 익명 사용자에게 배정할 닉네임 후보. UNIQUE 제약이 없어 중복 배정을 허용한다.
@@ -51,6 +51,8 @@ def _create_anonymous_user(*, db: Session, access_token: str) -> None:
     user = User(
         nickname=secrets.choice(ANONYMOUS_NICKNAMES),
         point=0,
+        # 하루 목표 걸음 수는 아직 정하는 화면이 없어서 기본값으로 시작한다.
+        target_step=DEFAULT_TARGET_STEP,
         access_token_hash=hash_access_token(access_token),
     )
     db.add(user)

@@ -149,13 +149,20 @@ DB에서는 범위로 후보만 좁히고 실제 사각형 안인지 다시 판�
 보상 수령 여부는 진행도 **이력 전체의 OR**라서, 서로 다른 진행도에서 종류별로 나눠 지급한
 데이터를 만들어 "가장 최근 진행도 하나만 본" 구현을 걸러낸다.
 
+넷째, **`isVisited`가 무엇으로 판정되는지**다. (장소 상세 조회와 같은 규칙)
+방문(`VISITED_LOCATION`)·방명록 작성은 실제 데이터에서 대체로 같이 일어나서
+방명록으로 잘못 판정해도 **평범한 데이터에서는 결과가 똑같다.**
+그래서 "방명록만 있고 방문 기록은 없는" 경우를 따로 만들어 `false`인지 확인한다.
+`isVisited`와 `guestbooks[].characterImgUrl`은 `LOCATION` 응답에만 있는 값이라,
+`ROAD_GUESTBOOK` 응답에 `isVisited`가 새어 나오지 않는지도 함께 본다.
+
 ## 주요 검증 항목
 
 ### 1. `targetType = LOCATION`
 
-- 응답 8개 필드를 **통째로 비교**한다.
+- 응답 9개 필드를 **통째로 비교**한다.
   (`id` / `locationTitle` / `locationCategory` / `distanceMeter` / `durationMinutes` /
-  `mission` / `guestbooksCount` / `guestbooks`)
+  `isVisited` / `mission` / `guestbooksCount` / `guestbooks`)
 - **정렬**: `visited_at DESC`, 같으면 `id DESC`. 최대 3개.
   - 저장 시각이 더 최신이어도 방문일이 과거면 뒤로 간다.
 - **`guestbooksCount`는 전체 개수**다. 방명록 5개면 개수 5, 목록 3.
@@ -163,8 +170,20 @@ DB에서는 범위로 후보만 좁히고 실제 사각형 안인지 다시 판�
 - 다른 장소의 방명록은 섞이지 않는다.
 - 방명록이 없어도 404가 아니라 **200 + 개수 0 + 빈 배열**이다.
 - 대표 이미지는 배열 첫 번째 URL. `null`이거나 빈 배열이면 `null`.
+- 작성자는 **`userId`와 `userNickname`을 함께** 준다. (장소 상세 조회와 같은 필드)
+- 작성자에게 배정된 AR 캐릭터 이미지(`characterImgUrl`)도 방명록마다 함께 준다.
+  배정된 캐릭터가 없으면 `null`이고, 작성자가 다르면 각자의 캐릭터를 따라간다.
 - `mission_id`가 없으면 `missionTitle`은 `null`. (`GUESTBOOK.mission_id`는 공통 `MISSION.id`)
 - 거리·시간은 `app/common/distance.py` 결과와 같다. 사용자 좌표가 장소와 같으면 0.
+
+#### 방문 여부 (`isVisited`)
+
+장소 상세 조회와 같은 규칙이고 같은 함수(`_is_visited`)를 쓴다.
+
+- 현재 사용자와 조회 장소가 맞는 `VISITED_LOCATION`이 **한 건이라도 있으면 `true`**,
+  없으면 `false`다. (여러 건이어도 `true`)
+- **다른 사용자**의 방문 기록, **다른 장소**의 방문 기록은 반영하지 않는다.
+- **방명록만 있고** 방문 기록이 없으면 `false`다.
 
 ### 2. 장소 미션 (`mission`)
 
@@ -199,6 +218,7 @@ DB에서는 범위로 후보만 좁히고 실제 사각형 안인지 다시 판�
 - **빈 배열로 저장돼 있어도 `null`로 정규화**한다. (`content_img_url` / `content_audio_url`)
 - 값이 있으면 배열 순서를 바꾸지 않는다.
 - 작성일은 `saved_at`이 아니라 `visited_at` 기준이다.
+- 방문 기록이 있어도 이 응답에는 **`isVisited`를 넣지 않는다.** (`LOCATION` 전용 필드)
 
 ### 4. 404 `MAP_MODAL_TARGET_NOT_FOUND`
 
@@ -245,15 +265,21 @@ DB에서는 범위로 후보만 좁히고 실제 사각형 안인지 다시 판�
 모달 조회는 최대 3개인데 상세는 전부다. 같은 정렬 규칙을 쓰지만 자르면 안 된다.
 그래서 10개를 넣고 10개가 다 오는지 확인한다.
 
+다섯째, **`isVisited`가 무엇으로 판정되는지**다.
+방문(`VISITED_LOCATION`)·방명록 작성·미션 완료는 실제 데이터에서 대체로 같이 일어나서,
+방명록이나 미션 완료로 잘못 판정해도 **평범한 데이터에서는 결과가 똑같다.**
+그래서 "방명록만 있는 경우"와 "미션만 완료한 경우"를 따로 만들어 `false`인지 확인한다.
+현재 사용자 기준이라는 점도 다른 사용자·다른 장소의 방문 기록으로 함께 본다.
+
 추천 미션은 랜덤이라 값 자체가 아니라 **후보 안에 있는지 / 제외돼야 할 게 빠졌는지**로 본다.
 
 ## 주요 검증 항목
 
 ### 1. 정상 응답
 
-- 응답 10개 필드를 **통째로 비교**한다.
+- 응답 11개 필드를 **통째로 비교**한다.
   (`locationTitle` / `locationCategory` / `distanceMeter` / `durationMinutes` /
-  `locationAddress` / `locationDescription` / `locationImageUrls` /
+  `locationAddress` / `isVisited` / `locationDescription` / `locationImageUrls` /
   `nearbyMissions` / `guestbooks` / `locationMission`)
 - 거리·시간은 `app/common/distance.py` 결과와 같다. 사용자 좌표가 장소와 같으면 0이다.
 - 미션도 방명록도 없는 장소도 404가 아니라 **200 + `null` / 빈 배열**이다.
@@ -272,8 +298,17 @@ DB에서는 범위로 후보만 좁히고 실제 사각형 안인지 다시 판�
   저장 시각이 더 최신이어도 방문일이 과거면 뒤로 간다.
 - 삭제된 방명록과 다른 장소의 방명록은 빠진다.
 - 작성자는 **`userId`와 `userNickname`을 함께** 준다.
+- 작성자에게 배정된 AR 캐릭터 이미지(`characterImgUrl`)도 방명록마다 함께 준다.
+  배정된 캐릭터가 없으면 `null`이고, 작성자가 다르면 각자의 캐릭터를 따라간다.
 - 이미지 배열이 없거나 비어 있으면 `representativeImageUrl`은 `null`.
 - 미션을 참조하지 않으면 `missionTitle`은 `null`.
+
+### 3-1. `isVisited`
+
+- 현재 사용자와 조회 장소가 맞는 `VISITED_LOCATION`이 **한 건이라도 있으면 `true`**,
+  없으면 `false`다. (여러 건이어도 `true`)
+- **다른 사용자**의 방문 기록, **다른 장소**의 방문 기록은 반영하지 않는다.
+- **방명록만 있고** 방문 기록이 없으면 `false`, **미션만 완료**하고 방문 기록이 없어도 `false`다.
 
 ### 4. `locationMission`
 

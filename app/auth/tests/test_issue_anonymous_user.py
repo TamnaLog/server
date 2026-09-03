@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.service import ANONYMOUS_NICKNAMES, MAX_TOKEN_ATTEMPTS
 from app.core.security import hash_access_token
-from app.user.models import User, UserSetting
+from app.user.models import DEFAULT_TARGET_STEP, User, UserSetting
 
 
 ENDPOINT = "/api/v1/auth/anonymous"
@@ -63,6 +63,8 @@ def test_사용자와_사용자_설정을_함께_만든다(
     assert created.ar_character_id is None
     assert created.point == 0
     assert created.nickname in ANONYMOUS_NICKNAMES
+    # 하루 목표 걸음 수는 정하는 화면이 없어서 기본값으로 시작한다.
+    assert created.target_step == DEFAULT_TARGET_STEP == 10000
 
     setting = db_session.scalar(select(UserSetting).where(UserSetting.user_id == created.id))
     assert setting is not None

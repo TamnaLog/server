@@ -21,12 +21,17 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base, BigIntPk
 from app.treasure_mission.models import ArCharacter
+
+
+# 하루 목표 걸음 수 기본값. 익명 사용자 발급 시 이 값으로 시작한다.
+DEFAULT_TARGET_STEP = 10000
 
 
 class UserTravelStyle(Base):
@@ -63,6 +68,13 @@ class User(Base):
     )
     nickname: Mapped[str | None] = mapped_column(String(20), nullable=True)
     point: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
+    # 하루 목표 걸음 수. 기록(STEP_COUNT)이 아니라 사용자 설정값이라 여기에 둔다.
+    target_step: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=DEFAULT_TARGET_STEP,
+        server_default=str(DEFAULT_TARGET_STEP),
+    )
     # 액세스 토큰 해시(SHA-256 hex 64자). 토큰 원문은 저장하지 않는다.
     access_token_hash: Mapped[str] = mapped_column(CHAR(64), nullable=False, unique=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -100,16 +112,23 @@ class UserSetting(Base):
 
 
 class StepCount(Base):
-    """STEP_COUNT - 걸음 수 기록."""
+    """STEP_COUNT - 걸음 수 기록.
+
+    목표 걸음 수(`target_step`)는 기록마다 다른 값이 아니라 사용자 설정값이라
+    `USER` 가 가진다.
+
+    `saved_at` 은 저장 시각이 아니라 **기록 대상 날짜의 KST 자정**이다.
+    사용자별 날짜당 한 행만 두려고 `(user_id, saved_at)` 에 유니크 제약을 건다.
+    """
 
     __tablename__ = "STEP_COUNT"
+    __table_args__ = (
+        UniqueConstraint("user_id", "saved_at", name="uk_step_count__user_saved_at"),
+    )
 
     id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("USER.id", ondelete="CASCADE"), nullable=False
-    )
-    target_step: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=10000, server_default="10000"
     )
     saved_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     steps_count: Mapped[int] = mapped_column(Integer, nullable=False)

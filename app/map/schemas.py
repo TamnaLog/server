@@ -210,11 +210,17 @@ class MapModalQuery(CamelModel):
 
 
 class LocationModalGuestbookResponse(CamelModel):
-    """장소 모달에 함께 보여줄 방명록 한 건."""
+    """장소 모달에 함께 보여줄 방명록 한 건.
+
+    `character_img_url` 은 방명록 작성자에게 배정된 AR 캐릭터 이미지이고,
+    배정된 캐릭터가 없으면 `null` 이다.
+    """
 
     id: int
     representative_image_url: str | None = None
+    user_id: int
     user_nickname: str
+    character_img_url: str | None = None
     mission_title: str | None = None
     # 작성일은 `created_at`/`saved_at` 이 아니라 방문일(`visited_at`) 기준이다.
     visited_at: date
@@ -241,6 +247,7 @@ class LocationModalResponse(CamelModel):
 
     `guestbooks_count` 는 아래 목록의 길이가 아니라 그 장소의 전체 방명록 개수다.
     연결된 미션이 없으면 `mission` 은 `null` 이다.
+    `is_visited` 는 현재 사용자의 이 장소 방문 이력 유무이고 값과 관계없이 항상 내려준다.
     """
 
     id: int
@@ -248,6 +255,7 @@ class LocationModalResponse(CamelModel):
     location_category: str
     distance_meter: int
     duration_minutes: int
+    is_visited: bool
     mission: MapModalMissionResponse | None = None
     guestbooks_count: int = 0
     guestbooks: list[LocationModalGuestbookResponse]
@@ -319,13 +327,18 @@ class NearbyMissionResponse(LocationMissionResponse):
 
 
 class LocationGuestbookResponse(CamelModel):
-    """장소 상세에 보여줄 방명록 한 건."""
+    """장소 상세에 보여줄 방명록 한 건.
+
+    `character_img_url` 은 방명록 작성자에게 배정된 AR 캐릭터 이미지이고,
+    배정된 캐릭터가 없으면 `null` 이다.
+    """
 
     id: int
     mission_title: str | None = None
     representative_image_url: str | None = None
     user_id: int
     user_nickname: str
+    character_img_url: str | None = None
     # 작성일은 `created_at`/`saved_at` 이 아니라 방문일(`visited_at`) 기준이다.
     visited_at: date
     content_writing: str | None = None
@@ -336,6 +349,7 @@ class LocationDetailResponse(CamelModel):
 
     모달에서 이미 준 장소명·분류·거리·예상 시간도 상세에서 다시 모두 내려준다.
     TourAPI 에서 오는 설명과 이미지는 부가 정보라 조회에 실패해도 `null` 로만 채운다.
+    `is_visited` 는 현재 사용자의 이 장소 방문 이력 유무이고 값과 관계없이 항상 내려준다.
     """
 
     location_title: str
@@ -343,6 +357,7 @@ class LocationDetailResponse(CamelModel):
     distance_meter: int
     duration_minutes: int
     location_address: str
+    is_visited: bool
     location_description: str | None = None
     location_image_urls: list[str] | None = None
     nearby_missions: list[NearbyMissionResponse]

@@ -7,10 +7,14 @@
 --
 -- 데이터 방침
 --   - 사용자: id=1 이 "나"(로그인 고정 사용자). id=2~6 은 협동 미션 팀원 5명.
+--   - 하루 목표 걸음 수(USER.target_step)는 기본값 10000 이고 2명만 다른 값을 둔다.
 --   - 콘텐츠 성격의 테이블(LOCATION / MISSION / *_MISSION / AR_CHARACTER)은 채운다.
 --   - 홈 조회 예시 응답을 위해 사용자 1의 문화/협동/보물찾기 진행도를 각각 1건씩 둔다.
 --   - USER_TRAVEL_STYLE 은 온보딩 응답 예시와 맞는 여행 유형 데이터를 둔다.
---   - 방명록(GUESTBOOK / ROAD_GUESTBOOK)과 GPS 는 데이터가 있어야 하므로 채운다.
+--   - 방명록(GUESTBOOK / ROAD_GUESTBOOK)과 GPS, 걸음 수(STEP_COUNT)는 데이터가 있어야 하므로 채운다.
+--   - 좋아요(GUESTBOOK_LIKE / ROAD_GUESTBOOK_LIKE)는 개수가 방명록마다 다르게 보이도록
+--     여러 사용자 것을 섞어 둔다. 사용자 1 의 방명록에는 다른 사용자만 좋아요를 누른다.
+--     (본인 방명록에는 좋아요를 누를 수 없다)
 --   - 좌표는 전부 제주도 기준. mx = 경도(longitude), my = 위도(latitude).
 -- =====================================================================
 
@@ -21,7 +25,9 @@ TRUNCATE TABLE `PICTURE_WITH_CHARACTER`;
 TRUNCATE TABLE `TRAVEL_ENDING_CONTENT`;
 TRUNCATE TABLE `ACQUIRED_AR_CHARACTER`;
 TRUNCATE TABLE `AR_CHARACTER`;
+TRUNCATE TABLE `ROAD_GUESTBOOK_LIKE`;
 TRUNCATE TABLE `ROAD_GUESTBOOK`;
+TRUNCATE TABLE `GUESTBOOK_LIKE`;
 TRUNCATE TABLE `GUESTBOOK`;
 TRUNCATE TABLE `TREASURE_MISSION_PROGRESS`;
 TRUNCATE TABLE `TREASURE_MISSION`;
@@ -72,24 +78,24 @@ VALUES
 --     Authorization: Bearer test-user-2-token   -> 2번 사용자 (이하 6번까지 동일)
 INSERT INTO `USER`
     (`id`, `expectation`, `transportation`, `travel_style`, `user_travel_style_id`,
-     `ar_character_id`, `nickname`, `point`, `access_token_hash`)
+     `ar_character_id`, `nickname`, `point`, `target_step`, `access_token_hash`)
 VALUES
-    (1, '["PHOTO", "LOCAL", "NATURE"]', '["WALK", "BUS"]', '["RIGHT_HERE", "NEAR_AROUND"]', 1, NULL, '몽글몽글파도', 1200,
+    (1, '["PHOTO", "LOCAL", "NATURE"]', '["WALK", "BUS"]', '["RIGHT_HERE", "NEAR_AROUND"]', 1, NULL, '몽글몽글파도', 1200, 10000,
      '680aac6fc35fae2feece55508a4c21c2b49c69c292ad76a814b7742d7a08fddb'),
 
-    (2, '["CAFE", "WALKING"]', '["CAR"]', '["NEAR_DESTINATION"]', 2, NULL, '한라봉주스', 300,
+    (2, '["CAFE", "WALKING"]', '["CAR"]', '["NEAR_DESTINATION"]', 2, NULL, '한라봉주스', 300, 8000,
      'c1d8de760790698435231bef2ea0d71cee9b997502052bd1ca97cfd07620a9ff'),
 
-    (3, '["NATURE", "CULTURE"]', '["WALK"]', '["RIGHT_HERE"]', 3, NULL, '오름러버', 450,
+    (3, '["NATURE", "CULTURE"]', '["WALK"]', '["RIGHT_HERE"]', 3, NULL, '오름러버', 450, 10000,
      'da05fa4b4bb194c93c0de926b0faa619e5fa1a1e2e1ef7f31f09df8e4936366e'),
 
-    (4, '["PHOTO", "CAFE"]', '["BICYCLE"]', '["NEAR_AROUND"]', 1, NULL, '바다필름', 0,
+    (4, '["PHOTO", "CAFE"]', '["BICYCLE"]', '["NEAR_AROUND"]', 1, NULL, '바다필름', 0, 10000,
      'e132a395928a9716062b43a418dbb5f7bafc3eeb1f6143f90929f852e05cb2ba'),
 
-    (5, '["LOCAL", "CULTURE"]', '["BUS", "WALK"]', '["NEAR_AROUND", "NEAR_DESTINATION"]', 2, NULL, '돌담산책', 780,
+    (5, '["LOCAL", "CULTURE"]', '["BUS", "WALK"]', '["NEAR_AROUND", "NEAR_DESTINATION"]', 2, NULL, '돌담산책', 780, 12000,
      '80114cadbd96fcb6f060357fdad912c4120533a57bbab039d4e71560198d26a3'),
 
-    (6, '["WALKING", "NATURE"]', '["CAR", "WALK"]', '["RIGHT_HERE"]', 3, NULL, '귤빛노을', 150,
+    (6, '["WALKING", "NATURE"]', '["CAR", "WALK"]', '["RIGHT_HERE"]', 3, NULL, '귤빛노을', 150, 10000,
      '522ff314a6bf385a26c8b9031bb0377e74bf5875821ed3dd9e74cf67daef00aa');
 
 
@@ -109,7 +115,23 @@ VALUES
 
 
 -- ---------------------------------------------------------------------
--- STEP_COUNT : 데이터 없음 (걸음 수는 앱에서 기록)
+-- ---------------------------------------------------------------------
+-- STEP_COUNT : 걸음 수 6건 (사용자 1 이 5일치, 사용자 2 가 1일치)
+-- saved_at 은 저장 시각이 아니라 기록 대상 날짜의 KST 자정이다.
+-- 사용자별 날짜당 한 행만 존재한다. (user_id + saved_at 유니크)
+-- 목표 걸음 수는 기록이 아니라 사용자 설정값이라 USER.target_step 에 있다.
+-- ---------------------------------------------------------------------
+
+INSERT INTO `STEP_COUNT`
+    (`id`, `user_id`, `saved_at`, `steps_count`)
+VALUES
+    (1, 1, '2026-08-18T00:00:00', 12480),
+    (2, 1, '2026-08-19T00:00:00', 9037),
+    (3, 1, '2026-08-20T00:00:00', 15220),
+    (4, 1, '2026-08-21T00:00:00', 7415),
+    (5, 1, '2026-08-22T00:00:00', 10863),
+
+    (6, 2, '2026-08-22T00:00:00', 6120);
 -- ---------------------------------------------------------------------
 
 
@@ -322,60 +344,72 @@ VALUES
 -- ---------------------------------------------------------------------
 
 INSERT INTO `AR_CHARACTER`
-    (`id`, `character_name`, `character_description`, `acquire_condition`, `character_img_url`, `hashtags`)
+    (`id`, `character_name`, `character_description`, `character_story_title`,
+     `acquire_condition`, `character_img_url`, `hashtags`)
 VALUES
     (1,  '자청비 모티브 탐험가',
      '제주의 오래된 이야기에서 온 씨앗과 여행 지도를 들고 새로운 순간을 발견하는 기록 탐험가입니다.',
+     '씨앗을 심는 여행자의 첫 기록',
      '온보딩에서 기록형 여행 스타일을 선택하면 만날 수 있어요.',
      'https://cdn.jamkkan-jeju.dev/ar/jacheongbi-explorer.png',
      '["#인생사진", "#로컬 탐방", "#자연", "#혼자 여행"]'),
     (2,  '동굴빛 용암이',
      '만장굴의 검은 용암길 사이에서 반짝이는 빛을 따라다니는 작은 동굴 안내자입니다.',
+     '검은 용암길에서 빛을 만난 날',
      '만장굴 문화 미션을 완료하면 만날 수 있어요.',
      'https://cdn.jamkkan-jeju.dev/ar/yongami.png',
      '["#용암동굴", "#만장굴", "#지질"]'),
     (3,  '숨비 바다친구',
      '우도 바다의 숨비소리를 따라 여행자에게 바다 이야기를 들려주는 해녀 친구입니다.',
+     '숨비소리를 따라간 우도의 하루',
      '우도 해녀 문화 미션을 완료하면 만날 수 있어요.',
      'https://cdn.jamkkan-jeju.dev/ar/sumbi.png',
      '["#해녀", "#우도", "#제주바다"]'),
     (4,  '오메기 시장요정',
      '동문시장 골목에서 따뜻한 간식 냄새를 따라 나타나는 먹거리 요정입니다.',
+     '골목 끝에서 만난 따뜻한 한 입',
      '동문시장 문화 미션을 완료하면 만날 수 있어요.',
      'https://cdn.jamkkan-jeju.dev/ar/omegi.png',
      '["#먹거리", "#동문시장", "#제주간식"]'),
     (5,  '협재 파도지기',
      '협재 바다의 에메랄드빛 파도를 지키며 팀의 사진 미션을 응원하는 캐릭터입니다.',
+     '에메랄드빛 파도를 함께 지킨 날',
      '협재 협동 미션을 완료하면 만날 수 있어요.',
      'https://cdn.jamkkan-jeju.dev/ar/hyeopjae-wave.png',
      '["#바다", "#협재", "#협동"]'),
     (6,  '동백 정원사',
      '카멜리아힐의 동백꽃 사이를 돌보며 여행자의 색깔 찾기를 도와주는 정원사입니다.',
+     '동백꽃 사이에서 색을 찾는 시간',
      '카멜리아힐 협동 미션을 완료하면 만날 수 있어요.',
      'https://cdn.jamkkan-jeju.dev/ar/dongbaek.png',
      '["#동백", "#꽃", "#카멜리아힐"]'),
     (7,  '노을 조랑이',
      '한담해안의 노을빛을 등에 얹고 천천히 산책하는 제주 조랑말 친구입니다.',
+     '노을을 등에 얹고 걷는 해안길',
      '한담해안 협동 미션을 완료하면 만날 수 있어요.',
      'https://cdn.jamkkan-jeju.dev/ar/noeul-jorang.png',
      '["#조랑말", "#노을", "#애월"]'),
     (8,  '천지연 물방울',
      '천지연폭포 물보라에서 톡 튀어나와 시원한 길을 알려주는 물방울 캐릭터입니다.',
+     '물보라 너머에 숨겨둔 보물',
      '천지연 보물 찾기 미션을 완료하면 만날 수 있어요.',
      'https://cdn.jamkkan-jeju.dev/ar/mulbangul.png',
      '["#폭포", "#천지연", "#물"]'),
     (9,  '쇠소깍 물빛이',
      '쇠소깍의 깊은 물빛 속에서 장난스럽게 보물 위치를 알려주는 계곡 친구입니다.',
+     '깊은 물빛이 알려준 자리',
      '쇠소깍 보물 찾기 미션을 완료하면 만날 수 있어요.',
      'https://cdn.jamkkan-jeju.dev/ar/soesokkak.png',
      '["#계곡", "#쇠소깍", "#물빛"]'),
     (10, '어리목 숲노루',
      '한라산 어리목 숲길에서 조용히 길을 안내하는 수줍은 제주 노루 친구입니다.',
+     '어리목 숲길의 조용한 안내자',
      '어리목 보물 찾기 미션을 완료하면 만날 수 있어요.',
      'https://cdn.jamkkan-jeju.dev/ar/noru.png',
      '["#노루", "#한라산", "#숲길"]'),
     (11, '돌멍이',
      '처음 제주 여행을 시작한 사용자 곁을 지켜주는 귀여운 기본 캐릭터입니다.',
+     '제주에서의 첫 걸음을 함께한 돌멩이',
      '온보딩에서 나중에 할게요를 선택하면 만날 수 있어요.',
      'https://cdn.jamkkan-jeju.dev/ar/dolmungii.png',
      '["#기본캐릭터", "#돌멍이", "#제주친구"]');
@@ -417,57 +451,88 @@ VALUES
 
 INSERT INTO `GUESTBOOK`
     (`id`, `user_id`, `location_id`, `visited_at`, `content_img_url`, `content_writing`,
-     `content_audio_url`, `content_weather`, `content_color_code`, `saved_at`, `mission_id`, `deleted_at`)
+     `content_audio_url`, `audio_title`, `content_weather`, `content_temperature_celsius`,
+     `content_color_code`, `saved_at`, `mission_id`, `deleted_at`)
 VALUES
     (1, 1, 9,  '2026-08-18',
      '["https://cdn.jamkkan-jeju.dev/guestbook/1-1.jpg"]',
      '동문시장에서 오메기떡 한 봉지 사서 걸었다. 시장 냄새가 여행 시작 같았다.',
-     NULL, 'SUNNY', '#FFD8A8', '2026-08-18T12:10:00', 1, NULL),
+     NULL, NULL, 'SUNNY', 30.2, '#FFD8A8', '2026-08-18T12:10:00', 1, NULL),
 
     (2, 1, 2,  '2026-08-18',
      '["https://cdn.jamkkan-jeju.dev/guestbook/2-1.jpg", "https://cdn.jamkkan-jeju.dev/guestbook/2-2.jpg"]',
      '만장굴 안이 생각보다 훨씬 서늘했다. 용암석주 앞에서 한참 서 있었다.',
-     '["https://cdn.jamkkan-jeju.dev/guestbook/2-audio.m4a"]', 'CLOUDY', '#A5D8FF', '2026-08-18T16:00:00', 1, NULL),
+     '["https://cdn.jamkkan-jeju.dev/guestbook/2-audio.m4a"]', '만장굴 안 물소리', 'CLOUDY', 24.8, '#A5D8FF', '2026-08-18T16:00:00', 1, NULL),
 
     (3, 1, 1,  '2026-08-19',
      '["https://cdn.jamkkan-jeju.dev/guestbook/3-1.jpg"]',
      '새벽에 성산일출봉 올라갔다. 계단은 힘든데 정상에서 본 바다가 다 갚아줬다.',
-     NULL, 'SUNNY', '#FFC9C9', '2026-08-19T08:30:00', 1, NULL),
+     NULL, NULL, 'SUNNY', 26.5, '#FFC9C9', '2026-08-19T08:30:00', 1, NULL),
 
     (4, 1, 5,  '2026-08-19',
      '["https://cdn.jamkkan-jeju.dev/guestbook/4-1.jpg"]',
      '우도 해안길을 천천히 돌았다. 해녀 삼춘이 물질하는 걸 멀리서 봤다.',
-     NULL, 'WINDY', '#B2F2BB', '2026-08-19T13:15:00', 1, NULL),
+     NULL, NULL, 'WINDY', 28.0, '#B2F2BB', '2026-08-19T13:15:00', 1, NULL),
 
     (5, 1, 8,  '2026-08-20',
      NULL,
      '쇠소깍 물빛이 진짜 검은 초록이었다. 카약 타는 사람들 구경만 하다 왔다.',
-     NULL, 'CLOUDY', '#D0BFFF', '2026-08-20T10:50:00', NULL, NULL),
+     NULL, NULL, 'CLOUDY', NULL, '#D0BFFF', '2026-08-20T10:50:00', NULL, NULL),
 
     (6, 1, 4,  '2026-08-20',
      '["https://cdn.jamkkan-jeju.dev/guestbook/6-1.jpg"]',
      '천지연폭포 물소리가 커서 아무 말도 안 하고 서 있었다. 여기 보물 다 찾았다.',
-     '["https://cdn.jamkkan-jeju.dev/guestbook/6-audio.m4a"]', 'RAIN', '#99E9F2', '2026-08-20T15:20:00', 3, NULL),
+     '["https://cdn.jamkkan-jeju.dev/guestbook/6-audio.m4a"]', '천지연 폭포 소리', 'RAIN', 27.3, '#99E9F2', '2026-08-20T15:20:00', 3, NULL),
 
     (7, 1, 6,  '2026-08-21',
      '["https://cdn.jamkkan-jeju.dev/guestbook/7-1.jpg", "https://cdn.jamkkan-jeju.dev/guestbook/7-2.jpg"]',
      '카멜리아힐은 사진 찍을 데가 너무 많았다. 색깔별로 담느라 오래 걸렸다.',
-     NULL, 'SUNNY', '#FFDEEB', '2026-08-21T12:00:00', 2, NULL),
+     NULL, NULL, 'SUNNY', 31.1, '#FFDEEB', '2026-08-21T12:00:00', 2, NULL),
 
     (8, 1, 3,  '2026-08-21',
      '["https://cdn.jamkkan-jeju.dev/guestbook/8-1.jpg"]',
      '협재 바다 색이 비현실적이었다. 발만 담그려다 결국 다 젖었다.',
-     NULL, 'SUNNY', '#A5D8FF', '2026-08-21T17:05:00', 2, NULL),
+     NULL, NULL, 'SUNNY', 29.6, '#A5D8FF', '2026-08-21T17:05:00', 2, NULL),
 
     (9, 2, 10, '2026-08-22',
      '["https://cdn.jamkkan-jeju.dev/guestbook/9-1.jpg"]',
      '한담 산책로에서 노을 봤다. 커피 들고 걷기 딱 좋았다.',
-     NULL, 'SUNNY', '#FFEC99', '2026-08-22T19:10:00', NULL, NULL),
+     NULL, NULL, 'SUNNY', 28.9, '#FFEC99', '2026-08-22T19:10:00', NULL, NULL),
 
     (10, 3, 7, '2026-08-22',
      NULL,
      '어리목 초입만 걷고 내려왔다. 다음엔 정상까지 가보고 싶다.',
-     NULL, 'CLOUDY', '#C3FAE8', '2026-08-22T11:40:00', NULL, '2026-08-22T20:00:00');
+     NULL, NULL, 'CLOUDY', 25.4, '#C3FAE8', '2026-08-22T11:40:00', NULL, '2026-08-22T20:00:00');
+
+
+-- ---------------------------------------------------------------------
+-- GUESTBOOK_LIKE : 방명록 좋아요 12건
+-- 방명록마다 좋아요 수가 다르게 보이도록 사용자 1~6 것을 섞었다.
+--   방명록 3 = 4개, 방명록 1 = 3개, 방명록 7 = 2개, 방명록 2/9 = 1개, 방명록 4/5/6/8 = 0개
+-- id=11 은 사용자 6 이 방명록 2 에 눌렀다가 취소한 좋아요 (deleted_at 필터 테스트용)
+-- id=12 는 사용자 1(나)이 다른 사람의 방명록에 누른 좋아요
+-- 한 사용자가 같은 방명록에 두 행을 가질 수 없다. (guestbook_id + user_id 유니크)
+-- ---------------------------------------------------------------------
+
+INSERT INTO `GUESTBOOK_LIKE`
+    (`id`, `guestbook_id`, `user_id`, `created_at`, `deleted_at`)
+VALUES
+    (1,  1, 2, '2026-08-18T13:00:00', NULL),
+    (2,  1, 3, '2026-08-18T14:20:00', NULL),
+    (3,  1, 4, '2026-08-19T09:05:00', NULL),
+
+    (4,  2, 5, '2026-08-18T17:30:00', NULL),
+
+    (5,  3, 2, '2026-08-19T09:40:00', NULL),
+    (6,  3, 4, '2026-08-19T10:10:00', NULL),
+    (7,  3, 5, '2026-08-19T11:00:00', NULL),
+    (8,  3, 6, '2026-08-20T08:15:00', NULL),
+
+    (9,  7, 3, '2026-08-21T13:05:00', NULL),
+    (10, 7, 6, '2026-08-21T15:40:00', NULL),
+
+    (11, 2, 6, '2026-08-18T18:00:00', '2026-08-19T07:20:00'),
+    (12, 9, 1, '2026-08-22T20:05:00', NULL);
 
 
 -- ---------------------------------------------------------------------
@@ -477,30 +542,50 @@ VALUES
 
 INSERT INTO `ROAD_GUESTBOOK`
     (`id`, `user_id`, `location_id`, `location_alias`, `visited_at`, `content_img_url`, `content_writing`,
-     `content_audio_url`, `content_weather`, `content_color_code`, `mx`, `my`, `saved_at`, `deleted_at`)
+     `content_audio_url`, `audio_title`, `content_weather`, `content_temperature_celsius`,
+     `content_color_code`, `mx`, `my`, `saved_at`, `deleted_at`)
 VALUES
     (1, 1, NULL, '이름 모를 돌담길',      '2026-08-18',
      '["https://cdn.jamkkan-jeju.dev/road/1-1.jpg"]',
      '버스 놓쳐서 걷다가 만난 돌담길. 오히려 여기가 제일 기억에 남는다.',
-     NULL, 'SUNNY',  '#FFE8CC', 126.5312, 33.5001, '2026-08-18T10:25:00', NULL),
+     NULL, NULL, 'SUNNY',  29.8, '#FFE8CC', 126.5312, 33.5001, '2026-08-18T10:25:00', NULL),
 
     (2, 1, NULL, '구좌 당근밭 앞',        '2026-08-18',
      NULL,
      '당근밭 사이 길이 끝없이 이어졌다. 바람 소리만 들렸다.',
-     '["https://cdn.jamkkan-jeju.dev/road/2-audio.m4a"]', 'WINDY', '#FFD8A8', 126.7550, 33.5410, '2026-08-18T14:10:00', NULL),
+     '["https://cdn.jamkkan-jeju.dev/road/2-audio.m4a"]', '구좌 바람 소리', 'WINDY', 27.7, '#FFD8A8', 126.7550, 33.5410, '2026-08-18T14:10:00', NULL),
 
     (3, 1, 5,    '우도 하고수동 가는 길',  '2026-08-19',
      '["https://cdn.jamkkan-jeju.dev/road/3-1.jpg"]',
      '자전거 빌려서 우도 한 바퀴. 오르막에서 후회했지만 내리막에서 다 잊었다.',
-     NULL, 'SUNNY',  '#A5D8FF', 126.9612, 33.5104, '2026-08-19T14:35:00', NULL),
+     NULL, NULL, 'SUNNY',  28.3, '#A5D8FF', 126.9612, 33.5104, '2026-08-19T14:35:00', NULL),
 
     (4, 1, NULL, '표선 가는 해안도로',    '2026-08-20',
      '["https://cdn.jamkkan-jeju.dev/road/4-1.jpg"]',
      '창문 열고 달렸다. 바다 냄새가 계속 따라왔다.',
-     NULL, 'CLOUDY', '#D0BFFF', 126.8320, 33.3260, '2026-08-20T17:45:00', NULL),
+     NULL, NULL, 'CLOUDY', NULL, '#D0BFFF', 126.8320, 33.3260, '2026-08-20T17:45:00', NULL),
 
     (5, 1, 10,   '한담 벤치 두 번째 자리', '2026-08-22',
      '["https://cdn.jamkkan-jeju.dev/road/5-1.jpg", "https://cdn.jamkkan-jeju.dev/road/5-2.jpg"]',
      '노을 지는 거 끝까지 보고 왔다. 여행 마지막 밤이라 더 오래 앉아 있었다.',
-     NULL, 'SUNNY',  '#FFC9C9', 126.3771, 33.4615, '2026-08-22T19:40:00', NULL);
+     NULL, NULL, 'SUNNY',  26.9, '#FFC9C9', 126.3771, 33.4615, '2026-08-22T19:40:00', NULL);
 
+
+-- ---------------------------------------------------------------------
+-- ROAD_GUESTBOOK_LIKE : 길 위의 방명록 좋아요 6건
+-- 길바닥 방명록은 모두 사용자 1 의 것이라 좋아요는 다른 사용자(2~6)만 누른다.
+--   방명록 1 = 3개, 방명록 3 = 2개, 방명록 2/4/5 = 0개
+-- id=6 은 방명록 5 에 눌렀다가 취소된 좋아요 (deleted_at 필터 테스트용, 개수에서 빠진다)
+-- ---------------------------------------------------------------------
+
+INSERT INTO `ROAD_GUESTBOOK_LIKE`
+    (`id`, `road_guestbook_id`, `user_id`, `created_at`, `deleted_at`)
+VALUES
+    (1, 1, 2, '2026-08-18T11:00:00', NULL),
+    (2, 1, 3, '2026-08-18T12:30:00', NULL),
+    (3, 1, 5, '2026-08-19T08:10:00', NULL),
+
+    (4, 3, 4, '2026-08-19T15:20:00', NULL),
+    (5, 3, 6, '2026-08-19T16:05:00', NULL),
+
+    (6, 5, 2, '2026-08-22T20:30:00', '2026-08-23T09:00:00');
