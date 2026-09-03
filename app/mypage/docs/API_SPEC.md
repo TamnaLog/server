@@ -251,3 +251,75 @@ Status Code : 204
 ---
 
 ### 오류 응답 데이터
+
+
+## 사용자 정보 조회
+- http 메서드: get
+- domain: mypage
+- endpoint: /api/v1/users/me/mypage
+
+### API 설명
+
+프로필 수정 화면에 필요한 현재 사용자 정보를 조회한다.
+
+백엔드는 Authorization Bearer 토큰으로 현재 사용자를 식별하고, 사용자의 여행 유형, 대표 AR 캐릭터 이미지, 닉네임, 현재 설정된 여행 선택값과 목표 걸음 수를 반환한다.
+
+사용자 정보를 조회만 하며 데이터는 변경하지 않는다.
+
+---
+
+### 요청 Query
+
+없음
+
+---
+
+### 요청 Path
+
+없음
+
+---
+
+### 요청 Body
+
+없음
+
+---
+
+### 정상 응답 데이터
+
+Status Code : `200 OK`
+
+| 자료형 | 변수명 | 설명 |
+| --- | --- | --- |
+| string | null | `userType` | 현재 사용자에게 배정된 여행 유형. `USER.user_travel_style_id`로 연결된 `USER_TRAVEL_STYLE.user_type`. 배정되지 않았으면 null |
+| string | null | `arCharacterImageUrl` | 현재 사용자의 대표 AR 캐릭터 이미지 URL. `USER.ar_character_id`로 연결된 `AR_CHARACTER.character_img_url`. 배정되지 않았으면 null |
+| string | null | `nickname` | 현재 사용자 닉네임. 설정되지 않았으면 null |
+| string[] | null | `categories` | 현재 설정된 여행 기대 항목. `USER.expectation`. `PHOTO | LOCAL | NATURE | CULTURE | CAFE | WALKING`. 설정 전이면 null |
+| string[] | null | `transportation` | 현재 설정된 이동수단 목록. `USER.transportation`. `WALK | BUS | CAR | BICYCLE`. 설정 전이면 null |
+| string[] | null | `travelStyle` | 현재 설정된 자투리 시간 여행 방식 목록. `USER.travel_style`. `RIGHT_HERE | NEAR_AROUND | NEAR_DESTINATION`. 설정 전이면 null |
+| integer | `targetStepCount` | 현재 사용자의 하루 목표 걸음 수. `USER.target_step` |
+
+```json
+{
+  "userType": "동네 깊숙이 걷는 로컬 탐험가",
+  "arCharacterImageUrl": "https://example.com/characters/local-explorer.png",
+  "nickname": "몽글몽글파도",
+  "categories": ["PHOTO", "LOCAL"],
+  "transportation": ["WALK", "BUS"],
+  "travelStyle": ["RIGHT_HERE", "NEAR_AROUND"],
+  "targetStepCount": 10000
+}
+```
+
+- 응답의 `categories`는 DB 컬럼 `USER.expectation`을 API에서 사용하는 이름이다.
+- `categories`, `transportation`, `travelStyle`은 사용자 온보딩 정보 저장 및 사용자 정보 변경 API와 동일한 영문 코드를 사용한다.
+- 세 배열은 설정 전 상태의 `null`과 사용자가 아무 항목도 선택하지 않은 빈 배열 `[]`을 구분하여 저장된 값을 그대로 반환한다.
+- `userType`과 `arCharacterImageUrl`은 각각 연결된 여행 유형과 대표 AR 캐릭터가 없으면 `null`을 반환한다.
+- `targetStepCount`는 `NOT NULL` 컬럼이며 기본값은 `10000`이다.
+
+---
+
+### 오류 응답 데이터
+
+없음
