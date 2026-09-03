@@ -16,6 +16,7 @@ from app.map.router import router as map_router
 from app.mission.router import router as mission_router
 from app.mypage.router import router as mypage_router
 from app.onboarding.router import router as onboarding_router
+from app.others.router import router as others_router
 from app.services.kto import KtoClient
 from app.treasure_mission.router import router as treasure_mission_router
 
@@ -31,6 +32,7 @@ ROUTERS = (
     treasure_mission_router,
     guestbook_router,
     mypage_router,
+    others_router,
 )
 
 

@@ -76,9 +76,12 @@ access_token_hash = hashlib.sha256(
 | `ar_character_id` | `NULL` |
 | `nickname` | 익명 사용자용 닉네임 5개 중 무작위로 선택한 값 |
 | `point` | `0` |
+| `target_step` | `10000` |
 | `access_token_hash` | 생성한 액세스 토큰의 SHA-256 해시 |
 
 `created_at`과 `updated_at`은 DB 기본값인 현재 시각을 사용한다.
+
+`target_step`은 하루 목표 걸음 수이며 사용자가 정하는 화면이 아직 없으므로 기본값 `10000`으로 시작한다. 값은 `app/user/models.py`의 `DEFAULT_TARGET_STEP` 상수로 두고 모델 기본값과 발급 로직이 같은 값을 쓴다.
 
 익명 사용자 발급 단계에서는 온보딩 정보, 여행 유형과 AR 캐릭터를 정하지 않는다. 해당 정보는 이후 온보딩 API에서 기존 `USER` 행을 수정하여 저장한다.
 

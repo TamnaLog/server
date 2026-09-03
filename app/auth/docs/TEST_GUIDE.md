@@ -28,7 +28,8 @@
 - **DB 저장**: `USER` 1행 + `USER_SETTING` 1행이 함께 생긴다.
   - 온보딩 정보(`expectation`, `transportation`, `travel_style`)와
     `user_travel_style_id`, `ar_character_id`는 아직 `NULL`이다. (온보딩 API가 채운다)
-  - `point`는 0, `nickname`은 익명 닉네임 5개 중 하나다.
+  - `point`는 0, `target_step`은 기본값 10000, `nickname`은 익명 닉네임 5개 중 하나다.
+    (목표 걸음 수는 `STEP_COUNT` 가 아니라 `USER` 가 가지므로 발급 시점에 채워진다)
   - 닉네임은 무작위라서 값 자체가 아니라 후보 안에 있는지로 검증한다.
   - `USER_SETTING`의 두 알림 값은 모두 `TRUE`다.
 - **토큰 원문 미저장**: `USER.access_token_hash`가 토큰 원문과 다르고,

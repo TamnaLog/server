@@ -366,7 +366,7 @@ DB 조회 또는 응답 구성 중 예상하지 못한 오류가 발생하면 �
 - Request Path와 Body는 받지 않는다.
 - `Authorization: Bearer {accessToken}` 헤더는 필수다.
 - 현재 사용자는 공통 의존성 `get_current_user_id()`로 식별하며, 토큰에 해당하는 사용자가 실제로 존재하는지 검증한다.
-- 응답 구성에 사용자 ID를 직접 사용하지 않더라도 인증된 사용자만 호출할 수 있다.
+- 현재 사용자 ID는 `targetType = LOCATION`일 때 해당 장소의 방문 여부를 판정하는 데 사용한다.
 - 프론트는 조회 대상 유형과 ID, 현재 사용자의 GPS 좌표를 Query로 전달한다.
 - 조회 대상은 장소와 길바닥 방명록만 지원하며 미션 자체는 조회 대상으로 받지 않는다.
 
@@ -520,13 +520,17 @@ GUESTBOOK.id DESC
 | --- | --- |
 | `id` | `GUESTBOOK.id` |
 | `representativeImageUrl` | `GUESTBOOK.content_img_url` 배열의 첫 번째 URL |
+| `userId` | `GUESTBOOK.user_id` |
 | `userNickname` | `GUESTBOOK.user_id`로 연결된 `USER.nickname` |
+| `characterImgUrl` | `GUESTBOOK.user_id`로 연결된 `USER.ar_character_id`의 `AR_CHARACTER.character_img_url` |
 | `missionTitle` | `GUESTBOOK.mission_id`로 연결된 `MISSION.mission_title` |
 | `visitedAt` | `GUESTBOOK.visited_at`, `YYYY-MM-DD` 형식 |
 | `contentWriting` | `GUESTBOOK.content_writing` |
 
 - `content_img_url`이 `null`이거나 빈 배열이면 `representativeImageUrl = null`을 반환한다.
 - 이미지가 한 장 이상이면 배열의 첫 번째 URL을 순서 변경 없이 반환한다.
+- `userId`는 작성자 식별용으로 값의 유무와 관계없이 항상 반환한다.
+- 작성자에게 배정된 AR 캐릭터가 없으면 `characterImgUrl = null`을 반환한다.
 - `mission_id`가 `null`이면 `missionTitle = null`을 반환한다.
 - `content_writing`이 없으면 `contentWriting = null`을 반환한다.
 - `GUESTBOOK.mission_id`는 유형별 세부 미션 ID가 아니라 공통 `MISSION.id`를 참조한다.
@@ -646,6 +650,22 @@ DB 조회, 거리 계산 또는 응답 구성 중 예상하지 못한 오류가 
   "code": "INTERNAL_SERVER_ERROR"
 }
 ```
+
+## 수정사항
+
+`targetType = LOCATION`인 지도 모달 조회 응답에 다음 세 필드를 추가한다.
+
+| 응답 필드 | 데이터 출처 및 규칙 |
+| --- | --- |
+| `isVisited` | 현재 사용자와 조회 중인 장소에 대응하는 `VISITED_LOCATION`이 한 건 이상 존재하면 `true`, 없으면 `false` |
+| `guestbooks[].characterImgUrl` | 방명록 작성자인 `GUESTBOOK.user_id`로 연결된 `USER.ar_character_id`의 `AR_CHARACTER.character_img_url`. 작성자에게 배정된 AR 캐릭터가 없으면 `null` |
+| `guestbooks[].userId` | 방명록 작성자인 `GUESTBOOK.user_id`. 장소 상세 조회 응답과 필드를 맞춘다 |
+
+- `isVisited`는 `VISITED_LOCATION.user_id = current_user_id AND VISITED_LOCATION.location_id = targetId`의 존재 여부만으로 판정한다.
+- `GUESTBOOK` 작성 여부나 미션 완료 여부는 `isVisited` 판정에 사용하지 않는다.
+- 방명록 작성자의 AR 캐릭터 이미지는 최신 방명록을 조회할 때 작성자 정보와 함께 JOIN하거나 일괄 조회하여 N+1 조회를 방지한다.
+- 두 필드는 값의 유무와 관계없이 응답에서 생략하지 않는다.
+- 이 변경은 `targetType = ROAD_GUESTBOOK` 응답에는 적용하지 않는다.
 
 # 지도 장소 상세 조회 비즈니스 룰
 
@@ -882,6 +902,20 @@ DB 조회, 추천 미션 조회 또는 응답 구성 중 예상하지 못한 오
   "code": "INTERNAL_SERVER_ERROR"
 }
 ```
+
+## 수정사항
+
+지도 장소 상세 조회 응답에 다음 두 필드를 추가한다.
+
+| 응답 필드 | 데이터 출처 및 규칙 |
+| --- | --- |
+| `guestbooks[].characterImgUrl` | 방명록 작성자인 `GUESTBOOK.user_id`로 연결된 `USER.ar_character_id`의 `AR_CHARACTER.character_img_url`. 작성자에게 배정된 AR 캐릭터가 없으면 `null` |
+| `isVisited` | 현재 사용자와 조회 중인 장소에 대응하는 `VISITED_LOCATION`이 한 건 이상 존재하면 `true`, 없으면 `false` |
+
+- `isVisited`는 `VISITED_LOCATION.user_id = current_user_id AND VISITED_LOCATION.location_id = locationId`의 존재 여부만으로 판정한다.
+- `GUESTBOOK` 작성 여부나 미션 완료 여부는 `isVisited` 판정에 사용하지 않는다.
+- 방명록 작성자의 AR 캐릭터 이미지는 방명록마다 개별 조회하지 않고 작성자 정보와 함께 JOIN하거나 일괄 조회한다.
+- 두 필드는 값의 유무와 관계없이 응답에서 생략하지 않는다.
 
 # 지도 검색 결과 조회 비즈니스 룰
 

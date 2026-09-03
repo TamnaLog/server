@@ -4,6 +4,7 @@
 """
 
 from datetime import date, datetime
+from decimal import Decimal
 from enum import Enum
 from typing import Self
 
@@ -18,6 +19,8 @@ __all__ = [
     "GeneralGuestbookResponse",
     "GuestbookCreateRequest",
     "GuestbookCreateResponse",
+    "GuestbookLikeRequest",
+    "GuestbookLikeResponse",
     "GuestbookListResponse",
     "GuestbookLocationResponse",
     "GuestbookMissionResponse",
@@ -25,8 +28,15 @@ __all__ = [
     "RoadGuestbookResponse",
     "GuestbookWriteAvailabilityResponse",
     "VisitedLocationResponse",
+    "VisitedLocationSummaryResponse",
     "WriteAvailabilityQuery",
 ]
+
+
+# 섭씨 기온 허용 범위. DB 컬럼이 DECIMAL(4,1) 이라 소수 첫째 자리까지만 받는다.
+# 범위를 벗어나거나 정밀도가 더 크면 임의로 반올림하지 않고 공통 400 으로 막는다.
+MIN_TEMPERATURE_CELSIUS = Decimal("-999.9")
+MAX_TEMPERATURE_CELSIUS = Decimal("999.9")
 
 
 class CamelModel(BaseModel):
@@ -88,6 +98,14 @@ class GuestbookCreateRequest(CamelModel):
     visited_at: date
     content_writing: str | None = Field(default=None, max_length=500)
     content_weather: str | None = Field(default=None, max_length=20)
+    # 오디오 제목(`audioTitle`)은 요청으로 받지 않는다. 서버가 첨부 오디오로 생성한다.
+    content_temperature_celsius: Decimal | None = Field(
+        default=None,
+        ge=MIN_TEMPERATURE_CELSIUS,
+        le=MAX_TEMPERATURE_CELSIUS,
+        decimal_places=1,
+        description="섭씨 기온. -999.9~999.9, 소수 첫째 자리까지",
+    )
     content_color_code: str | None = Field(default=None, max_length=20)
     mission_id: int | None = Field(default=None, ge=1)
     image_files: list[UploadFile] | None = None
@@ -135,7 +153,10 @@ class GuestbookCreateResponse(CamelModel):
     content_image_urls: list[str] | None = None
     content_writing: str | None = None
     content_audio_urls: list[str] | None = None
+    audio_title: str | None = None
     content_weather: str | None = None
+    # 응답에서는 JSON 숫자로 나가야 해서 Decimal 이 아니라 float 로 담는다.
+    content_temperature_celsius: float | None = None
     content_color_code: str | None = None
     mission_id: int | None = None
     saved_at: datetime
@@ -165,24 +186,39 @@ class GeneralGuestbookResponse(CamelModel):
 
     `content_image_urls` / `content_audio_urls` 는 DB 가 `NULL` 이면 `null`,
     빈 배열이면 `[]` 로 구분해서 내려준다.
+    `is_liked` 는 현재 사용자의 좋아요 여부, `like_count` 는 사용자 구분 없는 전체 개수다.
+    둘 다 취소된(소프트 삭제된) 좋아요는 세지 않는다.
     """
 
     id: int
+    user_id: int
+    character_img_url: str | None = None
+    user_nickname: str | None = None
     location: GuestbookLocationResponse
     visited_at: date
     content_image_urls: list[str] | None = None
     content_writing: str | None = None
     content_audio_urls: list[str] | None = None
+    audio_title: str | None = None
     content_weather: str | None = None
+    content_temperature_celsius: float | None = None
     content_color_code: str | None = None
+    is_liked: bool = False
+    like_count: int = 0
     saved_at: datetime
     mission: GuestbookMissionResponse | None = None
 
 
 class RoadGuestbookResponse(CamelModel):
-    """길바닥 방명록 한 건. 장소/미션을 붙이지 않고 저장된 좌표와 별칭만 쓴다."""
+    """길바닥 방명록 한 건. 장소/미션을 붙이지 않고 저장된 좌표와 별칭만 쓴다.
+
+    좋아요는 일반 방명록과 규칙이 같고 테이블만 `ROAD_GUESTBOOK_LIKE` 로 다르다.
+    """
 
     id: int
+    user_id: int
+    character_img_url: str | None = None
+    user_nickname: str | None = None
     location_alias: str
     latitude: float
     longitude: float
@@ -190,17 +226,67 @@ class RoadGuestbookResponse(CamelModel):
     content_image_urls: list[str] | None = None
     content_writing: str | None = None
     content_audio_urls: list[str] | None = None
+    audio_title: str | None = None
     content_weather: str | None = None
+    content_temperature_celsius: float | None = None
     content_color_code: str | None = None
+    is_liked: bool = False
+    like_count: int = 0
     saved_at: datetime
+
+
+class VisitedLocationSummaryResponse(CamelModel):
+    """현재 사용자가 방문한 장소. 목록에는 id 와 장소명만 담는다.
+
+    작성 가능 여부 조회의 `VisitedLocationResponse` 와 달리 방문 시각은 응답에 넣지 않는다.
+    (정렬에만 쓴다)
+    """
+
+    id: int
+    location_title: str
 
 
 class GuestbookListResponse(CamelModel):
     """GET /api/v1/guestbooks 정상 응답.
 
     유형은 항목 필드가 아니라 최상위 배열 이름으로 구분한다.
-    결과가 없어도 두 배열 키를 모두 포함하고 빈 배열로 내려준다.
+    결과가 없어도 세 배열 키를 모두 포함하고 빈 배열로 내려준다.
+    `visited_locations` 는 방명록 유무와 상관없이 항상 함께 내려준다.
     """
 
+    visited_locations: list[VisitedLocationSummaryResponse]
     general_guestbooks: list[GeneralGuestbookResponse]
     road_guestbooks: list[RoadGuestbookResponse]
+
+
+# ---------------------------------------------------------------------
+# 방명록 좋아요
+# ---------------------------------------------------------------------
+
+
+class GuestbookLikeRequest(CamelModel):
+    """PUT /api/v1/guestbooks/{guestbookId}/like 요청 Body.
+
+    `is_liked` 는 현재 상태를 뒤집으라는 뜻이 아니라 **요청 후 적용될 최종 상태**다.
+    그래서 같은 요청을 여러 번 보내도 결과가 같다. (멱등)
+    두 방명록 테이블은 id 가 겹칠 수 있어서 `guestbook_type` 없이는 대상을 정할 수 없다.
+    """
+
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, extra="forbid"
+    )
+
+    guestbook_type: GuestbookType = Field(description="대상 방명록 유형")
+    is_liked: bool = Field(description="요청 완료 후 적용할 최종 좋아요 상태")
+
+
+class GuestbookLikeResponse(CamelModel):
+    """PUT /api/v1/guestbooks/{guestbookId}/like 정상 응답.
+
+    `like_count` 는 요청을 반영한 뒤의 활성 좋아요 수다. (취소된 좋아요는 세지 않는다)
+    """
+
+    guestbook_id: int
+    guestbook_type: GuestbookType
+    is_liked: bool
+    like_count: int = 0

@@ -7,7 +7,7 @@ API 명세: app/guestbook/docs/API_SPEC.md
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, File, Query, status
+from fastapi import APIRouter, Depends, File, Path, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -16,6 +16,8 @@ from app.guestbook import service
 from app.guestbook.schemas import (
     GuestbookCreateRequest,
     GuestbookCreateResponse,
+    GuestbookLikeRequest,
+    GuestbookLikeResponse,
     GuestbookListResponse,
     GuestbookWriteAvailabilityResponse,
     WriteAvailabilityQuery,
@@ -101,3 +103,33 @@ def get_guestbooks(
 ) -> GuestbookListResponse:
     """GET /api/v1/guestbooks - 방명록 조회."""
     return service.get_guestbooks(db=db, current_user_id=current_user_id)
+
+
+@router.put(
+    "/{guestbook_id}/like",
+    summary="방명록 좋아요",
+    status_code=status.HTTP_200_OK,
+    response_model=GuestbookLikeResponse,
+    response_model_by_alias=True,
+    responses={
+        status.HTTP_404_NOT_FOUND: _error_response(
+            "방명록을 찾을 수 없거나 삭제된 방명록", service.GUESTBOOK_NOT_FOUND
+        ),
+        status.HTTP_409_CONFLICT: _error_response(
+            "현재 사용자가 작성한 방명록", service.OWN_GUESTBOOK_LIKE_NOT_ALLOWED
+        ),
+    },
+)
+def set_guestbook_like(
+    db: Annotated[Session, Depends(get_db)],
+    current_user_id: Annotated[int, Depends(get_current_user_id)],
+    guestbook_id: Annotated[int, Path(ge=1, description="좋아요 상태를 바꿀 방명록 id")],
+    request: GuestbookLikeRequest,
+) -> GuestbookLikeResponse:
+    """PUT /api/v1/guestbooks/{guestbookId}/like - 방명록 좋아요."""
+    return service.set_guestbook_like(
+        db=db,
+        current_user_id=current_user_id,
+        guestbook_id=guestbook_id,
+        request=request,
+    )

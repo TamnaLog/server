@@ -6,19 +6,29 @@
 """
 
 import logging
+from dataclasses import dataclass
+from decimal import Decimal
 
 from fastapi import UploadFile
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import Exists, Subquery, func, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from app.common import audios, images
 from app.common.datetimes import now_kst
 from app.core.errors import ConflictError, NotFoundError
-from app.guestbook.models import Guestbook, RoadGuestbook
+from app.guestbook.models import (
+    Guestbook,
+    GuestbookLike,
+    RoadGuestbook,
+    RoadGuestbookLike,
+)
 from app.guestbook.schemas import (
     GeneralGuestbookResponse,
     GuestbookCreateRequest,
     GuestbookCreateResponse,
+    GuestbookLikeRequest,
+    GuestbookLikeResponse,
     GuestbookListResponse,
     GuestbookLocationResponse,
     GuestbookMissionResponse,
@@ -26,12 +36,16 @@ from app.guestbook.schemas import (
     RoadGuestbookResponse,
     GuestbookWriteAvailabilityResponse,
     VisitedLocationResponse,
+    VisitedLocationSummaryResponse,
     WriteAvailabilityQuery,
 )
 from app.map.models import Location, VisitedLocation
 from app.mission.completion import is_mission_completed
 from app.mission.models import Mission, MissionType
 from app.services import blob_storage
+from app.services.openai_audio_title import ValidatedAudio, generate_audio_title
+from app.treasure_mission.models import ArCharacter
+from app.user.models import User
 
 
 logger = logging.getLogger(__name__)
@@ -39,6 +53,8 @@ logger = logging.getLogger(__name__)
 LOCATION_NOT_FOUND = "LOCATION_NOT_FOUND"
 LOCATION_NOT_VISITED = "LOCATION_NOT_VISITED"
 MISSION_NOT_FOUND = "MISSION_NOT_FOUND"
+GUESTBOOK_NOT_FOUND = "GUESTBOOK_NOT_FOUND"
+OWN_GUESTBOOK_LIKE_NOT_ALLOWED = "OWN_GUESTBOOK_LIKE_NOT_ALLOWED"
 
 # Blob 저장 경로. 유형과 생성된 방명록 id 로 나눈다.
 GUESTBOOK_BLOB_PREFIX = "guestbook"
@@ -120,6 +136,9 @@ def create_guestbook(
     파일은 방명록 id 가 필요한 경로에 올려야 해서 먼저 `flush()` 로 id 를 얻고,
     업로드가 모두 끝난 뒤 한 번만 커밋한다. 중간에 실패하면 이미 올린 파일을 지운다.
 
+    오디오가 있으면 커밋 전에 OpenAI 로 오디오 제목을 만든다. 제목 생성에 실패하면
+    방명록도 만들지 않는다. (rollback + 업로드한 파일 삭제 후 공통 처리기가 500 으로 응답)
+
     같은 요청을 여러 번 보내면 그때마다 새 방명록이 생긴다. (멱등 API 가 아니다)
     """
     mission_id = _resolve_general_mission_id(db, current_user_id, request)
@@ -133,9 +152,12 @@ def create_guestbook(
         guestbook.content_img_url = _upload_images(
             request.image_files, request.guestbook_type, guestbook.id, uploaded_urls
         )
+        # 업로드와 제목 생성이 같은 내용을 쓰도록 파일을 한 번만 읽어 둔다.
+        validated_audios = _read_audios(request.audio_files)
         guestbook.content_audio_url = _upload_audios(
-            request.audio_files, request.guestbook_type, guestbook.id, uploaded_urls
+            validated_audios, request.guestbook_type, guestbook.id, uploaded_urls
         )
+        guestbook.audio_title = _generate_audio_title(validated_audios)
         db.commit()
     except Exception:
         # DB 가 참조하지 않는 파일이 남지 않도록 올린 파일을 모두 되돌린다.
@@ -218,6 +240,7 @@ def _create_guestbook_row(
             visited_at=request.visited_at,
             content_writing=request.content_writing,
             content_weather=request.content_weather,
+            content_temperature_celsius=request.content_temperature_celsius,
             content_color_code=request.content_color_code,
             saved_at=now_kst(),
             mission_id=mission_id,
@@ -233,6 +256,7 @@ def _create_guestbook_row(
         visited_at=request.visited_at,
         content_writing=request.content_writing,
         content_weather=request.content_weather,
+        content_temperature_celsius=request.content_temperature_celsius,
         content_color_code=request.content_color_code,
         # LOCATION 과 같게 mx = 경도, my = 위도로 저장한다.
         mx=request.longitude,
@@ -266,29 +290,56 @@ def _upload_images(
     return urls
 
 
+def _read_audios(audio_files: list[UploadFile] | None) -> list[ValidatedAudio]:
+    """업로드 오디오를 요청 순서대로 읽고 형식을 검증한다. 파일이 없으면 빈 목록.
+
+    업로드 스트림은 한 번만 읽을 수 있어서 여기서 바이트로 들고 있는다.
+    같은 내용을 Blob 업로드와 OpenAI 전사가 함께 쓴다. (허용 형식이 아니면 400)
+    """
+    if not audio_files:
+        return []
+
+    validated = []
+    for audio in audio_files:
+        data, audio_format = audios.read_and_detect(audio.file)
+        validated.append(ValidatedAudio(data=data, audio_format=audio_format))
+    return validated
+
+
 def _upload_audios(
-    audio_files: list[UploadFile] | None,
+    validated_audios: list[ValidatedAudio],
     guestbook_type: GuestbookType,
     guestbook_id: int,
     uploaded_urls: list[str],
 ) -> list[str] | None:
     """오디오를 요청 순서대로 올리고 URL 목록을 만든다. 파일이 없으면 `None`."""
-    if not audio_files:
+    if not validated_audios:
         return None
 
     prefix = _blob_prefix(guestbook_type, guestbook_id, AUDIO_BLOB_FOLDER)
     urls = []
-    for audio in audio_files:
-        data, audio_format = audios.read_and_detect(audio.file)
+    for audio in validated_audios:
         url = blob_storage.upload_file(
-            data,
+            audio.data,
             prefix=prefix,
-            content_type=audio_format.content_type,
-            extension=audio_format.extension,
+            content_type=audio.audio_format.content_type,
+            extension=audio.audio_format.extension,
         )
         uploaded_urls.append(url)
         urls.append(url)
     return urls
+
+
+def _generate_audio_title(validated_audios: list[ValidatedAudio]) -> str | None:
+    """첨부 오디오로 제목을 만든다. 오디오가 없으면 OpenAI 를 호출하지 않고 `None`.
+
+    오디오가 여러 개여도 전체를 대표하는 제목 한 개만 만든다.
+    생성에 실패하면 예외를 그대로 올려 방명록 작성 자체를 실패시킨다.
+    """
+    if not validated_audios:
+        return None
+
+    return generate_audio_title(validated_audios)
 
 
 def _blob_prefix(guestbook_type: GuestbookType, guestbook_id: int, folder: str) -> str:
@@ -324,7 +375,9 @@ def _to_create_response(
         content_image_urls=guestbook.content_img_url,
         content_writing=guestbook.content_writing,
         content_audio_urls=guestbook.content_audio_url,
+        audio_title=guestbook.audio_title,
         content_weather=guestbook.content_weather,
+        content_temperature_celsius=_to_celsius(guestbook.content_temperature_celsius),
         content_color_code=guestbook.content_color_code,
         saved_at=guestbook.saved_at,
     )
@@ -341,74 +394,227 @@ def _to_create_response(
     return response
 
 
+def _to_celsius(value: Decimal | float | None) -> float | None:
+    """저장된 기온을 응답용 숫자로 바꾼다. 값이 없으면 `None`.
+
+    DB 컬럼은 `DECIMAL(4,1)` 이라 `Decimal` 로 읽히는데, 응답에서는 문자열이 아니라
+    JSON 숫자로 나가야 해서 `float` 로 바꾼다. (소수 첫째 자리라 값이 달라지지 않는다)
+    """
+    if value is None:
+        return None
+    return float(value)
+
+
+# ---------------------------------------------------------------------
+# 좋아요 공통 (방명록 조회 / 방명록 좋아요)
+# ---------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _LikeTable:
+    """유형별로 다른 방명록/좋아요 테이블 묶음.
+
+    두 방명록 테이블은 id 가 서로 겹칠 수 있어서, 요청의 `guestbookType` 으로만
+    대상 테이블을 정한다. 선택한 유형에서 찾지 못해도 다른 유형을 다시 찾지 않는다.
+    """
+
+    guestbook_model: type[Guestbook] | type[RoadGuestbook]
+    like_model: type[GuestbookLike] | type[RoadGuestbookLike]
+    # 좋아요 테이블에서 방명록을 가리키는 FK 컬럼명. (유형마다 이름이 다르다)
+    like_guestbook_id_field: str
+
+    @property
+    def like_guestbook_id(self) -> InstrumentedAttribute[int]:
+        return getattr(self.like_model, self.like_guestbook_id_field)
+
+
+_LIKE_TABLES: dict[GuestbookType, _LikeTable] = {
+    GuestbookType.GENERAL: _LikeTable(Guestbook, GuestbookLike, "guestbook_id"),
+    GuestbookType.ROAD: _LikeTable(RoadGuestbook, RoadGuestbookLike, "road_guestbook_id"),
+}
+
+
+def _active_like_counts(table: _LikeTable) -> Subquery:
+    """`방명록 id → 활성 좋아요 수` 서브쿼리.
+
+    방명록마다 개수를 다시 세지 않도록 한 번에 집계해서 목록 쿼리에 붙인다. (N+1 방지)
+    좋아요가 하나도 없는 방명록은 이 결과에 없으므로 바깥에서 `0` 으로 채운다.
+    """
+    return (
+        select(
+            table.like_guestbook_id.label("guestbook_id"),
+            func.count().label("like_count"),
+        )
+        .where(table.like_model.deleted_at.is_(None))
+        .group_by(table.like_guestbook_id)
+        .subquery()
+    )
+
+
+def _liked_by_current_user(
+    table: _LikeTable, guestbook_id: InstrumentedAttribute[int], current_user_id: int
+) -> Exists:
+    """현재 사용자의 활성 좋아요가 있는지 판정하는 `EXISTS` 조각.
+
+    개수와 달리 사용자 조건이 붙고, 취소된 좋아요는 없는 것으로 본다.
+    """
+    return (
+        select(table.like_model.id)
+        .where(
+            table.like_guestbook_id == guestbook_id,
+            table.like_model.user_id == current_user_id,
+            table.like_model.deleted_at.is_(None),
+        )
+        .exists()
+    )
+
+
 # ---------------------------------------------------------------------
 # 방명록 조회
 # ---------------------------------------------------------------------
 
 
 def get_guestbooks(db: Session, current_user_id: int) -> GuestbookListResponse:
-    """현재 사용자가 쓴 방명록 전체를 유형별로 조회한다.
+    """저장된 방명록 전체를 유형별로 조회한다.
+
+    목록은 **작성자로 거르지 않는다.** 남이 쓴 방명록도 함께 내려주고,
+    현재 사용자는 방문 장소(`visited_locations`)와 방명록별 `is_liked` 계산에만 쓴다.
 
     페이지네이션 없이 전부 내려주고, 두 목록을 각각 최신순으로 정렬한다.
     지운 방명록(`deleted_at`)은 제외하고, 결과가 없어도 빈 배열로 응답한다.
+    방문 장소는 방명록 유무와 상관없이 항상 함께 내려준다.
 
     읽기 전용이라 아무것도 저장하지 않고 Blob 도 건드리지 않는다.
     """
     return GuestbookListResponse(
+        visited_locations=_find_visited_locations(db, current_user_id),
         general_guestbooks=_find_general_guestbooks(db, current_user_id),
         road_guestbooks=_find_road_guestbooks(db, current_user_id),
     )
 
 
+def _find_visited_locations(
+    db: Session, current_user_id: int
+) -> list[VisitedLocationSummaryResponse]:
+    """현재 사용자가 방문한 장소를 최근 방문순으로 중복 없이 가져온다.
+
+    같은 장소를 여러 번 방문해도 장소는 한 번만 담는다. 그래서 방문 기록을 그대로
+    나열하지 않고 장소별로 묶어 **가장 최근 방문 시각**으로 정렬한다.
+    (최근 방문 시각이 같으면 장소 id 가 큰 쪽이 먼저다)
+    """
+    latest_visited_at = func.max(VisitedLocation.visited_at)
+    statement = (
+        select(Location.id, Location.location_title, latest_visited_at)
+        .join(VisitedLocation, VisitedLocation.location_id == Location.id)
+        .where(VisitedLocation.user_id == current_user_id)
+        .group_by(Location.id, Location.location_title)
+        .order_by(latest_visited_at.desc(), Location.id.desc())
+    )
+    return [
+        VisitedLocationSummaryResponse(id=location_id, location_title=location_title)
+        for location_id, location_title, _ in db.execute(statement).all()
+    ]
+
+
 def _find_general_guestbooks(
     db: Session, current_user_id: int
 ) -> list[GeneralGuestbookResponse]:
-    """일반 방명록을 장소/미션과 함께 한 번의 쿼리로 읽는다. (N+1 방지)
+    """일반 방명록을 장소/미션/작성자/좋아요와 함께 한 번의 쿼리로 읽는다. (N+1 방지)
 
-    장소는 NOT NULL FK 라 반드시 붙고, 미션은 없을 수 있어 OUTER JOIN 한다.
+    작성자로 거르지 않고 삭제되지 않은 방명록을 모두 읽는다.
+    `current_user_id` 는 목록 범위가 아니라 `is_liked` 판정에만 쓴다.
+
+    장소와 작성자는 NOT NULL FK 라 반드시 붙고, 미션과 AR 캐릭터는 없을 수 있어
+    OUTER JOIN 한다. 좋아요는 방명록마다 세지 않고 개수 집계는 서브쿼리로,
+    현재 사용자의 좋아요 여부는 `EXISTS` 로 한 번에 가져온다.
     """
+    table = _LIKE_TABLES[GuestbookType.GENERAL]
+    like_counts = _active_like_counts(table)
+    is_liked = _liked_by_current_user(table, Guestbook.id, current_user_id)
+
     statement = (
-        select(Guestbook, Location, Mission)
-        .join(Location, Location.id == Guestbook.location_id)
-        .outerjoin(Mission, Mission.id == Guestbook.mission_id)
-        .where(
-            Guestbook.user_id == current_user_id,
-            Guestbook.deleted_at.is_(None),
+        select(
+            Guestbook,
+            Location,
+            Mission,
+            User.nickname,
+            ArCharacter.character_img_url,
+            func.coalesce(like_counts.c.like_count, 0),
+            is_liked,
         )
+        .join(Location, Location.id == Guestbook.location_id)
+        .join(User, User.id == Guestbook.user_id)
+        .outerjoin(Mission, Mission.id == Guestbook.mission_id)
+        .outerjoin(ArCharacter, ArCharacter.id == User.ar_character_id)
+        .outerjoin(like_counts, like_counts.c.guestbook_id == Guestbook.id)
+        .where(Guestbook.deleted_at.is_(None))
         .order_by(Guestbook.saved_at.desc(), Guestbook.id.desc())
     )
     return [
         GeneralGuestbookResponse(
             id=guestbook.id,
+            user_id=guestbook.user_id,
+            character_img_url=character_img_url,
+            user_nickname=nickname,
             location=_to_location_response(location),
             visited_at=guestbook.visited_at,
             content_image_urls=guestbook.content_img_url,
             content_writing=guestbook.content_writing,
             content_audio_urls=guestbook.content_audio_url,
+            audio_title=guestbook.audio_title,
             content_weather=guestbook.content_weather,
+            content_temperature_celsius=_to_celsius(guestbook.content_temperature_celsius),
             content_color_code=guestbook.content_color_code,
+            is_liked=bool(liked),
+            like_count=like_count,
             saved_at=guestbook.saved_at,
             mission=_to_mission_response(mission),
         )
-        for guestbook, location, mission in db.execute(statement).all()
+        for (
+            guestbook,
+            location,
+            mission,
+            nickname,
+            character_img_url,
+            like_count,
+            liked,
+        ) in db.execute(statement).all()
     ]
 
 
 def _find_road_guestbooks(
     db: Session, current_user_id: int
 ) -> list[RoadGuestbookResponse]:
-    """길바닥 방명록을 읽는다. 장소/미션은 붙이지 않는다."""
+    """길바닥 방명록을 작성자/좋아요와 함께 읽는다. 장소와 미션은 붙이지 않는다.
+
+    일반 방명록과 마찬가지로 작성자로 거르지 않는다.
+    좋아요는 규칙이 같고 테이블만 `ROAD_GUESTBOOK_LIKE` 로 다르다.
+    개수는 집계 서브쿼리로, 현재 사용자의 좋아요 여부는 `EXISTS` 로 한 번에 가져온다.
+    """
+    table = _LIKE_TABLES[GuestbookType.ROAD]
+    like_counts = _active_like_counts(table)
+    is_liked = _liked_by_current_user(table, RoadGuestbook.id, current_user_id)
+
     statement = (
-        select(RoadGuestbook)
-        .where(
-            RoadGuestbook.user_id == current_user_id,
-            RoadGuestbook.deleted_at.is_(None),
+        select(
+            RoadGuestbook,
+            User.nickname,
+            ArCharacter.character_img_url,
+            func.coalesce(like_counts.c.like_count, 0),
+            is_liked,
         )
+        .join(User, User.id == RoadGuestbook.user_id)
+        .outerjoin(ArCharacter, ArCharacter.id == User.ar_character_id)
+        .outerjoin(like_counts, like_counts.c.guestbook_id == RoadGuestbook.id)
+        .where(RoadGuestbook.deleted_at.is_(None))
         .order_by(RoadGuestbook.saved_at.desc(), RoadGuestbook.id.desc())
     )
     return [
         RoadGuestbookResponse(
             id=guestbook.id,
+            user_id=guestbook.user_id,
+            character_img_url=character_img_url,
+            user_nickname=nickname,
             location_alias=guestbook.location_alias,
             # 저장할 때와 같게 my = 위도, mx = 경도다.
             latitude=guestbook.my,
@@ -417,11 +623,21 @@ def _find_road_guestbooks(
             content_image_urls=guestbook.content_img_url,
             content_writing=guestbook.content_writing,
             content_audio_urls=guestbook.content_audio_url,
+            audio_title=guestbook.audio_title,
             content_weather=guestbook.content_weather,
+            content_temperature_celsius=_to_celsius(guestbook.content_temperature_celsius),
             content_color_code=guestbook.content_color_code,
+            is_liked=bool(liked),
+            like_count=like_count,
             saved_at=guestbook.saved_at,
         )
-        for guestbook in db.scalars(statement).all()
+        for (
+            guestbook,
+            nickname,
+            character_img_url,
+            like_count,
+            liked,
+        ) in db.execute(statement).all()
     ]
 
 
@@ -447,3 +663,151 @@ def _to_mission_response(mission: Mission | None) -> GuestbookMissionResponse | 
         mission_type=MissionType(mission.mission_type),
         mission_title=mission.mission_title,
     )
+
+
+# ---------------------------------------------------------------------
+# 방명록 좋아요
+# ---------------------------------------------------------------------
+
+
+def set_guestbook_like(
+    db: Session,
+    current_user_id: int,
+    guestbook_id: int,
+    request: GuestbookLikeRequest,
+) -> GuestbookLikeResponse:
+    """방명록 좋아요 상태를 요청한 값으로 맞춘다.
+
+    `is_liked` 는 현재 상태를 뒤집으라는 뜻이 아니라 **적용할 최종 상태**다.
+    그래서 이미 같은 상태면 DB 를 건드리지 않고 성공 응답만 돌려준다. (멱등)
+
+    좋아요는 지우지 않고 `deleted_at` 으로만 취소하며, 다시 누르면 새 행을 만들지 않고
+    기존 행을 되살린다. (`created_at` 은 그대로 둔다)
+    상태 변경과 개수 집계는 한 트랜잭션에서 하고, 중간에 실패하면 전부 롤백한다.
+    """
+    table = _LIKE_TABLES[request.guestbook_type]
+    author_id = _get_like_target_author_id(db, table, guestbook_id)
+    if author_id == current_user_id:
+        raise ConflictError(
+            OWN_GUESTBOOK_LIKE_NOT_ALLOWED,
+            detail=f"사용자 {current_user_id} 는 자신의 방명록에 좋아요를 누를 수 없습니다.",
+        )
+
+    _apply_like(db, table, guestbook_id, current_user_id, request.is_liked)
+    # 변경을 flush 한 뒤에 세야 방금 바꾼 상태가 개수에 반영된다.
+    like_count = _count_active_likes(db, table, guestbook_id)
+    db.commit()
+
+    return GuestbookLikeResponse(
+        guestbook_id=guestbook_id,
+        guestbook_type=request.guestbook_type,
+        is_liked=request.is_liked,
+        like_count=like_count,
+    )
+
+
+def _get_like_target_author_id(
+    db: Session, table: _LikeTable, guestbook_id: int
+) -> int:
+    """좋아요 대상 방명록의 작성자 id. 없거나 삭제됐으면 404.
+
+    삭제된 방명록은 작성자 본인이 요청해도 "없는 방명록"으로 본다.
+    (그래서 409 보다 이 검사가 먼저다)
+    """
+    author_id = db.scalar(
+        select(table.guestbook_model.user_id).where(
+            table.guestbook_model.id == guestbook_id,
+            table.guestbook_model.deleted_at.is_(None),
+        )
+    )
+    if author_id is None:
+        raise NotFoundError(
+            GUESTBOOK_NOT_FOUND,
+            detail=f"방명록 {guestbook_id} 를 찾을 수 없습니다.",
+        )
+    return author_id
+
+
+def _apply_like(
+    db: Session,
+    table: _LikeTable,
+    guestbook_id: int,
+    current_user_id: int,
+    is_liked: bool,
+) -> None:
+    """좋아요 행을 요청한 상태로 맞춘다. 이미 같은 상태면 아무것도 바꾸지 않는다.
+
+    바꾼 뒤에는 flush 한다. 세션이 `autoflush=False` 라서 flush 하지 않으면
+    바로 뒤에 세는 활성 좋아요 수에 방금 바꾼 상태가 반영되지 않는다.
+    """
+    like = _find_like(db, table, guestbook_id, current_user_id)
+
+    if is_liked:
+        if like is None:
+            _create_like(db, table, guestbook_id, current_user_id)
+        elif like.deleted_at is not None:
+            # 취소했던 좋아요는 새 행을 만들지 않고 되살린다. (`created_at` 유지)
+            like.deleted_at = None
+            db.flush()
+        return
+
+    if like is not None and like.deleted_at is None:
+        like.deleted_at = now_kst()
+        db.flush()
+
+
+def _find_like(
+    db: Session, table: _LikeTable, guestbook_id: int, current_user_id: int
+) -> GuestbookLike | RoadGuestbookLike | None:
+    """현재 사용자의 좋아요 행. 취소된 행도 되살려 써야 하므로 함께 찾는다."""
+    statement = select(table.like_model).where(
+        table.like_guestbook_id == guestbook_id,
+        table.like_model.user_id == current_user_id,
+    )
+    return db.scalars(statement).first()
+
+
+def _create_like(
+    db: Session, table: _LikeTable, guestbook_id: int, current_user_id: int
+) -> None:
+    """좋아요 행을 새로 만든다.
+
+    동시 요청이 먼저 행을 만들었으면 유니크 제약에 걸린다. 그때는 중복 행을 만들지 않고
+    그 행을 다시 찾아 요청한 상태(활성)로 맞춘다.
+    """
+    like = table.like_model(
+        **{table.like_guestbook_id_field: guestbook_id}, user_id=current_user_id
+    )
+    db.add(like)
+    try:
+        db.flush()
+        return
+    except IntegrityError:
+        db.rollback()
+
+    existing = _find_like(db, table, guestbook_id, current_user_id)
+    if existing is None:
+        # 유니크 충돌이 아닌 다른 이유였다면 그대로 500 으로 드러낸다.
+        raise RuntimeError(
+            f"좋아요 행을 만들지 못했습니다. (방명록 {guestbook_id})"
+        )
+
+    existing.deleted_at = None
+    db.flush()
+
+
+def _count_active_likes(db: Session, table: _LikeTable, guestbook_id: int) -> int:
+    """방명록 한 건의 활성 좋아요 수. 취소된 좋아요는 세지 않는다.
+
+    목록 조회의 `_active_like_counts()` 와 같은 조건이고, 여기서는 한 건만 세면 되므로
+    집계 서브쿼리 대신 단일 COUNT 를 쓴다.
+    """
+    count = db.scalar(
+        select(func.count())
+        .select_from(table.like_model)
+        .where(
+            table.like_guestbook_id == guestbook_id,
+            table.like_model.deleted_at.is_(None),
+        )
+    )
+    return count or 0

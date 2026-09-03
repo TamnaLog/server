@@ -23,6 +23,7 @@ from app.culture_mission.models import CultureMission, CultureMissionProgress
 from app.guestbook import service
 from app.guestbook.models import Guestbook, RoadGuestbook
 from app.map.models import Location, VisitedLocation
+from app.services.openai_audio_title import AudioTitleError
 from app.mission.models import Mission, MissionStatus
 from app.treasure_mission.models import TreasureMission, TreasureMissionProgress
 from app.user.models import User
@@ -72,6 +73,25 @@ def uploads(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
         return url
 
     monkeypatch.setattr(service.blob_storage, "upload_file", fake_upload)
+    return calls
+
+
+GENERATED_AUDIO_TITLE = "파도소리"
+
+
+@pytest.fixture(autouse=True)
+def audio_titles(monkeypatch: pytest.MonkeyPatch) -> list[list[Any]]:
+    """OpenAI 오디오 제목 생성을 가로채 호출별 오디오 목록을 기록한다.
+
+    오디오가 없는 요청에서 호출 자체가 없는지도 이 기록으로 확인한다.
+    """
+    calls: list[list[Any]] = []
+
+    def fake_generate_audio_title(audio_files: list[Any]) -> str:
+        calls.append(list(audio_files))
+        return GENERATED_AUDIO_TITLE
+
+    monkeypatch.setattr(service, "generate_audio_title", fake_generate_audio_title)
     return calls
 
 
@@ -301,6 +321,7 @@ def test_방문한_장소에_일반_방명록을_작성하면_201과_저장값�
         _general_form(
             contentWriting="현애원 산책하기 좋았어요.",
             contentWeather="맑음",
+            contentTemperatureCelsius="24.5",
             contentColorCode="#84C7AE",
         ),
     )
@@ -320,7 +341,10 @@ def test_방문한_장소에_일반_방명록을_작성하면_201과_저장값�
         "contentImageUrls": None,
         "contentWriting": "현애원 산책하기 좋았어요.",
         "contentAudioUrls": None,
+        # 오디오가 없으면 제목도 생성하지 않는다.
+        "audioTitle": None,
         "contentWeather": "맑음",
+        "contentTemperatureCelsius": 24.5,
         "contentColorCode": "#84C7AE",
         "missionId": None,
         "savedAt": saved.saved_at.isoformat(),
@@ -449,7 +473,9 @@ def test_길바닥_방명록은_장소와_방문_이력_없이_저장된다(
         "contentImageUrls": None,
         "contentWriting": "바다가 잘 보이는 길이에요.",
         "contentAudioUrls": None,
+        "audioTitle": None,
         "contentWeather": None,
+        "contentTemperatureCelsius": None,
         "contentColorCode": None,
         "missionId": None,
         "savedAt": saved.saved_at.isoformat(),
@@ -584,6 +610,204 @@ def test_오디오는_실제_형식_기준으로_확장자를_정한다(
     assert response.status_code == 201
     assert uploads[0]["extension"] == extension
     assert uploads[0]["content_type"] == content_type
+
+
+# ---------------------------------------------------------------------
+# 오디오 제목 생성 (BUSINESS_RULES 수정사항 - OpenAI 오디오 제목 생성)
+# ---------------------------------------------------------------------
+
+
+def test_오디오가_없으면_OpenAI를_호출하지_않고_audioTitle이_null이다(
+    client: TestClient,
+    db_session: Session,
+    guestbook_data: None,
+    uploads: list,
+    audio_titles: list[list[Any]],
+) -> None:
+    _add_visit(db_session)
+
+    body = _post(
+        client, _general_form(), images_=[("a.jpg", JPEG_BYTES, "image/jpeg")]
+    ).json()
+
+    assert audio_titles == []
+    assert body["audioTitle"] is None
+    assert _guestbooks(db_session)[0].audio_title is None
+
+
+def test_오디오가_있으면_생성된_제목을_저장하고_응답한다(
+    client: TestClient, db_session: Session, guestbook_data: None, uploads: list
+) -> None:
+    _add_visit(db_session)
+
+    body = _post(
+        client, _general_form(), audios_=[("memo.mp3", MP3_BYTES, "audio/mpeg")]
+    ).json()
+
+    assert body["audioTitle"] == GENERATED_AUDIO_TITLE
+    assert _guestbooks(db_session)[0].audio_title == GENERATED_AUDIO_TITLE
+
+
+def test_길바닥_방명록도_오디오_제목을_생성한다(
+    client: TestClient, db_session: Session, guestbook_data: None, uploads: list
+) -> None:
+    body = _post(
+        client, _road_form(), audios_=[("memo.mp3", MP3_BYTES, "audio/mpeg")]
+    ).json()
+
+    assert body["audioTitle"] == GENERATED_AUDIO_TITLE
+    assert _road_guestbooks(db_session)[0].audio_title == GENERATED_AUDIO_TITLE
+
+
+def test_오디오가_여러_개여도_제목은_한_번만_생성한다(
+    client: TestClient,
+    db_session: Session,
+    guestbook_data: None,
+    uploads: list,
+    audio_titles: list[list[Any]],
+) -> None:
+    _add_visit(db_session)
+
+    body = _post(
+        client,
+        _general_form(),
+        audios_=[("1.mp3", MP3_BYTES, "audio/mpeg"), ("2.m4a", M4A_BYTES, "audio/mp4")],
+    ).json()
+
+    # 파일마다 만들지 않고 전체를 대표하는 제목 하나만 만든다.
+    assert len(audio_titles) == 1
+    assert body["audioTitle"] == GENERATED_AUDIO_TITLE
+    # 전달되는 오디오는 요청 순서를 그대로 유지한다.
+    assert [audio.audio_format.value for audio in audio_titles[0]] == ["MP3", "M4A"]
+
+
+def test_제목_생성에는_업로드한_것과_같은_오디오_내용을_넘긴다(
+    client: TestClient,
+    db_session: Session,
+    guestbook_data: None,
+    uploads: list,
+    audio_titles: list[list[Any]],
+) -> None:
+    _add_visit(db_session)
+
+    _post(client, _general_form(), audios_=[("memo.mp3", MP3_BYTES, "audio/mpeg")])
+
+    # 업로드 스트림을 두 번 읽지 않고 같은 바이트를 함께 쓴다.
+    assert audio_titles[0][0].data == MP3_BYTES
+    assert uploads[0]["data"] == MP3_BYTES
+
+
+def test_제목_생성이_실패하면_500이고_아무것도_남지_않는다(
+    client: TestClient,
+    db_session: Session,
+    guestbook_data: None,
+    uploads: list,
+    deletes: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _add_visit(db_session)
+
+    def boom(audio_files: list[Any]) -> str:
+        raise AudioTitleError("OPENAI_API_KEY is not configured.")
+
+    monkeypatch.setattr(service, "generate_audio_title", boom)
+
+    response = _post(
+        client,
+        _general_form(),
+        images_=[("a.jpg", JPEG_BYTES, "image/jpeg")],
+        audios_=[("memo.mp3", MP3_BYTES, "audio/mpeg")],
+    )
+
+    assert response.status_code == 500
+    assert response.json() == {"code": "INTERNAL_SERVER_ERROR"}
+    # DB 행도 남지 않고, 이미 올린 이미지·오디오도 모두 지운다.
+    assert _guestbooks(db_session) == []
+    assert deletes == [upload["url"] for upload in uploads]
+
+
+# ---------------------------------------------------------------------
+# 기온 (BUSINESS_RULES 수정사항 - 방명록 작성)
+# ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("sent", "saved"),
+    [
+        pytest.param("24.5", 24.5, id="소수_첫째_자리"),
+        pytest.param("-3.5", -3.5, id="영하"),
+        pytest.param("0", 0.0, id="0도"),
+        pytest.param("28", 28.0, id="정수"),
+        pytest.param("999.9", 999.9, id="최대값"),
+        pytest.param("-999.9", -999.9, id="최소값"),
+    ],
+)
+def test_기온을_보내면_소수_첫째_자리까지_저장하고_숫자로_반환한다(
+    client: TestClient,
+    db_session: Session,
+    guestbook_data: None,
+    uploads: list,
+    sent: str,
+    saved: float,
+) -> None:
+    _add_visit(db_session)
+
+    body = _post(
+        client, _general_form(contentTemperatureCelsius=sent)
+    ).json()
+
+    assert body["contentTemperatureCelsius"] == saved
+    stored = _guestbooks(db_session)[0].content_temperature_celsius
+    assert stored is not None
+    assert float(stored) == saved
+
+
+def test_기온을_보내지_않으면_null로_저장한다(
+    client: TestClient, db_session: Session, guestbook_data: None, uploads: list
+) -> None:
+    _add_visit(db_session)
+
+    body = _post(client, _general_form()).json()
+
+    assert body["contentTemperatureCelsius"] is None
+    assert _guestbooks(db_session)[0].content_temperature_celsius is None
+
+
+def test_길바닥_방명록도_기온을_저장한다(
+    client: TestClient, db_session: Session, guestbook_data: None, uploads: list
+) -> None:
+    body = _post(client, _road_form(contentTemperatureCelsius="21.3")).json()
+
+    assert body["contentTemperatureCelsius"] == 21.3
+    stored = _road_guestbooks(db_session)[0].content_temperature_celsius
+    assert stored is not None
+    assert float(stored) == 21.3
+
+
+@pytest.mark.parametrize(
+    "temperature",
+    [
+        pytest.param("1000.0", id="최대값_초과"),
+        pytest.param("-1000.0", id="최소값_미만"),
+        # 반올림하지 않고 그대로 거절한다.
+        pytest.param("24.55", id="소수_둘째_자리"),
+        pytest.param("맑음", id="숫자가_아님"),
+    ],
+)
+def test_기온이_규칙을_벗어나면_400이고_아무것도_남지_않는다(
+    client: TestClient,
+    db_session: Session,
+    guestbook_data: None,
+    uploads: list,
+    temperature: str,
+) -> None:
+    _add_visit(db_session)
+
+    response = _post(client, _general_form(contentTemperatureCelsius=temperature))
+
+    assert response.status_code == 400
+    assert response.json() == {"code": "INVALID_REQUEST"}
+    assert _guestbooks(db_session) == []
 
 
 # ---------------------------------------------------------------------

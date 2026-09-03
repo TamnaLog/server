@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     azure_storage_connection_string: str = Field(default="")
     azure_storage_container: str = Field(default="media")
 
+    # OpenAI (방명록 오디오 제목 생성)
+    openai_api_key: str = Field(default="")
+    openai_audio_transcription_model: str = Field(default="gpt-4o-mini-transcribe")
+    openai_audio_title_model: str = Field(default="gpt-4o-mini")
+    openai_timeout_seconds: float = Field(default=30)
+
     kto_base_url: str = Field(default="https://apis.data.go.kr/B551011/KorService2")
     kto_service_key: str = Field(default="")
     kto_mobile_os: str = Field(default="ETC")
@@ -50,6 +56,11 @@ class Settings(BaseSettings):
     def azure_storage_enabled(self) -> bool:
         """Blob Storage 연결 문자열이 설정돼 있는지."""
         return bool(self.azure_storage_connection_string)
+
+    @property
+    def openai_enabled(self) -> bool:
+        """OpenAI API 키가 설정돼 있는지. (오디오가 첨부된 방명록 작성에만 필요하다)"""
+        return bool(self.openai_api_key)
 
     @property
     def cors_origins(self) -> list[str]:

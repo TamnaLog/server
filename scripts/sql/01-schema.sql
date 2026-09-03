@@ -14,7 +14,9 @@ DROP TABLE IF EXISTS `PICTURE_WITH_CHARACTER`;
 DROP TABLE IF EXISTS `TRAVEL_ENDING_CONTENT`;
 DROP TABLE IF EXISTS `ACQUIRED_AR_CHARACTER`;
 DROP TABLE IF EXISTS `AR_CHARACTER`;
+DROP TABLE IF EXISTS `ROAD_GUESTBOOK_LIKE`;
 DROP TABLE IF EXISTS `ROAD_GUESTBOOK`;
+DROP TABLE IF EXISTS `GUESTBOOK_LIKE`;
 DROP TABLE IF EXISTS `GUESTBOOK`;
 DROP TABLE IF EXISTS `TREASURE_MISSION_PROGRESS`;
 DROP TABLE IF EXISTS `TREASURE_MISSION`;
@@ -60,6 +62,7 @@ CREATE TABLE `USER` (
     `ar_character_id`      BIGINT      NULL                 COMMENT '배정된 AR 캐릭터',
     `nickname`             VARCHAR(20) NULL,
     `point`                INT         NOT NULL DEFAULT 0,
+    `target_step`          INT         NOT NULL DEFAULT 10000  COMMENT '하루 목표 걸음 수',
     `access_token_hash`    CHAR(64)    NOT NULL                COMMENT '액세스 토큰 해시(SHA-256 hex)',
     `created_at`           DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`           DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -88,13 +91,14 @@ CREATE TABLE `USER_SETTING` (
 CREATE TABLE `STEP_COUNT` (
     `id`          BIGINT   NOT NULL AUTO_INCREMENT,
     `user_id`     BIGINT   NOT NULL,
-    `target_step` INT      NOT NULL DEFAULT 10000,
     `saved_at`    DATETIME NOT NULL,
     `steps_count` INT      NOT NULL,
     `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    KEY `idx_step_count__user_saved_at` (`user_id`, `saved_at`),
+    -- 사용자별 기록 날짜당 한 행만 둔다. (`saved_at` 은 기록 날짜의 KST 자정)
+    -- 조회에 쓰던 (user_id, saved_at) 인덱스 역할도 이 유니크 키가 대신한다.
+    UNIQUE KEY `uk_step_count__user_saved_at` (`user_id`, `saved_at`),
     CONSTRAINT `fk_step_count__user`
         FOREIGN KEY (`user_id`) REFERENCES `USER` (`id`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '걸음 수 기록';
@@ -350,7 +354,9 @@ CREATE TABLE `GUESTBOOK` (
     `content_img_url`    JSON         NULL                    COMMENT 'string[]',
     `content_writing`    VARCHAR(500) NULL,
     `content_audio_url`  JSON         NULL                    COMMENT 'string[]',
+    `audio_title`        VARCHAR(50)  NULL                    COMMENT '녹음 파일 제목',
     `content_weather`    VARCHAR(20)  NULL,
+    `content_temperature_celsius` DECIMAL(4,1) NULL           COMMENT '섭씨 기온',
     `content_color_code` VARCHAR(20)  NULL,
     `saved_at`           DATETIME     NOT NULL,
     `mission_id`         BIGINT       NULL,
@@ -369,6 +375,23 @@ CREATE TABLE `GUESTBOOK` (
         FOREIGN KEY (`mission_id`) REFERENCES `MISSION` (`id`) ON DELETE SET NULL
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '장소 방명록';
 
+CREATE TABLE `GUESTBOOK_LIKE` (
+    `id`           BIGINT   NOT NULL AUTO_INCREMENT,
+    `guestbook_id` BIGINT   NOT NULL,
+    `user_id`      BIGINT   NOT NULL,
+    `created_at`   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `deleted_at`   DATETIME NULL,
+    PRIMARY KEY (`id`),
+    -- 한 사용자는 한 방명록에 좋아요를 한 행으로만 갖는다.
+    -- 취소는 행 삭제가 아니라 `deleted_at` 소프트 삭제이고, 다시 누르면 같은 행을 되살린다.
+    UNIQUE KEY `uk_guestbook_like__guestbook_user` (`guestbook_id`, `user_id`),
+    KEY `idx_guestbook_like__user` (`user_id`),
+    CONSTRAINT `fk_guestbook_like__guestbook`
+        FOREIGN KEY (`guestbook_id`) REFERENCES `GUESTBOOK` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_guestbook_like__user`
+        FOREIGN KEY (`user_id`) REFERENCES `USER` (`id`) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '장소 방명록 좋아요';
+
 CREATE TABLE `ROAD_GUESTBOOK` (
     `id`                 BIGINT       NOT NULL AUTO_INCREMENT,
     `user_id`            BIGINT       NOT NULL,
@@ -378,7 +401,9 @@ CREATE TABLE `ROAD_GUESTBOOK` (
     `content_img_url`    JSON         NULL                    COMMENT 'string[]',
     `content_writing`    VARCHAR(500) NULL,
     `content_audio_url`  JSON         NULL                    COMMENT 'string[]',
+    `audio_title`        VARCHAR(50)  NULL                    COMMENT '녹음 파일 제목',
     `content_weather`    VARCHAR(20)  NULL,
+    `content_temperature_celsius` DECIMAL(4,1) NULL           COMMENT '섭씨 기온',
     `content_color_code` VARCHAR(20)  NULL,
     `mx`                 DOUBLE       NOT NULL                COMMENT '경도(longitude)',
     `my`                 DOUBLE       NOT NULL                COMMENT '위도(latitude)',
@@ -394,6 +419,23 @@ CREATE TABLE `ROAD_GUESTBOOK` (
     CONSTRAINT `fk_road_guestbook__location`
         FOREIGN KEY (`location_id`) REFERENCES `LOCATION` (`id`) ON DELETE SET NULL
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '길 위의 방명록';
+
+CREATE TABLE `ROAD_GUESTBOOK_LIKE` (
+    `id`                BIGINT   NOT NULL AUTO_INCREMENT,
+    `road_guestbook_id` BIGINT   NOT NULL,
+    `user_id`           BIGINT   NOT NULL,
+    `created_at`        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `deleted_at`        DATETIME NULL,
+    PRIMARY KEY (`id`),
+    -- 한 사용자는 한 방명록에 좋아요를 한 행으로만 갖는다.
+    -- 취소는 행 삭제가 아니라 `deleted_at` 소프트 삭제이고, 다시 누르면 같은 행을 되살린다.
+    UNIQUE KEY `uk_road_guestbook_like__guestbook_user` (`road_guestbook_id`, `user_id`),
+    KEY `idx_road_guestbook_like__user` (`user_id`),
+    CONSTRAINT `fk_road_guestbook_like__guestbook`
+        FOREIGN KEY (`road_guestbook_id`) REFERENCES `ROAD_GUESTBOOK` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_road_guestbook_like__user`
+        FOREIGN KEY (`user_id`) REFERENCES `USER` (`id`) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '길 위의 방명록 좋아요';
 
 
 -- ---------------------------------------------------------------------

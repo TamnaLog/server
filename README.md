@@ -54,7 +54,7 @@ docker compose -f docker-compose.dev.yml up --build
 `scripts/sql` 디렉터리가 MySQL 컨테이너의 `/docker-entrypoint-initdb.d`에 마운트되어 있습니다. MySQL 데이터 볼륨이 비어 있는 **최초 기동에만** 아래 순서로 자동 실행됩니다.
 
 ```text
-scripts/sql/01-schema.sql      테이블 생성 (docs/erd.md 기준 23개)
+scripts/sql/01-schema.sql      테이블 생성 (docs/erd.md 기준 25개)
 scripts/sql/02-data-mock.sql   목업 데이터 (사용자 1 = 나, 제주 장소/미션/방명록)
 ```
 
