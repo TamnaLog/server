@@ -32,7 +32,9 @@
 - 처음 시작하면 201로 응답하고 명세의 필드를 모두 반환한다.
   (`treasureMissionProgressId`, `missionProgressStatus`, `location`, `treasureCount`,
   `treasureItems` / camelCase 확인)
-- `location` 은 미션에 연결된 장소의 이름과 좌표다. (`my`=위도 / `mx`=경도를 뒤집지 않았는지 확인)
+- `location` 은 미션에 연결된 장소의 id·이름·주소·좌표다.
+  (`locationId`/`locationAddress` 는 `LOCATION.id`/`LOCATION.location_address`,
+  `my`=위도 / `mx`=경도를 뒤집지 않았는지 확인)
 - `treasureItems` 는 `treasureIndex` 오름차순이고, 신규 진행도는 전부 `isFound=false` 다.
 - 보물 표시/인식 반경은 프론트가 관리하므로 응답에 넣지 않는다.
 
@@ -53,6 +55,7 @@
 #### 4. 이어하기
 
 - `IN_PROGRESS` 진행도가 있으면 200이고 진행도 개수는 그대로다.
+- 이어하기 응답의 `location` 도 신규 시작과 같은 장소 id·주소를 포함한다.
 - **요청 좌표를 다르게 보내도** 저장된 보물 좌표를 그대로 반환한다. (좌표 재생성 금지)
 - `current_found_item_idx` 에 든 index만 `isFound=true` 다.
 - 완료 기록만 있으면 재도전으로 201, 새 진행도가 생기고 **기존 완료 기록은 그대로** 남는다.

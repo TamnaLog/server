@@ -43,7 +43,9 @@ class TreasureLocationResponse(CamelModel):
 class TreasureMissionLocationResponse(CamelModel):
     """보물찾기 미션이 진행되는 장소."""
 
+    location_id: int
     location_title: str
+    location_address: str
     lat: float
     lng: float
 

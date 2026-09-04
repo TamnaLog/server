@@ -162,7 +162,11 @@ def _to_response(
 def _to_mission_location(location: Location) -> TreasureMissionLocationResponse:
     """LOCATION 은 my=위도 / mx=경도로 저장한다."""
     return TreasureMissionLocationResponse(
-        location_title=location.location_title, lat=location.my, lng=location.mx
+        location_id=location.id,
+        location_title=location.location_title,
+        location_address=location.location_address,
+        lat=location.my,
+        lng=location.mx,
     )
 
 
