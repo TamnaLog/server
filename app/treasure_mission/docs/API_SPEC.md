@@ -15,7 +15,7 @@ Path로 전달받은 `treasureMissionId`를 사용하여 보물찾기 미션을 
 
 완료된 진행도만 존재하고 `IN_PROGRESS` 진행도가 없으면 재도전으로 판단하여 새로운 진행도를 생성한다.
 
-프론트에서 보물찾기 화면을 구성할 수 있도록 진행도 id, 진행 상태, 미션 장소 정보, 전체 보물 개수, 보물별 좌표와 발견 여부를 반환한다. 보물 표시 및 인식 반경은 프론트에서 관리하며 이 API의 요청과 응답에 포함하지 않는다.
+프론트에서 보물찾기 화면을 구성할 수 있도록 진행도 id, 진행 상태, 미션 장소의 id·이름·주소·좌표, 전체 보물 개수, 보물별 좌표와 발견 여부를 반환한다. 보물 표시 및 인식 반경은 프론트에서 관리하며 이 API의 요청과 응답에 포함하지 않는다.
 
 ---
 
@@ -63,7 +63,9 @@ Status Code : 200
 | `treasureMissionProgressId` | number | 보물찾기 미션 진행도 id |
 | `missionProgressStatus` | string | 보물찾기 미션 진행 상태. `IN_PROGRESS` |
 | `location` | object | 보물찾기 미션 장소 정보 |
+| `location.locationId` | number | 미션 장소의 LOCATION id |
 | `location.locationTitle` | string | 미션 장소명 |
+| `location.locationAddress` | string | 미션 장소 주소 |
 | `location.lat` | number | 미션 장소의 위도 |
 | `location.lng` | number | 미션 장소의 경도 |
 | `treasureCount` | number | 보물찾기 미션의 전체 보물 개수 |
@@ -81,7 +83,9 @@ Status Code : 200
   "treasureMissionProgressId": 3,
   "missionProgressStatus": "IN_PROGRESS",
   "location": {
+    "locationId": 15,
     "locationTitle": "새별 오름",
+    "locationAddress": "제주특별자치도 제주시 애월읍 봉성리 산59-8",
     "lat": 33.3663,
     "lng": 126.3577
   },
@@ -122,7 +126,9 @@ Status Code : 200
   "treasureMissionProgressId": 3,
   "missionProgressStatus": "IN_PROGRESS",
   "location": {
+    "locationId": 15,
     "locationTitle": "새별 오름",
+    "locationAddress": "제주특별자치도 제주시 애월읍 봉성리 산59-8",
     "lat": 33.3663,
     "lng": 126.3577
   },

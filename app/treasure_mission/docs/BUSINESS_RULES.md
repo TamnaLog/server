@@ -113,10 +113,14 @@ dot(P - L, U - L) >= 0
 - `treasureMissionProgressId`: 새로 생성하거나 조회한 보물찾기 진행도 id
 - `missionProgressStatus`: `IN_PROGRESS`
 - `location`: 미션에 연결된 장소의 이름과 좌표
+- `location.locationId`: `TREASURE_MISSION.location_id`로 연결된 `LOCATION.id`
+- `location.locationAddress`: 연결된 `LOCATION.location_address`
 - `treasureCount`: `TREASURE_MISSION.item_total_count`
 - `treasureItems`: 진행도의 `item_detail`과 `current_found_item_idx`를 조합한 전체 보물 목록
 
 `treasureItems`는 `treasureIndex` 오름차순으로 정렬한다.
+
+신규 시작 `201 Created`와 이어하기 `200 OK` 모두 동일한 장소 id와 주소를 포함한다.
 
 ## 8. 오류 응답
 
@@ -131,6 +135,11 @@ Path 또는 Query의 형식이나 값이 유효하지 않은 경우 공통 요�
 ### 404 `TREASURE_MISSION_NOT_FOUND`
 
 `treasureMissionId`에 해당하는 보물찾기 미션이 존재하지 않는 경우 반환한다.
+
+## 9. 수정사항
+
+- 보물찾기 시작/이어하기 응답의 `location`에 `locationId`와 `locationAddress`를 추가한다.
+- 값은 미션에 연결된 `LOCATION.id`, `LOCATION.location_address`를 사용하며 신규 시작과 이어하기에 동일하게 적용한다.
 
 # 보물찾기 진행도 저장 비즈니스 룰
 
