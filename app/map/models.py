@@ -24,8 +24,8 @@ class Location(Base):
 
     id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     content_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    location_title: Mapped[str] = mapped_column(String(20), nullable=False)
-    location_address: Mapped[str] = mapped_column(String(100), nullable=False)
+    location_title: Mapped[str] = mapped_column(String(100), nullable=False)
+    location_address: Mapped[str] = mapped_column(String(255), nullable=False)
     location_category: Mapped[str] = mapped_column(String(20), nullable=False)
     # 장소 인증 반경(m)
     radius: Mapped[int] = mapped_column(Integer, nullable=False)

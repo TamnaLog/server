@@ -55,8 +55,8 @@ MISSION {
 LOCATION {
 	bigint id PK "NOT NULL"
 	bigint content_id "NOT NULL"
-	varchar_20 location_title "NOT NULL"
-	varchar_100 location_address "NOT NULL"
+	varchar_100 location_title "NOT NULL"
+	varchar_255 location_address "NOT NULL"
 	varchar_20 location_category "NOT NULL"
 	int radius "NOT NULL"
 	double mx "NOT NULL"

@@ -111,8 +111,8 @@ CREATE TABLE `STEP_COUNT` (
 CREATE TABLE `LOCATION` (
     `id`                BIGINT       NOT NULL AUTO_INCREMENT,
     `content_id`        BIGINT       NOT NULL                COMMENT 'TourAPI contentId',
-    `location_title`    VARCHAR(20)  NOT NULL,
-    `location_address`  VARCHAR(100) NOT NULL,
+    `location_title`    VARCHAR(100) NOT NULL,
+    `location_address`  VARCHAR(255) NOT NULL,
     `location_category` VARCHAR(20)  NOT NULL,
     `radius`            INT          NOT NULL                COMMENT '인증 반경(m)',
     `mx`                DOUBLE       NOT NULL                COMMENT '경도(longitude)',
