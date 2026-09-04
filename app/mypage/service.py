@@ -6,14 +6,26 @@
 그래서 응답의 미션 id 는 유형별 테이블의 id 이고, 유형/제목은 그 행이 속한 `MISSION` 에서 온다.
 """
 
+import logging
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
+from typing import Any
 
 from sqlalchemy import distinct, func, select
 from sqlalchemy.orm import Session
 
+from app.common import images, rewards
+from app.common.rewards import GrantedRewards
+from app.core.errors import ConflictError, InvalidRequestError
+from app.mission import reward_history
+from app.mypage import travel_ending_image_generator
+from app.mypage.constants import (
+    TRAVEL_ENDING_CREATION_POINT_COST,
+)
+from app.mypage.travel_ending_image_generator import SourceType, TravelEndingSource
 from app.onboarding import onboarding_matcher
 from app.onboarding.schemas import OnboardingSaveRequest
+from app.services import blob_storage, kto
 
 from app.mypage.models import (
     AcquiredArCharacter,
@@ -28,6 +40,7 @@ from app.mypage.models import (
     MissionStatus,
     MissionType,
     ParticipantStatus,
+    TravelEndingContent,
     TreasureMission,
     TreasureMissionProgress,
     User,
@@ -43,12 +56,25 @@ from app.mypage.schemas import (
     ProgressMissionResponse,
     SelectedArCharacterResponse,
     SummaryResponse,
+    TravelEndingCompletedMissionResponse,
+    TravelEndingContentCreateRequest,
+    TravelEndingContentCreateResponse,
+    TravelEndingElementsResponse,
+    TravelEndingMissionRequest,
+    TravelEndingVisitedLocationResponse,
     TravelStyleResponse,
+    UserInfoResponse,
 )
 
 
+logger = logging.getLogger(__name__)
+
 # 캐릭터 하나에 노출할 획득 가능 미션 개수
 ACQUIRED_MISSION_LIMIT = 3
+
+# 엽서 이미지는 항상 PNG 로 생성해 저장한다.
+PNG_CONTENT_TYPE = images.ImageFormat.PNG.content_type
+PNG_EXTENSION = images.ImageFormat.PNG.extension
 
 
 def get_mypage(db: Session, current_user_id: int) -> MyPageResponse:
@@ -447,6 +473,576 @@ def _find_mission_location_titles(db: Session) -> dict[int, str]:
             location_titles.setdefault(mission_id, location_title)
 
     return location_titles
+
+
+# ---------------------------------------------------------------------
+# 사용자 정보 조회
+# ---------------------------------------------------------------------
+
+
+def get_user_info(db: Session, current_user_id: int) -> UserInfoResponse:
+    """프로필 수정 화면에 채울 현재 사용자 정보를 조회한다.
+
+    여행 유형과 대표 캐릭터는 `USER` 의 nullable FK 라서 연결이 없으면 그 값만 `null` 이다.
+    두 관계는 `User` 의 `lazy="joined"` 관계로 함께 읽어 추가 쿼리를 만들지 않는다.
+
+    선택값 세 컬럼은 저장된 값을 그대로 내려준다. `NULL`(설정 전)과 `[]`(아무것도 선택 안 함)을
+    구분해야 해서 한쪽을 다른 쪽으로 바꾸지 않고, 정렬이나 중복 제거도 하지 않는다.
+
+    대표 캐릭터의 선택 상태와 획득 여부는 다른 개념이라 `ACQUIRED_AR_CHARACTER` 는 보지 않는다.
+
+    읽기 전용이라 아무것도 저장하지 않는다.
+    """
+    user = _get_user(db, current_user_id)
+    travel_style = user.user_travel_style
+    ar_character = user.ar_character
+
+    return UserInfoResponse(
+        user_type=travel_style.user_type if travel_style is not None else None,
+        ar_character_image_url=(
+            ar_character.character_img_url if ar_character is not None else None
+        ),
+        nickname=user.nickname,
+        # `USER.expectation` 을 API 에서는 `categories` 로 쓴다.
+        categories=user.expectation,
+        transportation=user.transportation,
+        travel_style=user.travel_style,
+        target_step_count=user.target_step,
+    )
+
+
+# ---------------------------------------------------------------------
+# 여행 마무리 엽서 요소 조회
+# ---------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _CompletedMission:
+    """완료한 미션 한 건. 중복 제거와 정렬을 마친 뒤 응답으로 바꾼다.
+
+    `id` 는 응답에 나가는 유형별 세부 미션 id 다.
+    """
+
+    mission_type: MissionType
+    id: int
+    mission_title: str
+    completed_location: str | None
+    completed_at: datetime
+    reward_detail: dict[str, Any] | None
+
+
+@dataclass(frozen=True)
+class _CompletedMissionSource:
+    """엽서에 넣을 완료 미션 하나. (프롬프트 재료를 만들 때 쓴다)"""
+
+    mission_type: MissionType
+    id: int
+    mission_title: str
+    location_title: str | None
+
+
+def get_travel_ending_elements(
+    db: Session, current_user_id: int
+) -> TravelEndingElementsResponse:
+    """여행 마무리 엽서에 넣을 요소를 조회한다.
+
+    포인트는 합산하지 않고 조회 시점의 `USER.point` 를 그대로 쓴다.
+    두 count 는 따로 집계하지 않고 최종 목록의 길이를 쓴다. (목록과 수가 어긋나지 않게)
+    사진은 이 API 가 다루지 않으므로 사진 테이블을 조회하지 않는다.
+
+    읽기 전용이라 아무것도 저장하지 않는다.
+    """
+    user = _get_user(db, current_user_id)
+    visited_locations = _find_ending_visited_locations(db, current_user_id)
+    completed_missions = _find_ending_completed_missions(db, current_user_id)
+
+    return TravelEndingElementsResponse(
+        point=user.point,
+        visited_location_count=len(visited_locations),
+        visited_locations=visited_locations,
+        completed_mission_count=len(completed_missions),
+        completed_missions=completed_missions,
+    )
+
+
+def _find_ending_visited_locations(
+    db: Session, current_user_id: int
+) -> list[TravelEndingVisitedLocationResponse]:
+    """방문 장소 목록. 같은 장소는 한 번만 넣고 최근 방문 순으로 정렬한다.
+
+    같은 장소의 방문 기록이 여러 건이면 그중 가장 최근 방문 시각을 정렬 기준으로 쓴다.
+    최근 시각까지 같으면 `LOCATION.id` 내림차순으로 순서를 고정한다.
+    """
+    latest_visited_at = func.max(VisitedLocation.visited_at)
+    statement = (
+        select(Location.id, Location.location_title)
+        .select_from(VisitedLocation)
+        .join(Location, Location.id == VisitedLocation.location_id)
+        .where(VisitedLocation.user_id == current_user_id)
+        .group_by(Location.id, Location.location_title)
+        .order_by(latest_visited_at.desc(), Location.id.desc())
+    )
+    return [
+        TravelEndingVisitedLocationResponse(id=location_id, location_title=location_title)
+        for location_id, location_title in db.execute(statement).all()
+    ]
+
+
+def _find_ending_completed_missions(
+    db: Session, current_user_id: int
+) -> list[TravelEndingCompletedMissionResponse]:
+    """완료 미션 목록. 중단으로 완료 처리된 진행도도 포함한다.
+
+    같은 미션을 여러 번 완료했으면 가장 최근 완료 진행도 하나만 남기고,
+    완료 시각 내림차순(같으면 유형명 → 세부 미션 id 오름차순)으로 정렬한다.
+    """
+    completed = [
+        *_find_completed_culture_missions(db, current_user_id),
+        *_find_completed_treasure_missions(db, current_user_id),
+        *_find_completed_cooperative_missions(db, current_user_id),
+    ]
+    missions = _pick_latest_completions(completed)
+
+    # 보상 수령 여부는 고른 완료 진행도 하나가 아니라 그 미션의 전체 진행도 이력을 봐야 한다.
+    # 미션마다 다시 조회하지 않도록 유형별로 한 번에 모아 둔다. (N+1 방지)
+    granted = {
+        mission_type: reward_history.get_granted_rewards_map(
+            db,
+            mission_type,
+            [mission.id for mission in missions if mission.mission_type is mission_type],
+            current_user_id,
+        )
+        for mission_type in MissionType
+    }
+
+    # 공용 보상 변환은 캐릭터를 id 로 하나씩 조회한다. 필요한 캐릭터를 먼저 한 번에 읽어
+    # 세션에 올려 두면 그 조회가 DB 까지 가지 않는다. (미션 수만큼 쿼리가 늘지 않게)
+    # 세션의 identity map 은 약한 참조라서, 아래에서 쓰지 않아도 이 지역 변수로 목록을
+    # 함수가 끝날 때까지 들고 있어야 읽어 둔 캐릭터가 사라지지 않는다.
+    reward_characters = _preload_reward_characters(db, missions)  # noqa: F841
+
+    return [
+        TravelEndingCompletedMissionResponse(
+            mission_id=mission.id,
+            mission_type=mission.mission_type,
+            mission_title=mission.mission_title,
+            completed_location=mission.completed_location,
+            completed_at=mission.completed_at,
+            reward_detail=rewards.to_full_reward_detail(
+                db,
+                mission.reward_detail,
+                granted[mission.mission_type].get(mission.id, GrantedRewards()),
+            ),
+        )
+        for mission in missions
+    ]
+
+
+def _preload_reward_characters(
+    db: Session, missions: list[_CompletedMission]
+) -> list[ArCharacter]:
+    """완료 미션들의 보상 캐릭터를 한 번에 읽어 세션에 올린다."""
+    character_ids = {
+        (mission.reward_detail or {}).get("ar_character_id") for mission in missions
+    }
+    character_ids.discard(None)
+    if not character_ids:
+        return []
+
+    statement = select(ArCharacter).where(ArCharacter.id.in_(character_ids))
+    return list(db.scalars(statement).all())
+
+
+def _pick_latest_completions(completed: list[_CompletedMission]) -> list[_CompletedMission]:
+    """같은 미션의 완료 기록이 여러 건이면 가장 최근 것만 남기고 정렬한다.
+
+    중복 기준은 `(미션 유형, 유형별 세부 미션 id)` 다. (유형이 다르면 id 가 같아도 다른 미션)
+    """
+    latest: dict[tuple[MissionType, int], _CompletedMission] = {}
+    for mission in completed:
+        key = (mission.mission_type, mission.id)
+        before = latest.get(key)
+        if before is None or mission.completed_at > before.completed_at:
+            latest[key] = mission
+
+    missions = sorted(
+        latest.values(), key=lambda mission: (mission.mission_type.value, mission.id)
+    )
+    # 완료 시각이 같으면 위에서 만든 순서(유형명 → 세부 미션 id)가 그대로 유지된다.
+    missions.sort(key=lambda mission: mission.completed_at, reverse=True)
+    return missions
+
+
+def _find_completed_culture_missions(
+    db: Session, current_user_id: int
+) -> list[_CompletedMission]:
+    """완료한 문화 미션. 장소를 갖지 않는 유형이라 완료 장소는 항상 `None` 이다."""
+    statement = (
+        select(CultureMission, CultureMissionProgress.completed_at)
+        .select_from(CultureMissionProgress)
+        .join(
+            CultureMission,
+            CultureMission.id == CultureMissionProgress.culture_mission_id,
+        )
+        .where(
+            CultureMissionProgress.user_id == current_user_id,
+            CultureMissionProgress.mission_status == MissionStatus.COMPLETED.value,
+            # 완료 처리는 완료 시각을 항상 채우지만, 응답 필드가 null 이 아니라서 한 번 더 건다.
+            CultureMissionProgress.completed_at.is_not(None),
+        )
+    )
+    return [
+        _CompletedMission(
+            mission_type=MissionType(culture_mission.mission.mission_type),
+            id=culture_mission.id,
+            mission_title=culture_mission.mission.mission_title,
+            completed_location=None,
+            completed_at=completed_at,
+            reward_detail=culture_mission.reward_detail,
+        )
+        for culture_mission, completed_at in db.execute(statement).all()
+    ]
+
+
+def _find_completed_treasure_missions(
+    db: Session, current_user_id: int
+) -> list[_CompletedMission]:
+    """완료한 보물 찾기 미션. 완료 장소는 미션에 연결된 장소다."""
+    statement = (
+        select(
+            TreasureMission,
+            Location.location_title,
+            TreasureMissionProgress.completed_at,
+        )
+        .select_from(TreasureMissionProgress)
+        .join(
+            TreasureMission,
+            TreasureMission.id == TreasureMissionProgress.treasure_mission_id,
+        )
+        .join(Location, Location.id == TreasureMission.location_id)
+        .where(
+            TreasureMissionProgress.user_id == current_user_id,
+            TreasureMissionProgress.mission_status == MissionStatus.COMPLETED.value,
+            TreasureMissionProgress.completed_at.is_not(None),
+        )
+    )
+    return [
+        _CompletedMission(
+            mission_type=MissionType(treasure_mission.mission.mission_type),
+            id=treasure_mission.id,
+            mission_title=treasure_mission.mission.mission_title,
+            completed_location=location_title,
+            completed_at=completed_at,
+            reward_detail=treasure_mission.reward_detail,
+        )
+        for treasure_mission, location_title, completed_at in db.execute(statement).all()
+    ]
+
+
+def _find_completed_cooperative_missions(
+    db: Session, current_user_id: int
+) -> list[_CompletedMission]:
+    """완료한 협동 미션.
+
+    완료 수 집계와 같은 조건으로 현재 사용자의 방을 찾는다.
+    (삭제되지 않은 `ACCEPTED` 참가 행 + 삭제되지 않은 진행도)
+    """
+    statement = (
+        select(
+            CooperativeMission,
+            Location.location_title,
+            CooperativeMissionProgress.completed_at,
+        )
+        .select_from(CooperativeMissionParticipant)
+        .join(
+            CooperativeMissionProgress,
+            CooperativeMissionProgress.id
+            == CooperativeMissionParticipant.cooperative_mission_progress_id,
+        )
+        .join(
+            CooperativeMission,
+            CooperativeMission.id == CooperativeMissionProgress.cooperative_mission_id,
+        )
+        .join(Location, Location.id == CooperativeMission.location_id)
+        .where(
+            CooperativeMissionParticipant.user_id == current_user_id,
+            CooperativeMissionParticipant.participant_status
+            == ParticipantStatus.ACCEPTED.value,
+            CooperativeMissionParticipant.deleted_at.is_(None),
+            CooperativeMissionProgress.mission_status == MissionStatus.COMPLETED.value,
+            CooperativeMissionProgress.deleted_at.is_(None),
+            CooperativeMissionProgress.completed_at.is_not(None),
+        )
+    )
+    return [
+        _CompletedMission(
+            mission_type=MissionType(cooperative_mission.mission.mission_type),
+            id=cooperative_mission.id,
+            mission_title=cooperative_mission.mission.mission_title,
+            completed_location=location_title,
+            completed_at=completed_at,
+            reward_detail=cooperative_mission.reward_detail,
+        )
+        for cooperative_mission, location_title, completed_at in db.execute(statement).all()
+    ]
+
+
+# ---------------------------------------------------------------------
+# 여행 마무리 엽서 저장
+# ---------------------------------------------------------------------
+
+
+INSUFFICIENT_POINT = "INSUFFICIENT_POINT"
+
+# Blob 저장 경로의 최상위 prefix. 그 아래를 사용자 id 로 나눈다.
+TRAVEL_ENDING_BLOB_PREFIX = "travel-ending"
+
+
+def create_travel_ending_content(
+    db: Session, current_user_id: int, request: TravelEndingContentCreateRequest
+) -> TravelEndingContentCreateResponse:
+    """여행 마무리 엽서를 만들어 저장한다.
+
+    검증 → 포인트 확인 → 재료 조합 → 이미지 생성 → Blob 업로드 → 포인트 차감/행 생성 순서다.
+    어느 하나라도 잘못되면 유효한 항목만 골라 만드는 부분 성공 없이 전체를 실패시킨다.
+
+    비싼 작업(OpenAI / TourAPI / Blob)은 형식 검증과 포인트 확인을 모두 통과한 뒤에 시작한다.
+    같은 입력을 다시 보내도 기존 행을 갱신하지 않고 매번 새로 만들고 포인트를 다시 차감한다.
+    """
+    # 1. 사진 내용 검증. (형식·크기가 잘못되면 여기서 400 이고 외부 호출은 하지 않는다)
+    photos = [images.read_and_detect(photo.file) for photo in request.photos]
+
+    # 2. 포인트 확인. 부족하면 OpenAI/TourAPI 호출과 Blob 생성 없이 끝낸다.
+    user = _get_user(db, current_user_id)
+    _check_point(user)
+
+    # 3. 현재 사용자의 방문 장소 / 완료 미션인지 확인하고 프롬프트 재료를 만든다.
+    locations = _get_visited_locations(db, current_user_id, request.visited_location_ids)
+    missions = _get_completed_missions(db, current_user_id, request.missions)
+
+    sources = [
+        *(_to_location_source(location) for location in locations),
+        *(_to_mission_source(db, mission) for mission in missions),
+        *(
+            travel_ending_image_generator.TravelEndingSource(
+                source_type=travel_ending_image_generator.SourceType.USER_PHOTO,
+                image_data=data,
+            )
+            for data, _ in photos
+        ),
+    ]
+
+    # 4. 이미지 생성. 실패하면 예외가 올라가고 Blob·DB·포인트는 그대로다.
+    image = travel_ending_image_generator.generate_travel_ending_image(
+        sources, request.travel_note
+    )
+
+    # 5. 생성된 PNG 만 Blob 에 올린다. (사용자 원본 사진과 외부 대표 이미지는 저장하지 않는다)
+    image_url = blob_storage.upload_file(
+        image,
+        prefix=f"{TRAVEL_ENDING_BLOB_PREFIX}/{current_user_id}",
+        content_type=PNG_CONTENT_TYPE,
+        extension=PNG_EXTENSION,
+    )
+
+    return _save_travel_ending_content(db, current_user_id, image_url)
+
+
+def _check_point(user: User) -> None:
+    """엽서를 만들 포인트가 있는지 확인한다. 부족하면 409."""
+    if user.point < TRAVEL_ENDING_CREATION_POINT_COST:
+        raise ConflictError(
+            INSUFFICIENT_POINT,
+            detail=(
+                f"엽서 생성에는 {TRAVEL_ENDING_CREATION_POINT_COST} 포인트가 필요합니다. "
+                f"(보유 {user.point})"
+            ),
+        )
+
+
+def _save_travel_ending_content(
+    db: Session, current_user_id: int, image_url: str
+) -> TravelEndingContentCreateResponse:
+    """포인트를 차감하고 엽서 행을 만든다. 저장에 실패하면 올린 Blob 을 지운다.
+
+    업로드와 저장 사이에 다른 요청이 포인트를 써서 모자라졌을 수 있으므로,
+    사용자 행을 쓰기 잠금으로 다시 읽어 확인한다. (SQLite 는 행 잠금을 지원하지 않아
+    테스트에서는 무시된다)
+    """
+    try:
+        user = _get_user_for_update(db, current_user_id)
+        _check_point(user)
+
+        user.point -= TRAVEL_ENDING_CREATION_POINT_COST
+        content = TravelEndingContent(user_id=current_user_id, image_url=image_url)
+        db.add(content)
+        db.commit()
+        db.refresh(content)
+        db.refresh(user)
+    except Exception:
+        # 포인트만 깎이거나, DB 가 참조하지 않는 Blob 이 남지 않게 한다.
+        db.rollback()
+        _delete_uploaded_image(image_url)
+        raise
+
+    return TravelEndingContentCreateResponse(
+        id=content.id,
+        image_url=content.image_url,
+        # 별도로 계산하지 않고 커밋된 값을 그대로 쓴다.
+        remaining_point=user.point,
+    )
+
+
+def _get_user_for_update(db: Session, current_user_id: int) -> User:
+    """포인트를 차감할 사용자 행을 잠그고 조회한다."""
+    statement = select(User).where(User.id == current_user_id).with_for_update()
+    user = db.scalars(statement).first()
+    if user is None:
+        raise RuntimeError(f"현재 사용자 {current_user_id} 를 찾을 수 없습니다.")
+    return user
+
+
+def _delete_uploaded_image(image_url: str) -> None:
+    """저장에 실패한 엽서 이미지를 지운다.
+
+    삭제까지 실패해도 원래 실패를 덮지 않고 로그만 남긴다.
+    """
+    try:
+        blob_storage.delete_file(image_url)
+    except Exception:
+        logger.exception("엽서 이미지 Blob 을 삭제하지 못했습니다.")
+
+
+def _get_visited_locations(
+    db: Session, current_user_id: int, location_ids: list[int]
+) -> list[Location]:
+    """요청한 장소를 요청 순서대로 조회한다.
+
+    현재 사용자가 방문하지 않은 장소가 하나라도 있으면 전체 요청을 400 으로 막는다.
+    같은 장소의 방문 횟수나 방문 시각은 선택 가능 여부에 영향을 주지 않는다.
+    """
+    statement = (
+        select(Location)
+        .join(VisitedLocation, VisitedLocation.location_id == Location.id)
+        .where(
+            VisitedLocation.user_id == current_user_id,
+            Location.id.in_(location_ids),
+        )
+        .distinct()
+    )
+    visited = {location.id: location for location in db.scalars(statement).all()}
+
+    missing = [location_id for location_id in location_ids if location_id not in visited]
+    if missing:
+        raise InvalidRequestError(
+            f"현재 사용자가 방문하지 않은 장소가 있습니다: {missing}"
+        )
+
+    # 요청 배열 순서를 그대로 유지한다.
+    return [visited[location_id] for location_id in location_ids]
+
+
+def _get_completed_missions(
+    db: Session, current_user_id: int, requested: list[TravelEndingMissionRequest]
+) -> list[_CompletedMissionSource]:
+    """요청한 미션을 요청 순서대로 조회한다.
+
+    완료 미션 목록 조회와 같은 기준을 쓴다. (중단으로 완료된 진행도도 완료로 본다)
+    현재 사용자가 완료하지 않은 미션이 하나라도 있으면 전체 요청을 400 으로 막는다.
+    """
+    completed = {
+        (mission.mission_type, mission.id): mission
+        for mission in [
+            *_find_completed_culture_missions(db, current_user_id),
+            *_find_completed_treasure_missions(db, current_user_id),
+            *_find_completed_cooperative_missions(db, current_user_id),
+        ]
+    }
+
+    sources: list[_CompletedMissionSource] = []
+    missing: list[str] = []
+    for mission in requested:
+        found = completed.get((mission.mission_type, mission.mission_id))
+        if found is None:
+            missing.append(f"{mission.mission_type.value}:{mission.mission_id}")
+            continue
+        sources.append(
+            _CompletedMissionSource(
+                mission_type=found.mission_type,
+                id=found.id,
+                mission_title=found.mission_title,
+                location_title=found.completed_location,
+            )
+        )
+
+    if missing:
+        raise InvalidRequestError(
+            f"현재 사용자가 완료하지 않은 미션이 있습니다: {missing}"
+        )
+    return sources
+
+
+def _to_location_source(location: Location) -> TravelEndingSource:
+    """방문 장소 재료. 대표 이미지를 얻지 못하면 이름만 쓴다."""
+    return TravelEndingSource(
+        source_type=SourceType.VISITED_LOCATION,
+        display_name=location.location_title,
+        location_name=location.location_title,
+        image_url=kto.get_location_image_url(location.content_id),
+    )
+
+
+def _to_mission_source(db: Session, mission: _CompletedMissionSource) -> TravelEndingSource:
+    """완료 미션 재료.
+
+    장소가 있는 보물찾기·협동 미션은 그 장소의 대표 이미지를 쓰고,
+    장소가 없는 문화 미션은 장소를 추론하지 않고 퀴즈 이미지를 참조로 쓴다.
+    """
+    if mission.mission_type is MissionType.CULTURE:
+        image_url = _find_quiz_image_url(db, mission.id)
+    else:
+        image_url = _find_mission_location_image_url(db, mission)
+
+    return TravelEndingSource(
+        source_type=SourceType.MISSION,
+        display_name=mission.mission_title,
+        location_name=mission.location_title,
+        image_url=image_url,
+    )
+
+
+def _find_quiz_image_url(db: Session, culture_mission_id: int) -> str | None:
+    """문화 미션의 퀴즈 이미지. 배열 순서상 값이 있는 첫 번째 `img_url` 을 쓴다."""
+    culture_mission = db.get(CultureMission, culture_mission_id)
+    if culture_mission is None:
+        return None
+
+    for quiz in culture_mission.quiz_detail or []:
+        image_url = quiz.get("img_url")
+        if image_url:
+            return str(image_url)
+    return None
+
+
+def _find_mission_location_image_url(
+    db: Session, mission: _CompletedMissionSource
+) -> str | None:
+    """보물찾기·협동 미션 장소의 TourAPI 대표 이미지."""
+    model = (
+        TreasureMission
+        if mission.mission_type is MissionType.TREASURE
+        else CooperativeMission
+    )
+    statement = (
+        select(Location.content_id)
+        .join(model, model.location_id == Location.id)
+        .where(model.id == mission.id)
+    )
+    content_id = db.scalars(statement).first()
+    if content_id is None:
+        return None
+
+    return kto.get_location_image_url(content_id)
 
 
 # ---------------------------------------------------------------------

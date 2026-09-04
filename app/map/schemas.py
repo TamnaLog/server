@@ -9,6 +9,12 @@ from enum import Enum
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
+from app.common.rewards import (
+    ArCharacterRewardResponse,
+    CouponRewardResponse,
+    FullRewardDetailResponse,
+    PointRewardResponse,
+)
 from app.mission.schemas import MissionType
 
 
@@ -145,41 +151,12 @@ class ClusteredMapContentsResponse(CamelModel):
 # ---------------------------------------------------------------------
 
 
-class MapArCharacterRewardResponse(CamelModel):
-    """AR 캐릭터 보상. 이미 받았어도 정보를 그대로 주고 `is_received` 로만 구분한다."""
-
-    id: int
-    name: str
-    image_url: str
-    is_received: bool
-
-
-class MapPointRewardResponse(CamelModel):
-    """포인트 보상."""
-
-    amount: int
-    is_received: bool
-
-
-class MapCouponRewardResponse(CamelModel):
-    """쿠폰 보상."""
-
-    coupon_location: str
-    coupon_price: int
-    is_received: bool
-
-
-class MapRewardDetailResponse(CamelModel):
-    """미션의 **전체** 보상 정보.
-
-    아직 안 받은 보상만 주는 `RemainingRewardResponse` 와 달리 수령 여부와 관계없이
-    세 종류를 모두 담고, 각 항목의 `is_received` 로 현재 사용자의 수령 여부를 구분한다.
-    미션에 설정되지 않은 보상 항목만 `null` 이다.
-    """
-
-    ar_character: MapArCharacterRewardResponse | None = None
-    point: MapPointRewardResponse | None = None
-    coupon: MapCouponRewardResponse | None = None
+# 보상 전체 + 수령 여부 응답은 여행 마무리 엽서 요소 조회도 같은 형식을 쓰므로
+# app/common/rewards.py 가 갖고, 지도에서는 기존 이름 그대로 쓴다.
+MapArCharacterRewardResponse = ArCharacterRewardResponse
+MapPointRewardResponse = PointRewardResponse
+MapCouponRewardResponse = CouponRewardResponse
+MapRewardDetailResponse = FullRewardDetailResponse
 
 
 # ---------------------------------------------------------------------

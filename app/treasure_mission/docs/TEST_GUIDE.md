@@ -8,6 +8,7 @@
 | `PATCH /api/v1/treasure-missions/{treasureMissionProgressId}/progress` (보물찾기 진행도 저장) | `app/treasure_mission/tests/test_save_treasure_mission_progress.py` |
 | `PATCH /api/v1/treasure-missions/{treasureMissionProgressId}/progress/stop` (보물찾기 중단) | `app/treasure_mission/tests/test_stop_treasure_mission.py` |
 | `POST /api/v1/treasure-missions/pictures-with-character` (AR 캐릭터와 사진 저장) | `app/treasure_mission/tests/test_save_picture_with_character.py` |
+| `GET /api/v1/missions/{missionType}/{missionId}/completion` (완료한 보물찾기 추천 화면) | `app/treasure_mission/tests/test_get_treasure_mission_completion.py` |
 
 ## 시작/이어하기 테스트 의도
 
@@ -231,6 +232,78 @@ Blob 업로드는 실제 Azure 로 나가면 안 되므로 `uploads` / `deletes`
 - `picture` 또는 `takenAt` 누락
 - `takenAt` 이 offset 포함(`+09:00`, `Z`)이거나 날짜만 있거나 형식이 아닌 경우
 
+## 완료한 보물찾기 추천 화면 테스트 의도
+
+보물을 다 찾은 뒤 보여주는 **조회 전용** 화면이라, 값을 만들어내지 않고 여러 테이블에서
+정확히 골라 오는지가 전부다. 조심할 곳이 다섯 군데다.
+
+첫째, **어떤 진행도를 기준으로 삼는가**다. 같은 미션을 여러 번 완료했으면
+`completed_at DESC`, 동률이면 `id DESC` 로 하나를 고른다. 진행도가 하나뿐이면 어떤 기준으로
+골라도 통과하므로, 완료 시각이 다른 두 건과 완료 시각이 같고 내용이 다른 두 건을 각각 만든다.
+
+둘째, **"다 찾았다"의 판정**이다. 개수만 세면 `[1, 2, 2]` 도 3개라 통과한다.
+중복은 다른 보물을 대신하지 못하므로, 설정된 index 가 각각 한 번 이상 있는지로 본다.
+완료로 저장돼 있어도 누락이 있으면 `409` 다.
+
+셋째, **추천 후보의 제외 조건**이다. 지금 보고 있는 미션과 `item_total_count <= 0` 인 미션만
+빼고, **이미 완료한 다른 보물찾기는 그대로 후보**다. "완료한 미션은 빼는" 다른 추천 로직과 다르다.
+거리 정렬은 값 자체가 아니라 공통 모듈(`calculate_distance_meter()`)로 계산한 값과 비교한다.
+
+넷째, **보상 수령 여부의 판단 범위**다. 진행도 한 건이 아니라 그 미션의 전체 진행도를
+보상별로 OR 한다. 그래서 "진행 중 진행도에서 캐릭터, 완료 진행도에서 포인트"를 받은 데이터로
+둘 다 `true` 인지 보고, 남의 수령 이력이 섞이지 않는지도 확인한다.
+
+다섯째, **쿠폰 집계 기준**이다. 쿠폰 테이블이 없어서 세 유형의 진행도와 세부 미션의
+`reward_detail` 을 조합한다. 같은 미션을 여러 번 해도 한 번만, 다른 미션의 같은 사용처는 따로다.
+장소 결합도 "이름이 완전히 같은 장소"만 쓰고, 장소 미일치(세 값 모두 `null`)와
+이미지 조회 실패(이미지만 `null`)를 구분해야 한다.
+
+### 주요 검증 항목
+
+#### 1. 완료 미션 정보
+
+- `missionId` / `missionType` / `completedAt`(offset 없는 ISO 8601) / `arCharacterImageUrl` 을 통째로 비교한다.
+- 캐릭터 보상이 없으면 `arCharacterImageUrl` 만 `null` 이다.
+- 완료 진행도가 여러 건이면 `completed_at DESC` → `id DESC` 로 고른다.
+
+#### 2. 근처 보물찾기 추천
+
+- 추천 한 건의 응답 전체를 **통째로 비교**한다. (난이도는 반환하지 않는다)
+- 거리순 최대 3개이고, 현재 미션과 `item_total_count <= 0` 인 미션은 빠진다.
+- 거리가 같으면 `TREASURE_MISSION.id` 오름차순이다.
+- 이미 완료한 다른 보물찾기도 포함한다.
+- 대표 이미지를 얻지 못하면 그 값만 `null` 이고 나머지는 그대로다.
+- 추천할 미션이 없으면 빈 배열이다.
+
+#### 3. 추천 미션 보상
+
+- 수령 여부는 그 미션의 **전체 진행도를 OR** 한 값이다. (진행 중 진행도의 이력도 포함)
+- 다른 사용자의 수령 이력은 반영하지 않는다.
+- 미션에 설정되지 않은 보상만 `null` 이고, 이미 받은 보상도 정보를 그대로 준다.
+
+#### 4. 받은 쿠폰
+
+- 문화·보물찾기·협동에서 받은 쿠폰을 모두 모은다.
+- 같은 세부 미션을 여러 번 진행해도 한 번만 넣고, 다른 미션의 같은 사용처·금액은 각각 남긴다.
+- `coupon_reward_granted = false` 이거나 다른 사용자가 받은 쿠폰은 넣지 않는다.
+- 협동은 `PENDING` 참가 / 삭제된 참가 / 삭제된 방을 수령으로 보지 않는다.
+- 사용처와 이름이 같은 장소가 여러 개면 `LOCATION.id` 가 가장 작은 장소의 주소를 쓴다.
+- 일치 장소가 없으면 장소 id·주소·이미지가 모두 `null`, 장소는 있고 이미지만 없으면 이미지만 `null` 이다.
+- 받은 쿠폰이 없으면 빈 배열이다.
+
+#### 5. N+1 / 읽기 전용
+
+- 추천 미션과 쿠폰이 늘어도 **쿼리 수가 늘지 않는다.**
+  (미션·쿠폰마다 보상 이력이나 장소를 다시 조회하면 여기서 걸린다)
+- 조회 후 진행도·보상 지급 여부·사용자 포인트가 그대로다.
+
+#### 6. 404 / 409 / 400
+
+- `missionType` 이 `CULTURE`·`COOPERATIVE` 이거나, 미션이 없거나,
+  현재 사용자의 완료 진행도가 없으면 404 `TREASURE_MISSION_NOT_FOUND` 다.
+- 찾지 않은 보물이 남아 있으면(중복 index 포함) 409 `TREASURE_ITEMS_REMAINING` 이다.
+- 좌표 누락·범위 초과·숫자가 아닌 값은 400 `INVALID_REQUEST` 다.
+
 ## 실행 방법
 
 ```bash
@@ -248,6 +321,7 @@ pytest app/treasure_mission/tests/test_start_treasure_mission.py -k 반원
 pytest app/treasure_mission/tests/test_save_treasure_mission_progress.py -k 보상
 pytest app/treasure_mission/tests/test_stop_treasure_mission.py -k 중단
 pytest app/treasure_mission/tests/test_save_picture_with_character.py -k 형식
+pytest app/treasure_mission/tests/test_get_treasure_mission_completion.py -k 쿠폰
 ```
 
 DB는 SQLite 인메모리를 사용하므로 MySQL이 떠 있지 않아도 실행된다.
@@ -256,3 +330,6 @@ DB는 SQLite 인메모리를 사용하므로 MySQL이 떠 있지 않아도 실�
 진행 이력은 테스트마다 조합이 달라서 `_add_progress()` 헬퍼로 각 테스트에서 직접 만든다.
 진행도 저장/중단 테스트는 `progress_data` 픽스처로 미션/장소/보상 캐릭터를 만들고, TourAPI 호출은 픽스처로 막는다.
 사진 저장 테스트는 `uploads` / `deletes` 픽스처로 Blob 호출을 가로채므로 Azure 연결이 없어도 실행된다.
+완료 화면 테스트는 `completion_data` 픽스처가 사용자 2명·장소 7곳(거리 순서와 동명 장소 포함)·
+유형별 미션과 추천 후보 보물찾기를 만들고, `completed_progress` 픽스처가 보물을 다 찾은 완료 진행도를
+만든다. TourAPI 는 `fake_kto` 픽스처가 content id 로 이미지 URL 을 돌려주므로 외부 호출이 없다.

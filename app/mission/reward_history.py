@@ -13,6 +13,8 @@
 | `COOPERATIVE` | `COOPERATIVE_MISSION_PROGRESS` | `COOPERATIVE_MISSION_PARTICIPANT.user_id` (수락된 참가자만) |
 """
 
+from collections.abc import Sequence
+
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
@@ -34,41 +36,67 @@ def get_granted_rewards(
 
     진행도 이력이 하나도 없으면 세 보상 모두 아직 지급되지 않은 것으로 본다.
     """
-    rows = db.execute(_granted_flags_query(mission_type, mission_id, current_user_id)).all()
-    return GrantedRewards(
-        ar_character=any(row.ar_character_reward_granted for row in rows),
-        point=any(row.point_reward_granted for row in rows),
-        coupon=any(row.coupon_reward_granted for row in rows),
-    )
+    granted = get_granted_rewards_map(db, mission_type, [mission_id], current_user_id)
+    return granted.get(mission_id, GrantedRewards())
+
+
+def get_granted_rewards_map(
+    db: Session,
+    mission_type: MissionType,
+    mission_ids: Sequence[int],
+    current_user_id: int,
+) -> dict[int, GrantedRewards]:
+    """여러 미션의 보상 지급 이력을 한 번에 조회한다. `세부 미션 id → 지급 이력`.
+
+    미션마다 따로 조회하지 않아야 하는 목록 응답에서 쓴다. (N+1 방지)
+    진행도 이력이 없는 미션은 결과에 들어가지 않는다. (= 세 보상 모두 미지급)
+    """
+    if not mission_ids:
+        return {}
+
+    granted: dict[int, GrantedRewards] = {}
+    rows = db.execute(_granted_flags_query(mission_type, mission_ids, current_user_id)).all()
+    for row in rows:
+        before = granted.get(row.mission_id, GrantedRewards())
+        granted[row.mission_id] = GrantedRewards(
+            # 같은 미션의 진행도가 여러 건이면 보상별로 OR 한다.
+            ar_character=before.ar_character or row.ar_character_reward_granted,
+            point=before.point or row.point_reward_granted,
+            coupon=before.coupon or row.coupon_reward_granted,
+        )
+    return granted
 
 
 def _granted_flags_query(
-    mission_type: MissionType, mission_id: int, current_user_id: int
-) -> Select[tuple[bool, bool, bool]]:
-    """유형별 진행도 테이블에서 보상 지급 여부 컬럼만 조회하는 쿼리를 만든다."""
+    mission_type: MissionType, mission_ids: Sequence[int], current_user_id: int
+) -> Select[tuple[int, bool, bool, bool]]:
+    """유형별 진행도 테이블에서 세부 미션 id 와 보상 지급 여부 컬럼만 조회하는 쿼리를 만든다."""
     if mission_type is MissionType.CULTURE:
         return select(
+            CultureMissionProgress.culture_mission_id.label("mission_id"),
             CultureMissionProgress.ar_character_reward_granted,
             CultureMissionProgress.point_reward_granted,
             CultureMissionProgress.coupon_reward_granted,
         ).where(
-            CultureMissionProgress.culture_mission_id == mission_id,
+            CultureMissionProgress.culture_mission_id.in_(mission_ids),
             CultureMissionProgress.user_id == current_user_id,
         )
 
     if mission_type is MissionType.TREASURE:
         return select(
+            TreasureMissionProgress.treasure_mission_id.label("mission_id"),
             TreasureMissionProgress.ar_character_reward_granted,
             TreasureMissionProgress.point_reward_granted,
             TreasureMissionProgress.coupon_reward_granted,
         ).where(
-            TreasureMissionProgress.treasure_mission_id == mission_id,
+            TreasureMissionProgress.treasure_mission_id.in_(mission_ids),
             TreasureMissionProgress.user_id == current_user_id,
         )
 
     # 협동 미션 진행도는 사용자 정보를 직접 갖지 않고 참여자 테이블로 연결된다.
     return (
         select(
+            CooperativeMissionProgress.cooperative_mission_id.label("mission_id"),
             CooperativeMissionProgress.ar_character_reward_granted,
             CooperativeMissionProgress.point_reward_granted,
             CooperativeMissionProgress.coupon_reward_granted,
@@ -79,7 +107,7 @@ def _granted_flags_query(
             == CooperativeMissionProgress.id,
         )
         .where(
-            CooperativeMissionProgress.cooperative_mission_id == mission_id,
+            CooperativeMissionProgress.cooperative_mission_id.in_(mission_ids),
             CooperativeMissionProgress.deleted_at.is_(None),
             CooperativeMissionParticipant.user_id == current_user_id,
             CooperativeMissionParticipant.participant_status

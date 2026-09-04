@@ -21,7 +21,9 @@ from app.core.database import get_db
 from app.core.deps import get_current_user_id
 from app.treasure_mission import service
 from app.treasure_mission.schemas import (
+    MissionType,
     PictureWithCharacterSaveRequest,
+    TreasureMissionCompletionResponse,
     TreasureMissionProgressSaveRequest,
     TreasureMissionProgressSaveResponse,
     TreasureMissionStartResponse,
@@ -30,6 +32,10 @@ from app.treasure_mission.schemas import (
 
 
 router = APIRouter(prefix="/api/v1/treasure-missions", tags=["treasure-mission"])
+
+# 완료 화면만 미션 공통 경로(`/api/v1/missions/...`)를 쓰는 명세라 라우터를 따로 둔다.
+# (조합하는 데이터는 보물찾기 도메인 것이라 서비스는 이 도메인에 있다)
+completion_router = APIRouter(prefix="/api/v1/missions", tags=["treasure-mission"])
 
 
 def _error_response(description: str, code: str) -> dict[str, Any]:
@@ -170,6 +176,43 @@ def stop_treasure_mission(
         db=db,
         current_user_id=current_user_id,
         treasure_mission_progress_id=treasure_mission_progress_id,
+        latitude=latitude,
+        longitude=longitude,
+    )
+
+
+@completion_router.get(
+    "/{mission_type}/{mission_id}/completion",
+    summary="완료한 보물찾기 추천 화면",
+    status_code=status.HTTP_200_OK,
+    response_model=TreasureMissionCompletionResponse,
+    response_model_by_alias=True,
+    responses={
+        status.HTTP_404_NOT_FOUND: _error_response(
+            "보물찾기 미션 또는 현재 사용자의 완료 진행도를 찾을 수 없음",
+            service.TREASURE_MISSION_NOT_FOUND,
+        ),
+        status.HTTP_409_CONFLICT: _error_response(
+            "아직 찾지 않은 보물이 남아 있음", service.TREASURE_ITEMS_REMAINING
+        ),
+    },
+)
+def get_treasure_mission_completion(
+    db: Annotated[Session, Depends(get_db)],
+    current_user_id: Annotated[int, Depends(get_current_user_id)],
+    mission_type: Annotated[
+        MissionType, Path(description="조회할 미션 유형. 이 API 는 TREASURE 만 허용")
+    ],
+    mission_id: Annotated[int, Path(ge=1, description="완료한 TREASURE_MISSION.id")],
+    latitude: Annotated[float, Query(ge=-90, le=90, description="사용자 현재 위치의 위도")],
+    longitude: Annotated[float, Query(ge=-180, le=180, description="사용자 현재 위치의 경도")],
+) -> TreasureMissionCompletionResponse:
+    """GET /api/v1/missions/{missionType}/{missionId}/completion - 완료한 보물찾기 추천 화면."""
+    return service.get_treasure_mission_completion(
+        db=db,
+        current_user_id=current_user_id,
+        mission_type=mission_type,
+        treasure_mission_id=mission_id,
         latitude=latitude,
         longitude=longitude,
     )

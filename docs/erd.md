@@ -272,10 +272,7 @@ AR_CHARACTER {
 TRAVEL_ENDING_CONTENT {
 	bigint id PK "NOT NULL"
 	bigint user_id FK "NOT NULL"
-	varchar_500 travel_summary "NULL"
-	boolean visited_place "NOT NULL"
-	boolean missions "NOT NULL"
-	boolean pictures "NOT NULL"
+	varchar_500 image_url "NOT NULL"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 }

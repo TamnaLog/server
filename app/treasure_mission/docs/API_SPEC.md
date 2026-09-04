@@ -1,4 +1,5 @@
 ## 보물찾기 시작/이어하기
+
 - http 메서드: post
 - domain: treasure-mission
 - endpoint: /api/v1/treasure-missions/{treasureMissionId}/progress
@@ -21,17 +22,17 @@ Path로 전달받은 `treasureMissionId`를 사용하여 보물찾기 미션을 
 
 ### 요청 Query
 
-| 필드 | 타입 | 필수 | 설명 |
-| --- | --- | --- | --- |
-| `latitude` | number | Y | 보물 좌표 생성 기준이 되는 사용자의 현재 위도. `-90~90` |
-| `longitude` | number | Y | 보물 좌표 생성 기준이 되는 사용자의 현재 경도. `-180~180` |
+| 필드        | 타입   | 필수 | 설명                                                      |
+| ----------- | ------ | ---- | --------------------------------------------------------- |
+| `latitude`  | number | Y    | 보물 좌표 생성 기준이 되는 사용자의 현재 위도. `-90~90`   |
+| `longitude` | number | Y    | 보물 좌표 생성 기준이 되는 사용자의 현재 경도. `-180~180` |
 
 ---
 
 ### 요청 Path
 
-| 필드 | 타입 | 설명 |
-| --- | --- | --- |
+| 필드                | 타입   | 설명                                        |
+| ------------------- | ------ | ------------------------------------------- |
 | `treasureMissionId` | number | 진행도를 생성하거나 조회할 보물찾기 미션 id |
 
 요청 예시
@@ -58,23 +59,23 @@ Status Code : 200
 
 이미 진행 중인 보물찾기 미션을 이어서 하는 경우
 
-| 필드 | 타입 | 설명 |
-| --- | --- | --- |
-| `treasureMissionProgressId` | number | 보물찾기 미션 진행도 id |
-| `missionProgressStatus` | string | 보물찾기 미션 진행 상태. `IN_PROGRESS` |
-| `location` | object | 보물찾기 미션 장소 정보 |
-| `location.locationId` | number | 미션 장소의 LOCATION id |
-| `location.locationTitle` | string | 미션 장소명 |
-| `location.locationAddress` | string | 미션 장소 주소 |
-| `location.lat` | number | 미션 장소의 위도 |
-| `location.lng` | number | 미션 장소의 경도 |
-| `treasureCount` | number | 보물찾기 미션의 전체 보물 개수 |
-| `treasureItems` | object[] | `treasureIndex` 오름차순으로 정렬된 전체 보물 목록 |
-| `treasureItems[].treasureIndex` | number | 보물 번호 |
-| `treasureItems[].location` | object | 진행도 생성 시 사용자 위치를 기준으로 생성되어 저장된 보물 좌표 |
-| `treasureItems[].location.lat` | number | 보물의 위도. 진행도 `item_detail[].my` |
-| `treasureItems[].location.lng` | number | 보물의 경도. 진행도 `item_detail[].mx` |
-| `treasureItems[].isFound` | boolean | 해당 `treasureIndex`가 `current_found_item_idx`에 포함되어 있는지 여부 |
+| 필드                            | 타입     | 설명                                                                   |
+| ------------------------------- | -------- | ---------------------------------------------------------------------- |
+| `treasureMissionProgressId`     | number   | 보물찾기 미션 진행도 id                                                |
+| `missionProgressStatus`         | string   | 보물찾기 미션 진행 상태. `IN_PROGRESS`                                 |
+| `location`                      | object   | 보물찾기 미션 장소 정보                                                |
+| `location.locationId`           | number   | 미션 장소의 LOCATION id                                                |
+| `location.locationTitle`        | string   | 미션 장소명                                                            |
+| `location.locationAddress`      | string   | 미션 장소 주소                                                         |
+| `location.lat`                  | number   | 미션 장소의 위도                                                       |
+| `location.lng`                  | number   | 미션 장소의 경도                                                       |
+| `treasureCount`                 | number   | 보물찾기 미션의 전체 보물 개수                                         |
+| `treasureItems`                 | object[] | `treasureIndex` 오름차순으로 정렬된 전체 보물 목록                     |
+| `treasureItems[].treasureIndex` | number   | 보물 번호                                                              |
+| `treasureItems[].location`      | object   | 진행도 생성 시 사용자 위치를 기준으로 생성되어 저장된 보물 좌표        |
+| `treasureItems[].location.lat`  | number   | 보물의 위도. 진행도 `item_detail[].my`                                 |
+| `treasureItems[].location.lng`  | number   | 보물의 경도. 진행도 `item_detail[].mx`                                 |
+| `treasureItems[].isFound`       | boolean  | 해당 `treasureIndex`가 `current_found_item_idx`에 포함되어 있는지 여부 |
 
 신규 시작 응답 예시 `201 Created`
 
@@ -176,8 +177,8 @@ Status Code : 404
 }
 ```
 
-
 ## 보물찾기 진행도 저장
+
 - http 메서드: patch
 - domain: treasure-mission
 - endpoint: /api/v1/treasure-missions/{treasureMissionProgressId}/progress
@@ -202,17 +203,17 @@ Path로 전달받은 `treasureMissionProgressId`를 사용하여 로그인한 �
 
 ### 요청 Query
 
-| 필드 | 타입 | 필수 | 설명 |
-| --- | --- | --- | --- |
-| `latitude` | number | O | 사용자 현재 위치의 위도. `-90` 이상 `90` 이하 |
-| `longitude` | number | O | 사용자 현재 위치의 경도. `-180` 이상 `180` 이하 |
+| 필드        | 타입   | 필수 | 설명                                            |
+| ----------- | ------ | ---- | ----------------------------------------------- |
+| `latitude`  | number | O    | 사용자 현재 위치의 위도. `-90` 이상 `90` 이하   |
+| `longitude` | number | O    | 사용자 현재 위치의 경도. `-180` 이상 `180` 이하 |
 
 ---
 
 ### 요청 Path
 
-| 필드 | 타입 | 설명 |
-| --- | --- | --- |
+| 필드                        | 타입   | 설명                                                           |
+| --------------------------- | ------ | -------------------------------------------------------------- |
 | `treasureMissionProgressId` | number | 저장할 보물찾기 미션 진행도 id. `TREASURE_MISSION_PROGRESS.id` |
 
 요청 예시
@@ -225,9 +226,9 @@ PATCH /api/v1/treasure-missions/31/progress?latitude=33.5572&longitude=126.7591
 
 ### 요청 Body
 
-| 필드 | 타입 | 필수 | 설명 |
-| --- | --- | --- | --- |
-| `treasureIndex` | number | O | 사용자가 찾은 보물 번호. 진행도의 `item_detail[].index` |
+| 필드            | 타입   | 필수 | 설명                                                    |
+| --------------- | ------ | ---- | ------------------------------------------------------- |
+| `treasureIndex` | number | O    | 사용자가 찾은 보물 번호. 진행도의 `item_detail[].index` |
 
 ```json
 {
@@ -243,28 +244,28 @@ Status Code : 200
 
 보물찾기 미션 진행도를 정상적으로 저장한 경우
 
-| 필드 | 타입 | 설명 |
-| --- | --- | --- |
-| `missionProgressStatus` | string | 보물찾기 미션 진행 상태. `IN_PROGRESS | COMPLETED` |
-| `treasureCount` | number | 보물찾기 미션의 전체 보물 개수 |
-| `foundTreasureIndexes` | number[] | 사용자가 찾은 보물 번호 목록. 오름차순으로 반환 |
-| `nextLocation` | object | null | 다음 추천 장소 정보. 진행 중이면 `null`, 완료되면 반드시 객체로 반환 |
-| `nextLocation.id` | number | 다음 장소 id |
-| `nextLocation.locationTitle` | string | 다음 장소명 |
-| `nextLocation.locationImageUrl` | string | null | 다음 장소 이미지 URL. TourAPI에서 조회하지 못하면 `null` |
-| `nextLocation.distanceMeter` | number | 사용자 위치에서 다음 장소까지의 직선거리(m) |
-| `nextLocation.mission` | object | null | 다음 장소에서 수행할 미션. 연결된 미션이 없으면 `null` |
-| `nextLocation.mission.id` | number | 다음 미션 id |
-| `nextLocation.mission.missionType` | string | 다음 미션 유형. `CULTURE | COOPERATIVE | TREASURE` |
-| `reward` | object | 이번 요청으로 실제 지급된 보상 정보. 지급된 보상이 없어도 객체로 반환 |
-| `reward.arCharacter` | object | null | 이번 요청으로 지급된 AR 캐릭터. 지급되지 않았으면 `null` |
-| `reward.arCharacter.id` | number | AR 캐릭터 id |
-| `reward.arCharacter.name` | string | AR 캐릭터 이름 |
-| `reward.arCharacter.imageUrl` | string | AR 캐릭터 이미지 URL |
-| `reward.point` | number | null | 이번 요청으로 지급된 포인트. 지급되지 않았으면 `null` |
-| `reward.coupon` | object | null | 이번 요청으로 지급된 쿠폰. 지급되지 않았으면 `null` |
-| `reward.coupon.couponLocation` | string | 쿠폰 사용처 |
-| `reward.coupon.couponPrice` | number | 쿠폰 금액 |
+| 필드                               | 타입     | 설명                                                                  |
+| ---------------------------------- | -------- | --------------------------------------------------------------------- | -------------------------------------------------------------------- | --------- |
+| `missionProgressStatus`            | string   | 보물찾기 미션 진행 상태. `IN_PROGRESS                                 | COMPLETED`                                                           |
+| `treasureCount`                    | number   | 보물찾기 미션의 전체 보물 개수                                        |
+| `foundTreasureIndexes`             | number[] | 사용자가 찾은 보물 번호 목록. 오름차순으로 반환                       |
+| `nextLocation`                     | object   | null                                                                  | 다음 추천 장소 정보. 진행 중이면 `null`, 완료되면 반드시 객체로 반환 |
+| `nextLocation.id`                  | number   | 다음 장소 id                                                          |
+| `nextLocation.locationTitle`       | string   | 다음 장소명                                                           |
+| `nextLocation.locationImageUrl`    | string   | null                                                                  | 다음 장소 이미지 URL. TourAPI에서 조회하지 못하면 `null`             |
+| `nextLocation.distanceMeter`       | number   | 사용자 위치에서 다음 장소까지의 직선거리(m)                           |
+| `nextLocation.mission`             | object   | null                                                                  | 다음 장소에서 수행할 미션. 연결된 미션이 없으면 `null`               |
+| `nextLocation.mission.id`          | number   | 다음 미션 id                                                          |
+| `nextLocation.mission.missionType` | string   | 다음 미션 유형. `CULTURE                                              | COOPERATIVE                                                          | TREASURE` |
+| `reward`                           | object   | 이번 요청으로 실제 지급된 보상 정보. 지급된 보상이 없어도 객체로 반환 |
+| `reward.arCharacter`               | object   | null                                                                  | 이번 요청으로 지급된 AR 캐릭터. 지급되지 않았으면 `null`             |
+| `reward.arCharacter.id`            | number   | AR 캐릭터 id                                                          |
+| `reward.arCharacter.name`          | string   | AR 캐릭터 이름                                                        |
+| `reward.arCharacter.imageUrl`      | string   | AR 캐릭터 이미지 URL                                                  |
+| `reward.point`                     | number   | null                                                                  | 이번 요청으로 지급된 포인트. 지급되지 않았으면 `null`                |
+| `reward.coupon`                    | object   | null                                                                  | 이번 요청으로 지급된 쿠폰. 지급되지 않았으면 `null`                  |
+| `reward.coupon.couponLocation`     | string   | 쿠폰 사용처                                                           |
+| `reward.coupon.couponPrice`        | number   | 쿠폰 금액                                                             |
 
 첫 번째 보물을 찾아 미션이 아직 진행 중이며 AR 캐릭터가 지급된 예시
 
@@ -382,9 +383,8 @@ Status Code : 409
 }
 ```
 
-
-
 ## 보물찾기 중단
+
 - http 메서드: patch
 - domain: treasure-mission
 - endpoint: /api/v1/treasure-missions/{treasureMissionProgressId}/progress/stop
@@ -403,18 +403,18 @@ Path로 전달받은 `treasureMissionProgressId`를 사용하여 로그인한 �
 
 ### 요청 Query
 
-| 필드 | 타입 | 필수 | 설명 |
-| --- | --- | --- | --- |
-| `latitude` | number | O | 사용자 현재 위치의 위도. `-90` 이상 `90` 이하 |
-| `longitude` | number | O | 사용자 현재 위치의 경도. `-180` 이상 `180` 이하 |
+| 필드        | 타입   | 필수 | 설명                                            |
+| ----------- | ------ | ---- | ----------------------------------------------- |
+| `latitude`  | number | O    | 사용자 현재 위치의 위도. `-90` 이상 `90` 이하   |
+| `longitude` | number | O    | 사용자 현재 위치의 경도. `-180` 이상 `180` 이하 |
 
 ---
 
 ### 요청 Path
 
-| 필드 | 타입 | 필수 | 설명 |
-| --- | --- | --- | --- |
-| `treasureMissionProgressId` | number | O | 중단할 보물찾기 미션 진행도 id. `TREASURE_MISSION_PROGRESS.id` |
+| 필드                        | 타입   | 필수 | 설명                                                           |
+| --------------------------- | ------ | ---- | -------------------------------------------------------------- |
+| `treasureMissionProgressId` | number | O    | 중단할 보물찾기 미션 진행도 id. `TREASURE_MISSION_PROGRESS.id` |
 
 요청 예시
 
@@ -436,19 +436,19 @@ Status Code : 200
 
 보물찾기 미션을 정상적으로 중단하고 완료 처리한 경우
 
-| 필드 | 타입 | 설명 |
-| --- | --- | --- |
-| `missionProgressStatus` | string | 보물찾기 미션 진행 상태. 항상 `COMPLETED` |
-| `treasureCount` | number | 보물찾기 미션의 전체 보물 개수 |
-| `foundTreasureIndexes` | number[] | 중단 시점까지 사용자가 찾은 보물 번호 목록. 오름차순으로 반환 |
-| `nextLocation` | object | 다음 추천 장소 정보. 중단 완료 응답에서는 항상 객체로 반환 |
-| `nextLocation.id` | number | 다음 장소 id |
-| `nextLocation.locationTitle` | string | 다음 장소명 |
-| `nextLocation.locationImageUrl` | string | null | 다음 장소 이미지 URL. TourAPI에서 조회하지 못하면 `null` |
-| `nextLocation.distanceMeter` | number | 사용자 위치에서 다음 장소까지의 직선거리(m) |
-| `nextLocation.mission` | object | null | 다음 장소에서 수행할 미션. 연결된 미션이 없으면 `null` |
-| `nextLocation.mission.id` | number | 다음 미션 id |
-| `nextLocation.mission.missionType` | string | 다음 미션 유형. `CULTURE | COOPERATIVE | TREASURE` |
+| 필드                               | 타입     | 설명                                                          |
+| ---------------------------------- | -------- | ------------------------------------------------------------- | -------------------------------------------------------- | --------- |
+| `missionProgressStatus`            | string   | 보물찾기 미션 진행 상태. 항상 `COMPLETED`                     |
+| `treasureCount`                    | number   | 보물찾기 미션의 전체 보물 개수                                |
+| `foundTreasureIndexes`             | number[] | 중단 시점까지 사용자가 찾은 보물 번호 목록. 오름차순으로 반환 |
+| `nextLocation`                     | object   | 다음 추천 장소 정보. 중단 완료 응답에서는 항상 객체로 반환    |
+| `nextLocation.id`                  | number   | 다음 장소 id                                                  |
+| `nextLocation.locationTitle`       | string   | 다음 장소명                                                   |
+| `nextLocation.locationImageUrl`    | string   | null                                                          | 다음 장소 이미지 URL. TourAPI에서 조회하지 못하면 `null` |
+| `nextLocation.distanceMeter`       | number   | 사용자 위치에서 다음 장소까지의 직선거리(m)                   |
+| `nextLocation.mission`             | object   | null                                                          | 다음 장소에서 수행할 미션. 연결된 미션이 없으면 `null`   |
+| `nextLocation.mission.id`          | number   | 다음 미션 id                                                  |
+| `nextLocation.mission.missionType` | string   | 다음 미션 유형. `CULTURE                                      | COOPERATIVE                                              | TREASURE` |
 
 ```json
 {
@@ -488,9 +488,8 @@ Status Code : 404
 }
 ```
 
-
-
 ## ar 캐릭터와 사진 저장
+
 - http 메서드: post
 - domain: treasure-mission
 - endpoint: /api/v1/treasure-missions/pictures-with-character
@@ -529,10 +528,10 @@ Status Code : 404
 
 Content-Type : `multipart/form-data`
 
-| 필드 | 타입 | 필수 | 설명 |
-| --- | --- | --- | --- |
-| `picture` | file | O | AR 캐릭터와 함께 촬영한 이미지 파일. JPEG, PNG, WebP만 허용하며 최대 10MB |
-| `takenAt` | string(date-time) | O | 사진 촬영 시각. KST 기준 offset 없는 ISO 8601 형식 |
+| 필드      | 타입              | 필수 | 설명                                                                      |
+| --------- | ----------------- | ---- | ------------------------------------------------------------------------- |
+| `picture` | file              | O    | AR 캐릭터와 함께 촬영한 이미지 파일. JPEG, PNG, WebP만 허용하며 최대 10MB |
+| `takenAt` | string(date-time) | O    | 사진 촬영 시각. KST 기준 offset 없는 ISO 8601 형식                        |
 
 요청 예시
 
@@ -556,3 +555,195 @@ Status Code : 204
 ### 오류 응답 데이터
 
 없음
+
+## 완료한 보물찾기 추천 화면
+
+- http 메서드: get
+- domain: treasure_mission
+- endpoint: /api/v1/missions/{missionType}/{missionId}/completion
+
+### API 설명
+
+‼️ 기존의 구현해놓은 상태에서 특이하게 추가된 케이스라 해당 api 호출 트리거가 좀 요상한점 죄송합니다. 일단 미션홈 조회를 호출했을때 해당 미션이 보물찾기이면서 remainingReward가 보상 세 종류 모두 null일때 (즉 보물찾기인데 3개의 보물을 모두 찾았을때) 이 api를 호출해서 treasureHunt-detail-complete 화면을 만들어주시면 됩니다!
+
+사용자가 모든 보물을 찾은 보물찾기 미션의 완료 화면에 진입할 때 호출한다.
+
+Path의 `missionType`과 `missionId`로 현재 사용자가 완료한 보물찾기 미션을 조회하고, 가장 최근 완료 시각과 해당 미션에 설정된 AR 캐릭터 보상 이미지를 반환한다.
+
+현재 사용자의 가장 최근 `COMPLETED` 진행도에서 설정된 모든 보물 index가 `current_found_item_idx`에 각각 한 번 이상 존재해야 한다. 중복된 index는 찾지 않은 다른 보물을 대신할 수 없다.
+
+Query의 현재 사용자 좌표를 기준으로 가까운 보물찾기를 최대 3개 추천한다. 현재 조회 중인 보물찾기와 `item_total_count <= 0`으로 찾을 보물이 없는 보물찾기는 제외하며, 이전에 완료한 다른 보물찾기는 추천 대상에 포함할 수 있다.
+
+추천 목록에는 화면 이동에 필요한 미션·장소 id, 미션명, 장소 대표 이미지, 거리, 예상 소요 시간 및 미션에 설정된 전체 보상과 종류별 수령 여부를 포함한다. 난이도는 반환하지 않는다.
+
+현재 사용자가 문화·보물찾기·협동 미션에서 지금까지 받은 모든 쿠폰도 함께 반환한다. 쿠폰 사용처 이름과 `LOCATION.location_title`을 완전 일치로 조회하여 장소 id, 주소와 TourAPI 대표 이미지를 조합한다.
+
+조회 전용 API이며 미션 진행도, 보상, 사용자 포인트와 쿠폰 수령 상태를 변경하지 않는다.
+
+---
+
+### 요청 Query
+
+| 필드        | 타입   | 필수 | 설명                                 |
+| ----------- | ------ | ---- | ------------------------------------ |
+| `latitude`  | number | O    | 현재 사용자 위도. -90 이상 90 이하   |
+| `longitude` | number | O    | 현재 사용자 경도. -180 이상 180 이하 |
+
+요청 예시
+
+```
+?latitude=33.450701&longitude=126.570667
+```
+
+---
+
+### 요청 Path
+
+| 필드          | 타입    | 필수 | 설명                                         |
+| ------------- | ------- | ---- | -------------------------------------------- |
+| `missionType` | string  | O    | 조회할 미션 유형. 이 API는 `TREASURE`만 허용 |
+| `missionId`   | integer | O    | `TREASURE_MISSION.id`                        |
+
+요청 예시
+
+```
+GET /api/v1/missions/TREASURE/7/completion?latitude=33.450701&longitude=126.570667
+```
+
+---
+
+### 요청 Body
+
+없음
+
+---
+
+### 정상 응답 데이터
+
+Status Code : 200
+
+| 필드                                                           | 타입              | 설명                                                                                         |
+| -------------------------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `completedMission`                                             | object            | 완료한 보물찾기 정보                                                                         |
+| `completedMission.missionId`                                   | integer           | 완료한 보물찾기의 `TREASURE_MISSION.id`                                                      |
+| `completedMission.missionType`                                 | string            | 항상 `TREASURE`                                                                              |
+| `completedMission.completedAt`                                 | string(date-time) | 현재 사용자가 해당 미션을 가장 최근에 완료한 시각. KST 기준 offset 없는 ISO 8601 형식        |
+| `completedMission.arCharacterImageUrl`                         | string            | null                                                                                         | 해당 미션의 AR 캐릭터 보상 이미지 URL. 캐릭터 보상이 없거나 연결된 캐릭터가 없으면 null                 |
+| `nearbyTreasureMissions`                                       | object\[\]        | 현재 미션과 찾을 보물이 없는 미션을 제외한 가까운 보물찾기 목록. 최대 3개이며 없으면 빈 배열 |
+| `nearbyTreasureMissions[].missionId`                           | integer           | 추천 보물찾기의 `TREASURE_MISSION.id`                                                        |
+| `nearbyTreasureMissions[].missionType`                         | string            | 항상 `TREASURE`                                                                              |
+| `nearbyTreasureMissions[].locationId`                          | integer           | 추천 보물찾기가 진행되는 `LOCATION.id`                                                       |
+| `nearbyTreasureMissions[].missionTitle`                        | string            | 추천 보물찾기 제목                                                                           |
+| `nearbyTreasureMissions[].representativeImageUrl`              | string            | null                                                                                         | 미션 장소의 TourAPI 대표 이미지 URL. `firstimage`, 없으면 `firstimage2`; 둘 다 없거나 조회 실패 시 null |
+| `nearbyTreasureMissions[].distanceMeter`                       | integer           | 현재 사용자 좌표에서 추천 미션 장소까지의 직선거리(m)                                        |
+| `nearbyTreasureMissions[].durationMinutes`                     | integer           | `distanceMeter`를 기존 공통 모듈로 변환한 예상 소요 시간(분)                                 |
+| `nearbyTreasureMissions[].rewardDetail`                        | object            | 추천 미션에 설정된 전체 보상과 현재 사용자의 종류별 수령 여부                                |
+| `nearbyTreasureMissions[].rewardDetail.arCharacter`            | object            | null                                                                                         | AR 캐릭터 보상. 해당 보상이 없으면 null                                                                 |
+| `nearbyTreasureMissions[].rewardDetail.arCharacter.id`         | integer           | AR 캐릭터 id                                                                                 |
+| `nearbyTreasureMissions[].rewardDetail.arCharacter.name`       | string            | AR 캐릭터 이름                                                                               |
+| `nearbyTreasureMissions[].rewardDetail.arCharacter.imageUrl`   | string            | AR 캐릭터 이미지 URL                                                                         |
+| `nearbyTreasureMissions[].rewardDetail.arCharacter.isReceived` | boolean           | 현재 사용자의 해당 AR 캐릭터 보상 수령 여부                                                  |
+| `nearbyTreasureMissions[].rewardDetail.point`                  | object            | null                                                                                         | 포인트 보상. 해당 보상이 없으면 null                                                                    |
+| `nearbyTreasureMissions[].rewardDetail.point.amount`           | integer           | 포인트 보상량                                                                                |
+| `nearbyTreasureMissions[].rewardDetail.point.isReceived`       | boolean           | 현재 사용자의 해당 포인트 보상 수령 여부                                                     |
+| `nearbyTreasureMissions[].rewardDetail.coupon`                 | object            | null                                                                                         | 쿠폰 보상. 해당 보상이 없으면 null                                                                      |
+| `nearbyTreasureMissions[].rewardDetail.coupon.couponLocation`  | string            | 쿠폰 사용처                                                                                  |
+| `nearbyTreasureMissions[].rewardDetail.coupon.couponPrice`     | integer           | 쿠폰 금액                                                                                    |
+| `nearbyTreasureMissions[].rewardDetail.coupon.isReceived`      | boolean           | 현재 사용자의 해당 쿠폰 보상 수령 여부                                                       |
+| `receivedCoupons`                                              | object\[\]        | 현재 사용자가 지금까지 받은 모든 미션 유형의 쿠폰 보상 목록. 없으면 빈 배열                  |
+| `receivedCoupons[].couponLocation`                             | string            | 쿠폰 사용처                                                                                  |
+| `receivedCoupons[].couponPrice`                                | integer           | 쿠폰 금액                                                                                    |
+| `receivedCoupons[].locationId`                                 | integer           | null                                                                                         | 쿠폰 사용처 이름과 같은 `LOCATION.location_title`의 장소 id. 일치 장소가 없으면 null                    |
+| `receivedCoupons[].locationAddress`                            | string            | null                                                                                         | 쿠폰 사용처와 일치한 장소의 `LOCATION.location_address`. 일치 장소가 없으면 null                        |
+| `receivedCoupons[].locationImageUrl`                           | string            | null                                                                                         | 쿠폰 사용처 장소의 TourAPI 대표 이미지 URL. 장소가 없거나 이미지를 조회하지 못하면 null                 |
+
+```json
+{
+  "completedMission": {
+    "missionId": 7,
+    "missionType": "TREASURE",
+    "completedAt": "2026-08-25T14:30:00",
+    "arCharacterImageUrl": "https://example.com/images/ar-characters/stone-spirit.png"
+  },
+  "nearbyTreasureMissions": [
+    {
+      "missionId": 12,
+      "missionType": "TREASURE",
+      "locationId": 31,
+      "missionTitle": "새별오름의 숨겨진 보물",
+      "representativeImageUrl": "https://example.com/images/locations/31/firstimage.jpg",
+      "distanceMeter": 1200,
+      "durationMinutes": 16,
+      "rewardDetail": {
+        "arCharacter": {
+          "id": 4,
+          "name": "오름 정령",
+          "imageUrl": "https://example.com/images/ar-characters/4.png",
+          "isReceived": false
+        },
+        "point": {
+          "amount": 300,
+          "isReceived": false
+        },
+        "coupon": null
+      }
+    }
+  ],
+  "receivedCoupons": [
+    {
+      "couponLocation": "타라 소품",
+      "couponPrice": 1000,
+      "locationId": 44,
+      "locationAddress": "제주특별자치도 제주시 예시로 44",
+      "locationImageUrl": "https://example.com/images/locations/44/firstimage.jpg"
+    }
+  ]
+}
+```
+
+`nearbyTreasureMissions`는 `distanceMeter ASC`, 거리가 같으면 `missionId ASC` 순으로 반환한다.
+
+추천 미션의 보상별 `isReceived`는 현재 사용자의 동일 보물찾기 전체 진행도 이력에서 각 보상 지급 여부를 OR하여 판단한다.
+
+받은 쿠폰은 `(missionType, 유형별 세부 missionId)`당 한 번만 포함한다. 서로 다른 미션에서 같은 사용처와 같은 금액의 쿠폰을 받은 경우에는 별개 항목으로 유지한다.
+
+같은 이름의 LOCATION이 여러 개면 `LOCATION.id ASC` 첫 행을 사용한다. 일치하는 장소가 없으면 `locationId`, `locationAddress`, `locationImageUrl`을 모두 null로 반환한다.
+
+`nearbyTreasureMissions` 또는 `receivedCoupons`가 없으면 해당 필드는 생략하지 않고 빈 배열로 반환한다.
+
+```json
+{
+  "completedMission": {
+    "missionId": 7,
+    "missionType": "TREASURE",
+    "completedAt": "2026-08-25T14:30:00",
+    "arCharacterImageUrl": null
+  },
+  "nearbyTreasureMissions": [],
+  "receivedCoupons": []
+}
+```
+
+---
+
+### 오류 응답 데이터
+
+Status Code : 404
+
+`missionType`이 `TREASURE`가 아니거나, `missionId`에 해당하는 보물찾기 미션 또는 현재 사용자의 완료 진행도를 찾을 수 없는 경우
+
+```json
+{
+  "code": "TREASURE_MISSION_NOT_FOUND"
+}
+```
+
+Status Code : 409
+
+가장 최근 완료 진행도에서 설정된 모든 보물 index를 한 번 이상 찾지 않은 경우
+
+```json
+{
+  "code": "TREASURE_ITEMS_REMAINING"
+}
+```

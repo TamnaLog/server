@@ -4,21 +4,28 @@
 보물 표시/인식 반경은 프론트가 관리하므로 응답에 포함하지 않는다.
 """
 
+from datetime import datetime
+
 from fastapi import UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from app.common.next_location import NextLocationResponse
-from app.common.rewards import GrantedRewardResponse
-from app.mission.models import MissionStatus
+from app.common.rewards import FullRewardDetailResponse, GrantedRewardResponse
+from app.mission.models import MissionStatus, MissionType
 
 
 __all__ = [
+    "CompletedTreasureMissionResponse",
     "GrantedRewardResponse",
     "MissionStatus",
+    "MissionType",
+    "NearbyTreasureMissionResponse",
     "NextLocationResponse",
+    "ReceivedCouponResponse",
     "TreasureItemResponse",
     "TreasureLocationResponse",
+    "TreasureMissionCompletionResponse",
     "TreasureMissionLocationResponse",
     "TreasureMissionProgressSaveRequest",
     "TreasureMissionProgressSaveResponse",
@@ -118,3 +125,65 @@ class PictureWithCharacterSaveRequest(CamelModel):
 
     picture: UploadFile
     taken_at: str
+
+
+# ---------------------------------------------------------------------
+# 완료한 보물찾기 추천 화면
+# ---------------------------------------------------------------------
+
+
+class CompletedTreasureMissionResponse(CamelModel):
+    """완료한 보물찾기 정보.
+
+    `completed_at` 은 현재 사용자의 **가장 최근** 완료 진행도의 완료 시각이다.
+    캐릭터 보상이 없거나 연결된 캐릭터를 찾을 수 없으면 이미지가 `null` 이다.
+    """
+
+    mission_id: int
+    mission_type: MissionType
+    completed_at: datetime
+    ar_character_image_url: str | None = None
+
+
+class NearbyTreasureMissionResponse(CamelModel):
+    """추천할 근처 보물찾기 한 건.
+
+    `mission_id` 는 공통 `MISSION.id` 가 아니라 `TREASURE_MISSION.id` 다.
+    난이도는 이 화면에서 쓰지 않으므로 반환하지 않는다.
+    """
+
+    mission_id: int
+    mission_type: MissionType
+    location_id: int
+    mission_title: str
+    representative_image_url: str | None = None
+    distance_meter: int
+    duration_minutes: int
+    # 미션에 설정된 전체 보상 + 보상별 수령 여부. 지도 미션 상세와 같은 형식이다.
+    reward_detail: FullRewardDetailResponse
+
+
+class ReceivedCouponResponse(CamelModel):
+    """현재 사용자가 지금까지 받은 쿠폰 한 건.
+
+    쿠폰 사용처 이름과 이름이 같은 장소를 찾아 장소 정보를 붙인다.
+    일치하는 장소가 없으면 장소 관련 세 값이 모두 `null` 이고,
+    장소는 찾았지만 대표 이미지를 얻지 못하면 이미지만 `null` 이다.
+    """
+
+    coupon_location: str
+    coupon_price: int
+    location_id: int | None = None
+    location_address: str | None = None
+    location_image_url: str | None = None
+
+
+class TreasureMissionCompletionResponse(CamelModel):
+    """GET /api/v1/missions/{missionType}/{missionId}/completion 정상 응답.
+
+    두 목록은 결과가 없어도 키를 생략하지 않고 빈 배열로 내려준다.
+    """
+
+    completed_mission: CompletedTreasureMissionResponse
+    nearby_treasure_missions: list[NearbyTreasureMissionResponse]
+    received_coupons: list[ReceivedCouponResponse]

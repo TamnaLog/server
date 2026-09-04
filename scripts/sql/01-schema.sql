@@ -481,14 +481,11 @@ CREATE TABLE `ACQUIRED_AR_CHARACTER` (
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '획득한 AR 캐릭터';
 
 CREATE TABLE `TRAVEL_ENDING_CONTENT` (
-    `id`             BIGINT       NOT NULL AUTO_INCREMENT,
-    `user_id`        BIGINT       NOT NULL,
-    `travel_summary` VARCHAR(500) NULL,
-    `visited_place`  BOOLEAN      NOT NULL DEFAULT FALSE,
-    `missions`       BOOLEAN      NOT NULL DEFAULT FALSE,
-    `pictures`       BOOLEAN      NOT NULL DEFAULT FALSE,
-    `created_at`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `updated_at`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `id`         BIGINT       NOT NULL AUTO_INCREMENT,
+    `user_id`    BIGINT       NOT NULL,
+    `image_url`  VARCHAR(500) NOT NULL,
+    `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `idx_travel_ending__user` (`user_id`),
     CONSTRAINT `fk_travel_ending__user`

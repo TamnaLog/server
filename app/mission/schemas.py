@@ -4,12 +4,11 @@
 보상 스키마는 세 미션 유형이 같은 형태를 쓰므로 공용 모듈(app/common/rewards.py)의 것을 쓴다.
 """
 
-from enum import Enum
-
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
 from app.common.rewards import ArCharacterResponse, CouponResponse, RemainingRewardResponse
+from app.mission.models import MissionType
 
 
 __all__ = [
@@ -28,12 +27,9 @@ class CamelModel(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
 
-class MissionType(str, Enum):
-    """미션 유형. 조회할 유형별 세부 미션 테이블을 결정한다."""
-
-    CULTURE = "CULTURE"
-    COOPERATIVE = "COOPERATIVE"
-    TREASURE = "TREASURE"
+# 미션 유형(`MissionType`)은 DB 값(`MISSION.mission_type`)과 같은 값이라
+# models 의 enum 을 그대로 import 해서 쓴다.
+# (같은 값을 가진 enum 을 두 벌 두면 도메인마다 `is` 비교 결과가 어긋난다)
 
 
 class MissionStepResponse(CamelModel):
