@@ -8,7 +8,8 @@
 -- 데이터 방침
 --   - 사용자: id=1 이 "나"(로그인 고정 사용자). id=2~6 은 협동 미션 팀원 5명.
 --   - 하루 목표 걸음 수(USER.target_step)는 기본값 10000 이고 2명만 다른 값을 둔다.
---   - 콘텐츠 성격의 테이블(LOCATION / MISSION / *_MISSION / AR_CHARACTER)은 채운다.
+--   - LOCATION 은 scripts/insert_location.py 로 별도 저장하며 이 파일에서는 변경하지 않는다.
+--   - 나머지 콘텐츠 성격의 테이블(MISSION / *_MISSION / AR_CHARACTER)은 채운다.
 --   - 홈 조회 예시 응답을 위해 사용자 1의 문화/협동/보물찾기 진행도를 각각 1건씩 둔다.
 --   - USER_TRAVEL_STYLE 은 온보딩 응답 예시와 맞는 여행 유형 데이터를 둔다.
 --   - 방명록(GUESTBOOK / ROAD_GUESTBOOK)과 GPS, 걸음 수(STEP_COUNT)는 데이터가 있어야 하므로 채운다.
@@ -43,7 +44,6 @@ TRUNCATE TABLE `CULTURE_MISSION`;
 TRUNCATE TABLE `GPS`;
 TRUNCATE TABLE `VISITED_LOCATION`;
 TRUNCATE TABLE `MISSION`;
-TRUNCATE TABLE `LOCATION`;
 TRUNCATE TABLE `STEP_COUNT`;
 TRUNCATE TABLE `USER_SETTING`;
 TRUNCATE TABLE `USER`;
@@ -180,8 +180,8 @@ INSERT INTO `CULTURE_MISSION`
     (`id`, `mission_id`, `quiz_total_count`, `quiz_detail`, `reward_detail`)
 VALUES
     (1, 1, 3, '[
-        {"quiz_index": 1, "img_url": "https://cdn.jamkkan-jeju.dev/quizzes/jeju-dialect-1.jpg", "question": "제주어로 할아버지는 무엇일까요?", "options": ["하르방", "하라범", "하르봉", "하르범"], "answer": "하르방", "hint": "제주의 돌하르방을 떠올려 보세요.", "explanation": "제주어에서 할아버지를 뜻하는 대표적인 표현은 하르방입니다."},
-        {"quiz_index": 2, "img_url": "https://cdn.jamkkan-jeju.dev/quizzes/jeju-drama.jpg", "question": "제주를 배경으로 여러 인물의 삶을 옴니버스 형식으로 담아낸 노희경 작가의 드라마는 무엇일까요?", "options": ["우리들의 블루스", "우도의 봄", "갯마을 차차차", "도깨비"], "answer": "우리들의 블루스", "hint": "제목에 제주 바다를 연상시키는 색상이 들어가요.", "explanation": "우리들의 블루스는 제주를 배경으로 여러 인물의 삶을 옴니버스 형식으로 그린 드라마입니다."},
+        {"quiz_index": 1, "img_url": null, "question": "제주어로 할아버지는 무엇일까요?", "options": ["하르방", "하라범", "하르봉", "하르범"], "answer": "하르방", "hint": "제주의 돌하르방을 떠올려 보세요.", "explanation": "제주어에서 할아버지를 뜻하는 대표적인 표현은 하르방입니다."},
+        {"quiz_index": 2, "img_url": null, "question": "제주를 배경으로 여러 인물의 삶을 옴니버스 형식으로 담아낸 노희경 작가의 드라마는 무엇일까요?", "options": ["우리들의 블루스", "우도의 봄", "갯마을 차차차", "도깨비"], "answer": "우리들의 블루스", "hint": "제목에 제주 바다를 연상시키는 색상이 들어가요.", "explanation": "우리들의 블루스는 제주를 배경으로 여러 인물의 삶을 옴니버스 형식으로 그린 드라마입니다."},
         {"quiz_index": 3, "img_url": null, "question": "하영은 제주 방언으로 어떤 뜻일까요?", "options": ["많이", "천천히", "조용히", "따뜻하게"], "answer": "많이", "hint": "수량이 넉넉하다는 의미로 사용해요.", "explanation": "하영은 제주 방언으로 많이라는 뜻입니다."}
     ]',
     '{"ar_character_id": 1, "point": 100, "coupon_location": "제주 기념품숍", "coupon_price": 1000}'),
@@ -205,7 +205,84 @@ VALUES
         {"quiz_index": 2, "img_url": null, "question": "메밀 전병에 무채를 넣어 말아 먹는 제주 음식은?", "options": ["빙떡", "몸국", "고기국수", "갈치조림"], "answer": "빙떡", "hint": "얇게 부친 메밀 전병이에요.", "explanation": "빙떡은 메밀 전병에 삶은 무채를 넣어 돌돌 말아 먹는 제주 향토 음식입니다."},
         {"quiz_index": 3, "img_url": null, "question": "돼지 육수에 모자반을 넣어 끓인 제주 국은?", "options": ["몸국", "접짝뼈국", "각재기국", "성게국"], "answer": "몸국", "hint": "모자반을 제주말로 몸이라 해요.", "explanation": "몸국은 돼지 육수에 모자반을 넣고 끓인 제주 잔치 음식입니다."}
     ]',
-    '{"ar_character_id": 4, "point": 100, "coupon_location": "동문시장 오메기떡", "coupon_price": 3000}');
+    '{"ar_character_id": 4, "point": 100, "coupon_location": "동문시장 오메기떡", "coupon_price": 3000}'),
+
+    (5, 1, 3, '[
+        {"quiz_index": 1, "img_url": null, "question": "제주의 전통 대문 역할을 하는 것은?", "options": ["정낭", "테왁", "물허벅", "방사탑"], "answer": "정낭", "hint": "세 개의 나무를 걸쳐 놓아요.", "explanation": "정낭은 제주 전통 가옥의 출입 여부를 알리던 나무 대문입니다."},
+        {"quiz_index": 2, "img_url": null, "question": "제주 전통 가옥의 바람을 막아주는 낮은 돌담을 무엇이라 하나요?", "options": null, "answer": "울담", "hint": "집의 울타리 역할을 하는 담입니다.", "explanation": "울담은 제주 가옥 주변을 둘러 강한 바람을 막아주는 돌담입니다."},
+        {"quiz_index": 3, "img_url": null, "question": "제주 전통 가옥의 특징으로 알맞은 것은?", "options": ["바람에 대비한 낮은 지붕", "눈을 위한 높은 지붕", "큰 유리창", "지하 출입구"], "answer": "바람에 대비한 낮은 지붕", "hint": "제주는 바람이 강한 섬이에요.", "explanation": "제주 전통 가옥은 강한 바람에 견디도록 지붕이 낮고 단단하게 묶여 있습니다."}
+    ]',
+    '{"ar_character_id": 5, "point": 100, "coupon_location": "성읍민속마을 기념품점", "coupon_price": 2000}'),
+
+    (6, 1, 3, '[
+        {"quiz_index": 1, "img_url": null, "question": "제주를 상징하는 화산암은 무엇일까요?", "options": ["현무암", "대리암", "화강암", "석회암"], "answer": "현무암", "hint": "검고 구멍이 많은 돌이에요.", "explanation": "제주에는 화산 활동으로 만들어진 현무암이 널리 분포합니다."},
+        {"quiz_index": 2, "img_url": null, "question": "제주에서 작은 화산체를 부르는 말은 무엇인가요?", "options": null, "answer": "오름", "hint": "제주 곳곳에서 볼 수 있는 봉우리예요.", "explanation": "오름은 제주에서 한라산 주변의 독립된 소화산체를 부르는 말입니다."},
+        {"quiz_index": 3, "img_url": null, "question": "주상절리는 용암이 식으면서 주로 어떤 모양으로 갈라진 지형일까요?", "options": ["기둥 모양", "원형 호수", "모래 언덕", "동굴 천장"], "answer": "기둥 모양", "hint": "수직으로 늘어선 돌기둥을 떠올려 보세요.", "explanation": "주상절리는 용암이 식고 수축하면서 다각형 기둥 형태로 갈라진 지형입니다."}
+    ]',
+    '{"ar_character_id": 6, "point": 120, "coupon_location": "중문 관광기념품점", "coupon_price": 2000}'),
+
+    (7, 1, 3, '[
+        {"quiz_index": 1, "img_url": null, "question": "제주도의 가장 높은 산은?", "options": ["한라산", "성산일출봉", "산방산", "송악산"], "answer": "한라산", "hint": "대한민국에서 가장 높은 산이기도 해요.", "explanation": "한라산은 제주도 중앙에 있는 대한민국 최고봉입니다."},
+        {"quiz_index": 2, "img_url": null, "question": "한라산 정상의 화구호 이름은 무엇인가요?", "options": null, "answer": "백록담", "hint": "흰 사슴에 관한 이름이에요.", "explanation": "한라산 정상에는 화산 활동으로 형성된 화구호 백록담이 있습니다."},
+        {"quiz_index": 3, "img_url": null, "question": "한라산이 위치한 제주도의 중심 행정구역은?", "options": ["제주시와 서귀포시", "제주시만", "서귀포시만", "우도면"], "answer": "제주시와 서귀포시", "hint": "산을 기준으로 제주가 남북으로 나뉘어요.", "explanation": "한라산 일대는 제주시와 서귀포시에 걸쳐 있습니다."}
+    ]',
+    '{"ar_character_id": 7, "point": 150, "coupon_location": "한라산 탐방안내소", "coupon_price": 3000}'),
+
+    (8, 1, 3, '[
+        {"quiz_index": 1, "img_url": null, "question": "성산일출봉은 어떤 지형일까요?", "options": ["응회구", "빙하호", "사구", "석회동굴"], "answer": "응회구", "hint": "바닷속 화산 분출과 관련 있어요.", "explanation": "성산일출봉은 수중 화산 분출로 만들어진 응회구입니다."},
+        {"quiz_index": 2, "img_url": null, "question": "성산일출봉에서 이름처럼 유명한 자연현상은 무엇인가요?", "options": null, "answer": "일출", "hint": "해가 떠오르는 모습이에요.", "explanation": "성산일출봉은 동쪽 바다에서 떠오르는 일출을 감상하는 명소입니다."},
+        {"quiz_index": 3, "img_url": null, "question": "성산일출봉이 있는 제주 동쪽 지역은?", "options": ["성산읍", "애월읍", "한림읍", "대정읍"], "answer": "성산읍", "hint": "장소 이름에 답이 있어요.", "explanation": "성산일출봉은 서귀포시 성산읍에 있습니다."}
+    ]',
+    '{"ar_character_id": 8, "point": 150, "coupon_location": "성산 로컬숍", "coupon_price": 3000}'),
+
+    (9, 1, 3, '[
+        {"quiz_index": 1, "img_url": null, "question": "제주 4·3 사건을 기억하고 추모하는 대표 공간은?", "options": ["제주4·3평화공원", "용두암", "천지연폭포", "협재해수욕장"], "answer": "제주4·3평화공원", "hint": "이름에 사건의 명칭이 들어가요.", "explanation": "제주4·3평화공원은 희생자를 추모하고 사건의 역사를 알리는 공간입니다."},
+        {"quiz_index": 2, "img_url": null, "question": "제주 4·3 희생자를 기리는 공원의 이름을 쓰세요.", "options": null, "answer": "제주4·3평화공원", "hint": "평화라는 단어가 포함됩니다.", "explanation": "제주4·3평화공원에는 기념관과 위령 공간이 마련되어 있습니다."},
+        {"quiz_index": 3, "img_url": null, "question": "제주 4·3을 기억하는 태도로 가장 알맞은 것은?", "options": ["희생자를 추모하고 역사를 배우기", "사건을 오락으로 소비하기", "기록을 훼손하기", "사실을 확인하지 않기"], "answer": "희생자를 추모하고 역사를 배우기", "hint": "기억과 평화의 의미를 생각해 보세요.", "explanation": "제주 4·3의 역사와 희생자를 존중하며 평화의 가치를 배우는 태도가 중요합니다."}
+    ]',
+    '{"ar_character_id": 9, "point": 120, "coupon_location": "제주4·3평화공원 북카페", "coupon_price": 2000}'),
+
+    (10, 1, 3, '[
+        {"quiz_index": 1, "img_url": null, "question": "제주의 전통 옹기를 굽던 가마를 무엇이라 하나요?", "options": ["굴가마", "도가니", "불턱", "정지"], "answer": "굴가마", "hint": "땅의 경사를 따라 길게 만든 가마예요.", "explanation": "제주 옹기는 경사진 지형을 이용한 굴가마에서 구웠습니다."},
+        {"quiz_index": 2, "img_url": null, "question": "제주 전통 옹기의 주재료를 쓰세요.", "options": null, "answer": "흙", "hint": "제주에서 얻은 점토를 사용해요.", "explanation": "제주 옹기는 제주 지역의 흙을 빚고 구워 만듭니다."},
+        {"quiz_index": 3, "img_url": null, "question": "옹기의 주요 용도로 알맞은 것은?", "options": ["음식과 물 저장", "금속 제련", "집의 기둥", "배의 돛"], "answer": "음식과 물 저장", "hint": "생활용 그릇을 떠올려 보세요.", "explanation": "옹기는 물과 곡식, 장류 등 생활 식품을 저장하는 데 사용됐습니다."}
+    ]',
+    '{"ar_character_id": 10, "point": 100, "coupon_location": "제주옹기체험관", "coupon_price": 2000}'),
+
+    (11, 1, 3, '[
+        {"quiz_index": 1, "img_url": null, "question": "제주에서 말을 기르던 넓은 들판을 흔히 무엇이라 하나요?", "options": ["목장", "염전", "갯벌", "다랑논"], "answer": "목장", "hint": "말과 소를 방목하는 곳이에요.", "explanation": "제주의 중산간 지역에는 말을 방목하던 목장 문화가 발달했습니다."},
+        {"quiz_index": 2, "img_url": null, "question": "제주 토종말을 부르는 이름을 쓰세요.", "options": null, "answer": "제주마", "hint": "지역 이름과 동물을 합친 말이에요.", "explanation": "제주마는 제주 환경에 적응해 온 토종 말 품종입니다."},
+        {"quiz_index": 3, "img_url": null, "question": "제주마가 잘 적응한 환경은?", "options": ["제주 중산간 초지", "사막", "열대 우림", "빙하 지대"], "answer": "제주 중산간 초지", "hint": "오름 주변의 넓은 풀밭이에요.", "explanation": "제주마는 바람이 강한 제주 중산간 초지 환경에 잘 적응했습니다."}
+    ]',
+    '{"ar_character_id": 11, "point": 120, "coupon_location": "제주마 목장 매점", "coupon_price": 2000}'),
+
+    (12, 1, 3, '[
+        {"quiz_index": 1, "img_url": null, "question": "제주 돌담의 주재료는?", "options": ["현무암", "벽돌", "대리석", "목재"], "answer": "현무암", "hint": "제주에서 흔히 볼 수 있는 검은 돌이에요.", "explanation": "제주 돌담은 주변에서 쉽게 구할 수 있는 현무암을 쌓아 만듭니다."},
+        {"quiz_index": 2, "img_url": null, "question": "밭의 경계를 두르는 제주 돌담을 무엇이라 하나요?", "options": null, "answer": "밭담", "hint": "밭과 담을 합친 말이에요.", "explanation": "밭담은 밭의 경계를 구분하고 바람과 가축으로부터 작물을 보호합니다."},
+        {"quiz_index": 3, "img_url": null, "question": "제주 돌담에 틈이 많은 이유는?", "options": ["바람이 통과하게 하려고", "물을 가두려고", "빛을 막으려고", "돌이 부족해서"], "answer": "바람이 통과하게 하려고", "hint": "강한 바람의 힘을 분산해요.", "explanation": "돌담의 틈으로 바람을 통과시켜 담이 무너지는 것을 줄입니다."}
+    ]',
+    '{"ar_character_id": 1, "point": 100, "coupon_location": "제주 밭담길 쉼터", "coupon_price": 2000}'),
+
+    (13, 1, 3, '[
+        {"quiz_index": 1, "img_url": null, "question": "제주에서 용천수가 솟는 해안 마을의 물을 무엇이라 부르나요?", "options": ["산물", "온천", "우물", "저수지"], "answer": "산물", "hint": "땅에서 솟아난 물이라는 뜻이에요.", "explanation": "제주에서는 땅에서 솟아나는 용천수를 산물이라고 부르기도 합니다."},
+        {"quiz_index": 2, "img_url": null, "question": "해녀들이 물질 전후 몸을 녹이고 쉬던 공간은 무엇인가요?", "options": null, "answer": "불턱", "hint": "불을 피우던 자리예요.", "explanation": "불턱은 해녀들이 불을 피워 몸을 녹이고 작업을 준비하던 공동체 공간입니다."},
+        {"quiz_index": 3, "img_url": null, "question": "용천수가 제주 생활문화에서 중요했던 이유는?", "options": ["식수와 생활용수로 사용해서", "금속을 생산해서", "소금을 만들지 못하게 해서", "바람을 막아서"], "answer": "식수와 생활용수로 사용해서", "hint": "섬에서 마실 물은 매우 중요해요.", "explanation": "지표수가 적은 제주에서 용천수는 중요한 식수와 생활용수였습니다."}
+    ]',
+    '{"ar_character_id": 2, "point": 100, "coupon_location": "김녕 해녀마을 상점", "coupon_price": 2000}'),
+
+    (14, 1, 3, '[
+        {"quiz_index": 1, "img_url": null, "question": "제주 민요로 널리 알려진 노래는?", "options": ["오돌또기", "아리랑", "강강술래", "쾌지나칭칭나네"], "answer": "오돌또기", "hint": "제주 흥겨운 가락을 대표해요.", "explanation": "오돌또기는 제주 지역을 대표하는 흥겨운 민요입니다."},
+        {"quiz_index": 2, "img_url": null, "question": "제주의 대표적인 민요 제목을 하나 쓰세요.", "options": null, "answer": "오돌또기", "hint": "다섯 글자의 제주 민요예요.", "explanation": "오돌또기는 제주를 대표하는 민요 중 하나입니다."},
+        {"quiz_index": 3, "img_url": null, "question": "민요가 전해지는 방식으로 가장 알맞은 것은?", "options": ["사람들이 부르며 구전", "기계가 자동 생성", "법률로만 기록", "그림으로만 전달"], "answer": "사람들이 부르며 구전", "hint": "입에서 입으로 이어져요.", "explanation": "민요는 지역 공동체가 함께 부르며 세대를 거쳐 구전되어 왔습니다."}
+    ]',
+    '{"ar_character_id": 3, "point": 120, "coupon_location": "제주 문화예술마당", "coupon_price": 2000}'),
+
+    (15, 1, 3, '[
+        {"quiz_index": 1, "img_url": null, "question": "제주의 대표 감귤 품종으로 겨울에 많이 먹는 것은?", "options": ["온주밀감", "사과", "복숭아", "배"], "answer": "온주밀감", "hint": "껍질을 손으로 쉽게 벗길 수 있어요.", "explanation": "온주밀감은 제주에서 널리 재배되는 대표적인 감귤 품종입니다."},
+        {"quiz_index": 2, "img_url": null, "question": "제주를 대표하는 겨울 과일을 쓰세요.", "options": null, "answer": "감귤", "hint": "주황색 과일이에요.", "explanation": "감귤은 제주의 기후와 농업문화를 상징하는 대표 과일입니다."},
+        {"quiz_index": 3, "img_url": null, "question": "제주 감귤밭에서 돌담이 하는 역할은?", "options": ["바람을 줄여 나무를 보호", "바닷물을 끌어오기", "햇빛을 완전히 차단", "나무를 이동시키기"], "answer": "바람을 줄여 나무를 보호", "hint": "제주의 강한 바람을 생각해 보세요.", "explanation": "감귤밭 돌담은 강한 바람을 줄여 감귤나무와 열매를 보호합니다."}
+    ]',
+    '{"ar_character_id": 4, "point": 150, "coupon_location": "서귀포 감귤상점", "coupon_price": 3000}');
 
 
 -- ---------------------------------------------------------------------
