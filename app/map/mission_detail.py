@@ -19,12 +19,7 @@ from app.common import rewards
 from app.common.rewards import GrantedRewards
 from app.cooperative_mission.models import CooperativeMission
 from app.map import location_missions
-from app.map.schemas import (
-    MapArCharacterRewardResponse,
-    MapCouponRewardResponse,
-    MapPointRewardResponse,
-    MapRewardDetailResponse,
-)
+from app.map.schemas import MapRewardDetailResponse
 from app.mission import reward_history
 from app.mission.completion import is_mission_completed
 from app.mission.models import Mission
@@ -120,37 +115,6 @@ def to_reward_detail(
 ) -> MapRewardDetailResponse:
     """미션에 설정된 보상 전체와 현재 사용자의 수령 여부를 함께 담는다.
 
-    이미 받은 보상도 정보를 지우지 않고 `is_received` 로만 구분한다.
-    미션에 아예 없는 보상 항목만 `null` 이다.
+    같은 형식을 여행 마무리 엽서 요소 조회도 쓰므로 조합은 공용 모듈이 한다.
     """
-    reward = reward_detail or {}
-    ar_character = rewards.to_ar_character(db, reward.get("ar_character_id"))
-    coupon = rewards.to_coupon(reward)
-    point = reward.get("point") or 0
-
-    return MapRewardDetailResponse(
-        ar_character=(
-            MapArCharacterRewardResponse(
-                id=ar_character.id,
-                name=ar_character.name,
-                image_url=ar_character.image_url,
-                is_received=granted.ar_character,
-            )
-            if ar_character
-            else None
-        ),
-        point=(
-            MapPointRewardResponse(amount=point, is_received=granted.point)
-            if point > 0
-            else None
-        ),
-        coupon=(
-            MapCouponRewardResponse(
-                coupon_location=coupon.coupon_location,
-                coupon_price=coupon.coupon_price,
-                is_received=granted.coupon,
-            )
-            if coupon
-            else None
-        ),
-    )
+    return rewards.to_full_reward_detail(db, reward_detail, granted)

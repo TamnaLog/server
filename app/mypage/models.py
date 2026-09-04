@@ -16,7 +16,7 @@ import해서 사용한다. (USER 는 여러 도메인이 공유해 app/user/mode
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, String, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.cooperative_mission.models import (
@@ -63,7 +63,7 @@ __all__ = [
 class TravelEndingContent(Base):
     """TRAVEL_ENDING_CONTENT - 여행 마무리 엽서.
 
-    `visited_place` / `missions` / `pictures` 는 엽서에 어떤 항목을 담을지 선택한 값이다.
+    엽서에 담을 항목을 선택값으로 나눠 갖지 않고, 완성된 엽서 이미지 URL 하나만 저장한다.
     """
 
     __tablename__ = "TRAVEL_ENDING_CONTENT"
@@ -72,16 +72,7 @@ class TravelEndingContent(Base):
     user_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("USER.id", ondelete="CASCADE"), nullable=False
     )
-    travel_summary: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    visited_place: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="0"
-    )
-    missions: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="0"
-    )
-    pictures: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="0"
-    )
+    image_url: Mapped[str] = mapped_column(String(500), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )

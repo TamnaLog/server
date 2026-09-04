@@ -26,6 +26,7 @@ ITEM_TOTAL_COUNT = 3
 
 LOCATION_ID = 7
 LOCATION_TITLE = "새별 오름"
+LOCATION_ADDRESS = "제주특별자치도 제주시 애월읍 봉성리 산 59-8"
 LOCATION_LAT = 33.3663
 LOCATION_LNG = 126.3577
 
@@ -67,7 +68,7 @@ def treasure_mission_data(db_session: Session) -> None:
                 id=LOCATION_ID,
                 content_id=2686931,
                 location_title=LOCATION_TITLE,
-                location_address="제주특별자치도 제주시 애월읍 봉성리 산 59-8",
+                location_address=LOCATION_ADDRESS,
                 location_category="오름",
                 radius=300,
                 mx=LOCATION_LNG,
@@ -161,7 +162,9 @@ def test_보물찾기를_처음_시작하면_명세의_필드를_모두_반환�
     assert body["treasureMissionProgressId"] == progresses[0].id
     assert body["missionProgressStatus"] == "IN_PROGRESS"
     assert body["location"] == {
+        "locationId": LOCATION_ID,
         "locationTitle": LOCATION_TITLE,
+        "locationAddress": LOCATION_ADDRESS,
         "lat": LOCATION_LAT,
         "lng": LOCATION_LNG,
     }
@@ -274,6 +277,23 @@ def test_진행_중인_기록이_있으면_새로_만들지_않고_200으로_이
     assert body["treasureMissionProgressId"] == 1
     # 진행도가 새로 생기지 않아야 한다.
     assert len(_progresses(db_session)) == 1
+
+
+def test_이어하기_응답도_같은_장소_id와_주소를_포함한다(
+    client: TestClient, db_session: Session, treasure_mission_data: None
+) -> None:
+    _add_progress(db_session, progress_id=1, found_item_idx=[1])
+
+    response = client.post(_endpoint(TREASURE_MISSION_ID), params=_params())
+
+    assert response.status_code == 200
+    assert response.json()["location"] == {
+        "locationId": LOCATION_ID,
+        "locationTitle": LOCATION_TITLE,
+        "locationAddress": LOCATION_ADDRESS,
+        "lat": LOCATION_LAT,
+        "lng": LOCATION_LNG,
+    }
 
 
 def test_이어하기는_저장된_보물_좌표를_그대로_반환한다(

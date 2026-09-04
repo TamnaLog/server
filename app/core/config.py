@@ -7,7 +7,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_name: str = "jamkkan-jeju-api"
     environment: str = Field(default="development")
-    debug: bool = Field(default=True)
+    # 범용 DEBUG 환경변수는 VS Code/Codex 등 외부 도구와 충돌할 수 있으므로
+    # 이 애플리케이션 전용 APP_DEBUG만 읽는다.
+    debug: bool = Field(default=False, validation_alias="APP_DEBUG")
     cors_allowed_origins: str = Field(default="http://localhost:3000")
 
     mysql_host: str = Field(default="localhost")
@@ -26,6 +28,11 @@ class Settings(BaseSettings):
     openai_audio_transcription_model: str = Field(default="gpt-4o-mini-transcribe")
     openai_audio_title_model: str = Field(default="gpt-4o-mini")
     openai_timeout_seconds: float = Field(default=30)
+
+    # OpenAI (여행 마무리 엽서 이미지 생성)
+    # 이미지 생성은 오디오 제목 생성보다 오래 걸려서 모델과 타임아웃을 따로 둔다.
+    openai_image_generation_model: str = Field(default="gpt-image-2")
+    openai_image_timeout_seconds: float = Field(default=120)
 
     kto_base_url: str = Field(default="https://apis.data.go.kr/B551011/KorService2")
     kto_service_key: str = Field(default="")

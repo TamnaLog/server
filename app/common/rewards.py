@@ -13,6 +13,9 @@
 - `GrantedRewardResponse`: 이번 요청으로 실제 지급된 보상 (미션 완료)
 
 전체 보상(`RewardDetailResponse`)과 달리 두 응답은 해당 없는 항목이 포인트까지 `null` 이다.
+
+보상 3종을 항목별 수령 여부와 함께 내려주는 응답은 `FullRewardDetailResponse` 를 쓴다.
+(지도 미션 상세, 여행 마무리 엽서 요소 조회)
 """
 
 from dataclasses import dataclass
@@ -95,6 +98,40 @@ def to_coupon(reward: dict[str, Any]) -> CouponResponse | None:
     return CouponResponse(coupon_location=coupon_location, coupon_price=coupon_price)
 
 
+class ArCharacterRewardResponse(ArCharacterResponse):
+    """AR 캐릭터 보상. 이미 받았어도 정보를 그대로 주고 `is_received` 로만 구분한다."""
+
+    is_received: bool
+
+
+class PointRewardResponse(CamelModel):
+    """포인트 보상."""
+
+    amount: int
+    is_received: bool
+
+
+class CouponRewardResponse(CouponResponse):
+    """쿠폰 보상."""
+
+    is_received: bool
+
+
+class FullRewardDetailResponse(CamelModel):
+    """미션의 **전체** 보상 정보와 현재 사용자의 수령 여부.
+
+    아직 안 받은 보상만 주는 `RemainingRewardResponse` 와 달리 수령 여부와 관계없이
+    세 종류를 모두 담고, 각 항목의 `is_received` 로 현재 사용자의 수령 여부를 구분한다.
+    미션에 설정되지 않은 보상 항목만 `null` 이다.
+
+    지도 미션 상세와 여행 마무리 엽서 요소 조회가 같은 형식을 쓴다.
+    """
+
+    ar_character: ArCharacterRewardResponse | None = None
+    point: PointRewardResponse | None = None
+    coupon: CouponRewardResponse | None = None
+
+
 @dataclass(frozen=True)
 class GrantedRewards:
     """미션의 과거 진행도 이력에서 한 번이라도 지급된 적이 있는 보상."""
@@ -167,4 +204,45 @@ def to_remaining_reward(
         ),
         point=None if granted.point or point <= 0 else point,
         coupon=None if granted.coupon else to_coupon(reward),
+    )
+
+
+def to_full_reward_detail(
+    db: Session, reward_detail: dict[str, Any] | None, granted: GrantedRewards
+) -> FullRewardDetailResponse:
+    """미션에 설정된 보상 전체와 현재 사용자의 수령 여부를 함께 담는다.
+
+    이미 받은 보상도 정보를 지우지 않고 `is_received` 로만 구분한다.
+    미션에 아예 없는 보상 항목만 `null` 이다.
+    """
+    reward = reward_detail or {}
+    ar_character = to_ar_character(db, reward.get("ar_character_id"))
+    coupon = to_coupon(reward)
+    point = reward.get("point") or 0
+
+    return FullRewardDetailResponse(
+        ar_character=(
+            ArCharacterRewardResponse(
+                id=ar_character.id,
+                name=ar_character.name,
+                image_url=ar_character.image_url,
+                is_received=granted.ar_character,
+            )
+            if ar_character
+            else None
+        ),
+        point=(
+            PointRewardResponse(amount=point, is_received=granted.point)
+            if point > 0
+            else None
+        ),
+        coupon=(
+            CouponRewardResponse(
+                coupon_location=coupon.coupon_location,
+                coupon_price=coupon.coupon_price,
+                is_received=granted.coupon,
+            )
+            if coupon
+            else None
+        ),
     )

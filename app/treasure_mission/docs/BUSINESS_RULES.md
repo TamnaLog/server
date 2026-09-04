@@ -113,10 +113,14 @@ dot(P - L, U - L) >= 0
 - `treasureMissionProgressId`: 새로 생성하거나 조회한 보물찾기 진행도 id
 - `missionProgressStatus`: `IN_PROGRESS`
 - `location`: 미션에 연결된 장소의 이름과 좌표
+- `location.locationId`: `TREASURE_MISSION.location_id`로 연결된 `LOCATION.id`
+- `location.locationAddress`: 연결된 `LOCATION.location_address`
 - `treasureCount`: `TREASURE_MISSION.item_total_count`
 - `treasureItems`: 진행도의 `item_detail`과 `current_found_item_idx`를 조합한 전체 보물 목록
 
 `treasureItems`는 `treasureIndex` 오름차순으로 정렬한다.
+
+신규 시작 `201 Created`와 이어하기 `200 OK` 모두 동일한 장소 id와 주소를 포함한다.
 
 ## 8. 오류 응답
 
@@ -131,6 +135,11 @@ Path 또는 Query의 형식이나 값이 유효하지 않은 경우 공통 요�
 ### 404 `TREASURE_MISSION_NOT_FOUND`
 
 `treasureMissionId`에 해당하는 보물찾기 미션이 존재하지 않는 경우 반환한다.
+
+## 9. 수정사항
+
+- 보물찾기 시작/이어하기 응답의 `location`에 `locationId`와 `locationAddress`를 추가한다.
+- 값은 미션에 연결된 `LOCATION.id`, `LOCATION.location_address`를 사용하며 신규 시작과 이어하기에 동일하게 적용한다.
 
 # 보물찾기 진행도 저장 비즈니스 룰
 
@@ -542,3 +551,76 @@ Blob 업로드에 실패하면 DB 데이터를 생성하지 않는다. Blob 업�
 - 실제 이미지 형식을 판별할 수 없거나 파일이 손상된 경우
 - 실제 이미지 형식이 JPEG, PNG, WebP 중 하나가 아닌 경우
 - `takenAt`이 KST 기준 offset 없는 ISO 8601 형식이 아닌 경우
+
+# 완료한 보물찾기 추천 화면 비즈니스 룰
+
+## 1. 완료 미션 조회와 검증 순서
+
+1. `missionType`이 `TREASURE`인지 확인한다.
+2. `TREASURE_MISSION.id = missionId`인 보물찾기를 `MISSION`, `LOCATION`과 함께 조회한다.
+3. `TREASURE_MISSION_PROGRESS.user_id = current_user_id`, `treasure_mission_id = missionId`, `mission_status = COMPLETED`인 진행도 중 `completed_at DESC`, 동률이면 `id DESC` 첫 행을 선택한다.
+4. 선택한 진행도의 `item_detail[].index` 전체가 `current_found_item_idx`에 각각 한 번 이상 포함되어 있는지 검사한다.
+
+1~3단계에서 대상을 찾지 못하면 모두 `TREASURE_MISSION_NOT_FOUND`로 처리한다. 4단계에서 누락된 index가 하나라도 있으면 완료 상태로 저장되어 있더라도 `TREASURE_ITEMS_REMAINING`으로 처리한다. `current_found_item_idx`의 중복값은 서로 다른 보물을 찾은 것으로 세지 않는다.
+
+완료 시각은 선택한 진행도의 `completed_at`을 사용한다. 완료 미션의 AR 캐릭터 이미지는 `TREASURE_MISSION.reward_detail.ar_character_id`로 `AR_CHARACTER`를 조회하여 구성하며, 보상이 설정되지 않았거나 연결된 캐릭터가 없으면 `null`로 둔다.
+
+## 2. 근처 보물찾기 선정
+
+추천 후보는 전체 `TREASURE_MISSION` 중 다음 조건을 모두 만족하는 행이다.
+
+- 현재 화면의 `missionId`와 다른 미션
+- `item_total_count > 0`인 미션
+- 연결된 `MISSION`과 `LOCATION`을 조회할 수 있는 미션
+
+현재 사용자가 이전에 완료한 다른 보물찾기도 후보에서 제외하지 않는다. 사용자 좌표와 `LOCATION.my`, `LOCATION.mx` 사이의 거리는 `app/common/distance.py`의 `calculate_distance_meter()`로 계산하고, `distanceMeter ASC`, 동률이면 `TREASURE_MISSION.id ASC`로 정렬하여 앞의 3개만 선택한다. 예상 소요 시간도 같은 공통 모듈의 `calculate_duration_minutes()`로 계산한다.
+
+장소 대표 이미지는 `LOCATION.content_id`로 `app/services/kto.py`의 `get_location_image_url()`을 호출한다. TourAPI의 `firstimage`, `firstimage2` 순서로 사용하며, 이미지가 없거나 외부 조회가 실패해도 추천 조회 전체를 실패시키지 않고 해당 이미지만 `null`로 둔다.
+
+## 3. 추천 미션 보상 구성
+
+각 추천 미션은 `TREASURE_MISSION.reward_detail`에 설정된 AR 캐릭터, 포인트, 쿠폰 보상을 모두 유지한다. 이미 받은 보상도 제거하거나 `null`로 바꾸지 않고 `isReceived = true`로 구분하며, 해당 종류의 보상이 애초에 설정되지 않은 경우에만 그 보상 객체를 `null`로 둔다.
+
+수령 여부는 가장 최근 진행도 한 건이 아니라 현재 사용자의 해당 `treasure_mission_id` 전체 `TREASURE_MISSION_PROGRESS` 이력을 보상 종류별로 OR하여 판단한다. 이 집계는 `app/mission/reward_history.py`의 `get_granted_rewards_map()`을 한 번 호출하여 처리하고, 추천 미션마다 개별 조회하지 않는다. 보상 응답 변환은 `app/common/rewards.py`의 `to_full_reward_detail()`을 사용한다.
+
+## 4. 받은 쿠폰 집계
+
+별도 쿠폰 테이블을 만들거나 조회하지 않는다. 현재 사용자가 수령한 쿠폰은 유형별 세부 미션의 `reward_detail`과 진행도의 `coupon_reward_granted`를 다음 기준으로 조합한다.
+
+| 미션 유형 | 진행도와 사용자 연결 조건 |
+| --- | --- |
+| `CULTURE` | `CULTURE_MISSION_PROGRESS.user_id = current_user_id` |
+| `TREASURE` | `TREASURE_MISSION_PROGRESS.user_id = current_user_id` |
+| `COOPERATIVE` | 삭제되지 않은 `COOPERATIVE_MISSION_PROGRESS`에 연결된, `participant_status = ACCEPTED`이면서 삭제되지 않은 `COOPERATIVE_MISSION_PARTICIPANT.user_id = current_user_id` |
+
+진행도의 `coupon_reward_granted = true`이고 해당 세부 미션의 `reward_detail`에 `coupon_location`과 `coupon_price`가 모두 설정된 경우만 포함한다. 같은 세부 미션을 여러 번 수행했더라도 `(missionType, 유형별 세부 missionId)`당 한 번만 포함한다. 서로 다른 미션에서 같은 사용처와 같은 금액의 쿠폰을 받았다면 서로 다른 수령 건이므로 합치지 않는다.
+
+## 5. 쿠폰 장소 결합
+
+각 쿠폰의 `coupon_location`과 `LOCATION.location_title`을 완전 일치로 비교한다. 부분 일치나 유사어 검색은 하지 않는다. 같은 이름의 장소가 여러 행이면 `LOCATION.id ASC` 첫 행을 사용한다.
+
+일치한 장소에서는 다음 값을 가져온다.
+
+- 장소 id: `LOCATION.id`
+- 주소: `LOCATION.location_address`
+- 대표 이미지 조회 키: `LOCATION.content_id`
+
+대표 이미지는 근처 보물찾기와 동일하게 `get_location_image_url()`로 조회한다. 일치하는 장소가 없으면 장소 id, 주소, 대표 이미지를 모두 `null`로 둔다. 장소는 찾았지만 TourAPI 이미지가 없거나 조회에 실패한 경우에는 장소 id와 주소는 유지하고 대표 이미지만 `null`로 둔다.
+
+## 6. 상태 변경과 구현 책임
+
+이 기능은 조회 전용이다. 미션 진행도, 보상 지급 여부, 사용자 포인트, 획득 캐릭터를 생성하거나 변경하지 않는다. 추천 목록 또는 받은 쿠폰 목록이 없으면 각각 빈 배열로 유지한다.
+
+완료 미션 검증, 근처 추천, 쿠폰 집계는 보물찾기 완료 화면 서비스에서 조합하되 거리·소요 시간, 보상 이력 집계, 보상 변환, TourAPI 이미지 조회는 기존 공통 모듈을 재사용한다. 목록 데이터와 보상 지급 이력은 일괄 조회하여 미션 또는 쿠폰 수에 비례하는 N+1 쿼리가 발생하지 않도록 한다.
+
+## 7. 필수 테스트
+
+- 최근 완료 진행도를 `completed_at DESC`, `id DESC`로 선택하는지 검증한다.
+- `current_found_item_idx`에 중복만 있고 설정된 index가 누락된 경우 완료로 인정하지 않는지 검증한다.
+- 현재 미션과 `item_total_count <= 0`인 미션은 제외하고, 다른 완료 미션은 포함하여 거리순 최대 3개를 반환하는지 검증한다.
+- 추천 미션의 전체 진행도 이력을 OR하여 보상별 수령 여부를 계산하고, 미설정 보상만 `null`이 되는지 검증한다.
+- 문화·보물찾기·협동 미션의 수령 쿠폰을 집계하고, 같은 세부 미션의 반복 진행만 제거하는지 검증한다.
+- 협동 미션은 삭제되지 않은 `ACCEPTED` 참가 기록만 현재 사용자의 수령 이력으로 인정하는지 검증한다.
+- 쿠폰 사용처와 같은 이름의 장소가 여러 개면 가장 작은 id의 장소 주소까지 반환하는지 검증한다.
+- 장소 미일치와 TourAPI 조회 실패를 구분하여 장소 id·주소·이미지의 `null` 범위를 적용하는지 검증한다.
+- 조회 전후 관련 테이블의 데이터가 변경되지 않는지 검증한다.

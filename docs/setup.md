@@ -190,7 +190,7 @@ App Service > jankkan-jeju > Environment variables
 WEBSITES_PORT=8000
 APP_NAME=jamkkan-jeju-api
 ENVIRONMENT=production
-DEBUG=false
+APP_DEBUG=false
 MYSQL_HOST=jankkan-jeju-mysql.mysql.database.azure.com
 MYSQL_PORT=3306
 MYSQL_DATABASE=tour
