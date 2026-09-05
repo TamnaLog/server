@@ -48,11 +48,16 @@ class TreasureLocationResponse(CamelModel):
 
 
 class TreasureMissionLocationResponse(CamelModel):
-    """보물찾기 미션이 진행되는 장소."""
+    """보물찾기 미션이 진행되는 장소.
+
+    `location_description` 은 TourAPI `detailCommon2.overview` 를 정리한 설명의 첫 문장이다.
+    조회에 실패하거나 `overview` 가 없으면 `null` 이다.
+    """
 
     location_id: int
     location_title: str
     location_address: str
+    location_description: str | None = None
     lat: float
     lng: float
 

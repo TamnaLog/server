@@ -33,7 +33,7 @@
 - 처음 시작하면 201로 응답하고 명세의 필드를 모두 반환한다.
   (`treasureMissionProgressId`, `missionProgressStatus`, `location`, `treasureCount`,
   `treasureItems` / camelCase 확인)
-- `location` 은 미션에 연결된 장소의 id·이름·주소·좌표다.
+- `location` 은 미션에 연결된 장소의 id·이름·주소·한 줄 설명·좌표다.
   (`locationId`/`locationAddress` 는 `LOCATION.id`/`LOCATION.location_address`,
   `my`=위도 / `mx`=경도를 뒤집지 않았는지 확인)
 - `treasureItems` 는 `treasureIndex` 오름차순이고, 신규 진행도는 전부 `isFound=false` 다.
@@ -56,22 +56,35 @@
 #### 4. 이어하기
 
 - `IN_PROGRESS` 진행도가 있으면 200이고 진행도 개수는 그대로다.
-- 이어하기 응답의 `location` 도 신규 시작과 같은 장소 id·주소를 포함한다.
+- 이어하기 응답의 `location` 도 신규 시작과 같은 장소 id·주소·한 줄 설명을 포함한다.
 - **요청 좌표를 다르게 보내도** 저장된 보물 좌표를 그대로 반환한다. (좌표 재생성 금지)
 - `current_found_item_idx` 에 든 index만 `isFound=true` 다.
 - 완료 기록만 있으면 재도전으로 201, 새 진행도가 생기고 **기존 완료 기록은 그대로** 남는다.
 - 시작 API를 연속 두 번 호출하면 201 → 200이고 같은 진행도 id를 반환한다.
 
-#### 5. 사용자 / 미션 구분
+#### 5. 장소 한 줄 설명
+
+TourAPI 는 외부 서비스라 테스트에서 실제로 호출하지 않는다.
+`service.kto.get_location_overview` 를 autouse 픽스처로 대체하고, 반환값만 바꿔가며 검증한다.
+(HTML 정리는 공통 함수의 책임이라 `app/map/tests/test_location_overview.py` 에서 검증하고,
+여기서는 **정리된 설명에서 첫 문장을 어떻게 자르는지**만 본다)
+
+- 설명이 여러 문장이면 `locationDescription` 은 첫 문장 하나다.
+- 첫 번째로 등장한 `.` / `!` / `?` 까지 자르고, 종결 부호가 없으면 전체 문자열을 그대로 쓴다.
+- 조회 실패(`None`)면 `locationDescription` 은 `null` 이고, **신규 시작은 201로 성공하고
+  진행도도 정상 생성된다.** (부가 정보 때문에 미션 시작이 실패하면 안 된다)
+- 이어하기(200)에서도 같은 규칙으로 `null` 을 반환한다.
+
+#### 6. 사용자 / 미션 구분
 
 - 다른 사용자의 `IN_PROGRESS` 진행도는 이어받지 않고 새로 만든다.
 - 다른 보물찾기 미션의 진행도도 이어받지 않는다.
 
-#### 6. 404 `TREASURE_MISSION_NOT_FOUND`
+#### 7. 404 `TREASURE_MISSION_NOT_FOUND`
 
 - 미션이 없으면 404이고, 이때 **진행도를 만들지 않는다.**
 
-#### 7. 400 `INVALID_REQUEST`
+#### 8. 400 `INVALID_REQUEST`
 
 - 위치(`latitude` / `longitude`) 누락·범위 초과·숫자 아님
 - `treasureMissionId` 가 0 이하이거나 정수가 아님

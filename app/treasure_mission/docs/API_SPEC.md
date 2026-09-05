@@ -16,7 +16,7 @@ Path로 전달받은 `treasureMissionId`를 사용하여 보물찾기 미션을 
 
 완료된 진행도만 존재하고 `IN_PROGRESS` 진행도가 없으면 재도전으로 판단하여 새로운 진행도를 생성한다.
 
-프론트에서 보물찾기 화면을 구성할 수 있도록 진행도 id, 진행 상태, 미션 장소의 id·이름·주소·좌표, 전체 보물 개수, 보물별 좌표와 발견 여부를 반환한다. 보물 표시 및 인식 반경은 프론트에서 관리하며 이 API의 요청과 응답에 포함하지 않는다.
+프론트에서 보물찾기 화면을 구성할 수 있도록 진행도 id, 진행 상태, 미션 장소의 id·이름·주소·한 줄 설명·좌표, 전체 보물 개수, 보물별 좌표와 발견 여부를 반환한다. 장소 한 줄 설명은 TourAPI `detailCommon2`의 `overview`를 일반 문자열로 정리한 뒤 첫 문장만 사용하며, 신규 시작과 이어하기 응답에 모두 포함한다. 보물 표시 및 인식 반경은 프론트에서 관리하며 이 API의 요청과 응답에 포함하지 않는다.
 
 ---
 
@@ -67,6 +67,7 @@ Status Code : 200
 | `location.locationId`           | number   | 미션 장소의 LOCATION id                                                |
 | `location.locationTitle`        | string   | 미션 장소명                                                            |
 | `location.locationAddress`      | string   | 미션 장소 주소                                                         |
+| `location.locationDescription`  | string \| null | TourAPI `detailCommon2.overview`를 정리한 장소 설명의 첫 문장. `overview`가 없거나 조회에 실패하면 null |
 | `location.lat`                  | number   | 미션 장소의 위도                                                       |
 | `location.lng`                  | number   | 미션 장소의 경도                                                       |
 | `treasureCount`                 | number   | 보물찾기 미션의 전체 보물 개수                                         |
@@ -87,6 +88,7 @@ Status Code : 200
     "locationId": 15,
     "locationTitle": "새별 오름",
     "locationAddress": "제주특별자치도 제주시 애월읍 봉성리 산59-8",
+    "locationDescription": "새별오름은 저녁 하늘에 샛별과 같이 외롭게 서 있다고 하여 붙여진 이름입니다.",
     "lat": 33.3663,
     "lng": 126.3577
   },
@@ -120,6 +122,10 @@ Status Code : 200
 }
 ```
 
+- `locationDescription`은 `LOCATION.content_id`로 TourAPI를 조회하여 만든다.
+- HTML 태그·엔티티와 불필요한 공백을 정리한 뒤 첫 번째 문장 종결 부호(`.`, `!`, `?`)까지 반환한다. 종결 부호가 없으면 정리된 전체 문자열을 반환한다.
+- TourAPI 인증키 미설정, 통신 실패, `overview` 부재 또는 정리 결과가 빈 문자열인 경우 `locationDescription`은 `null`이며 API 전체 요청은 정상 처리한다.
+
 이어하기 응답 예시 `200 OK`
 
 ```json
@@ -130,6 +136,7 @@ Status Code : 200
     "locationId": 15,
     "locationTitle": "새별 오름",
     "locationAddress": "제주특별자치도 제주시 애월읍 봉성리 산59-8",
+    "locationDescription": "새별오름은 저녁 하늘에 샛별과 같이 외롭게 서 있다고 하여 붙여진 이름입니다.",
     "lat": 33.3663,
     "lng": 126.3577
   },

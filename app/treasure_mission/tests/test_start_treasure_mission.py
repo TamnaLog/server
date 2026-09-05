@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.common.distance import calculate_distance_meter
 from app.map.models import Location
 from app.mission.models import Mission, MissionStatus
+from app.treasure_mission import service
 from app.treasure_mission.constants import TREASURE_APPEAR_RADIUS_METER
 from app.treasure_mission.models import TreasureMission, TreasureMissionProgress
 from app.user.models import User
@@ -29,6 +30,14 @@ LOCATION_TITLE = "새별 오름"
 LOCATION_ADDRESS = "제주특별자치도 제주시 애월읍 봉성리 산 59-8"
 LOCATION_LAT = 33.3663
 LOCATION_LNG = 126.3577
+LOCATION_CONTENT_ID = 2686931
+
+# TourAPI `overview` 를 정리한 문자열과 응답에 나가야 하는 첫 문장
+LOCATION_OVERVIEW = (
+    "새별오름은 저녁 하늘에 샛별과 같이 외롭게 서 있다고 하여 붙여진 이름입니다."
+    " 매년 정월대보름에는 들불축제가 열립니다."
+)
+LOCATION_DESCRIPTION = "새별오름은 저녁 하늘에 샛별과 같이 외롭게 서 있다고 하여 붙여진 이름입니다."
 
 OTHER_USER_ID = 2
 
@@ -52,6 +61,19 @@ def _params(**overrides: object) -> dict[str, object]:
     return {"latitude": USER_LATITUDE, "longitude": USER_LONGITUDE, **overrides}
 
 
+@pytest.fixture(autouse=True)
+def fake_location_overview(monkeypatch: pytest.MonkeyPatch) -> list[str | None]:
+    """TourAPI 장소 설명 조회를 대체한다. 반환값을 바꾸려면 리스트의 0번을 교체한다."""
+    overview: list[str | None] = [LOCATION_OVERVIEW]
+
+    def fake_get_location_overview(content_id: int) -> str | None:
+        assert content_id == LOCATION_CONTENT_ID
+        return overview[0]
+
+    monkeypatch.setattr(service.kto, "get_location_overview", fake_get_location_overview)
+    return overview
+
+
 @pytest.fixture
 def treasure_mission_data(db_session: Session) -> None:
     """공통 미션 / 장소 / 보물찾기 미션 / 사용자 목업 데이터."""
@@ -66,7 +88,7 @@ def treasure_mission_data(db_session: Session) -> None:
             ),
             Location(
                 id=LOCATION_ID,
-                content_id=2686931,
+                content_id=LOCATION_CONTENT_ID,
                 location_title=LOCATION_TITLE,
                 location_address=LOCATION_ADDRESS,
                 location_category="오름",
@@ -165,6 +187,7 @@ def test_보물찾기를_처음_시작하면_명세의_필드를_모두_반환�
         "locationId": LOCATION_ID,
         "locationTitle": LOCATION_TITLE,
         "locationAddress": LOCATION_ADDRESS,
+        "locationDescription": LOCATION_DESCRIPTION,
         "lat": LOCATION_LAT,
         "lng": LOCATION_LNG,
     }
@@ -279,7 +302,7 @@ def test_진행_중인_기록이_있으면_새로_만들지_않고_200으로_이
     assert len(_progresses(db_session)) == 1
 
 
-def test_이어하기_응답도_같은_장소_id와_주소를_포함한다(
+def test_이어하기_응답도_같은_장소_id와_주소_설명을_포함한다(
     client: TestClient, db_session: Session, treasure_mission_data: None
 ) -> None:
     _add_progress(db_session, progress_id=1, found_item_idx=[1])
@@ -291,6 +314,7 @@ def test_이어하기_응답도_같은_장소_id와_주소를_포함한다(
         "locationId": LOCATION_ID,
         "locationTitle": LOCATION_TITLE,
         "locationAddress": LOCATION_ADDRESS,
+        "locationDescription": LOCATION_DESCRIPTION,
         "lat": LOCATION_LAT,
         "lng": LOCATION_LNG,
     }
@@ -365,6 +389,74 @@ def test_시작_API를_연속으로_호출해도_진행도는_하나만_남는�
         == second.json()["treasureMissionProgressId"]
     )
     assert len(_progresses(db_session)) == 1
+
+
+# ---------------------------------------------------------------------
+# 장소 한 줄 설명 (BUSINESS_RULES 7.)
+# ---------------------------------------------------------------------
+
+
+def test_장소_설명은_TourAPI_설명의_첫_문장만_반환한다(
+    client: TestClient, treasure_mission_data: None
+) -> None:
+    body = client.post(_endpoint(TREASURE_MISSION_ID), params=_params()).json()
+
+    assert body["location"]["locationDescription"] == LOCATION_DESCRIPTION
+
+
+@pytest.mark.parametrize(
+    ("overview", "expected"),
+    [
+        ("첫 문장! 둘째 문장.", "첫 문장!"),
+        ("첫 문장? 둘째 문장.", "첫 문장?"),
+        # 종결 부호가 없으면 정리된 전체 문자열을 그대로 쓴다.
+        ("종결 부호가 없는 설명", "종결 부호가 없는 설명"),
+    ],
+)
+def test_첫_번째_종결_부호까지를_장소_설명으로_사용한다(
+    client: TestClient,
+    treasure_mission_data: None,
+    fake_location_overview: list[str | None],
+    overview: str,
+    expected: str,
+) -> None:
+    fake_location_overview[0] = overview
+
+    body = client.post(_endpoint(TREASURE_MISSION_ID), params=_params()).json()
+
+    assert body["location"]["locationDescription"] == expected
+
+
+def test_TourAPI_설명을_얻지_못하면_장소_설명은_null이고_시작은_성공한다(
+    client: TestClient,
+    db_session: Session,
+    treasure_mission_data: None,
+    fake_location_overview: list[str | None],
+) -> None:
+    # 인증키 미설정/통신 실패/overview 부재는 모두 공통 함수가 None 으로 돌려준다.
+    fake_location_overview[0] = None
+
+    response = client.post(_endpoint(TREASURE_MISSION_ID), params=_params())
+
+    assert response.status_code == 201
+    assert response.json()["location"]["locationDescription"] is None
+    # 진행도는 정상적으로 생성돼야 한다.
+    assert len(_progresses(db_session)) == 1
+
+
+def test_이어하기에서도_TourAPI_설명을_얻지_못하면_장소_설명은_null이다(
+    client: TestClient,
+    db_session: Session,
+    treasure_mission_data: None,
+    fake_location_overview: list[str | None],
+) -> None:
+    _add_progress(db_session, progress_id=1, found_item_idx=[1])
+    fake_location_overview[0] = None
+
+    response = client.post(_endpoint(TREASURE_MISSION_ID), params=_params())
+
+    assert response.status_code == 200
+    assert response.json()["location"]["locationDescription"] is None
 
 
 # ---------------------------------------------------------------------

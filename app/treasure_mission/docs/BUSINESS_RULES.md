@@ -108,19 +108,19 @@ dot(P - L, U - L) >= 0
 - 포함되지 않은 보물 index는 `isFound: false`로 반환한다.
 - 기존 진행도 id와 미션 정보를 `200 OK`로 반환한다.
 
-## 7. 응답 데이터 구성
+## 7. 장소 정보 및 응답 조합
 
-- `treasureMissionProgressId`: 새로 생성하거나 조회한 보물찾기 진행도 id
-- `missionProgressStatus`: `IN_PROGRESS`
-- `location`: 미션에 연결된 장소의 이름과 좌표
-- `location.locationId`: `TREASURE_MISSION.location_id`로 연결된 `LOCATION.id`
-- `location.locationAddress`: 연결된 `LOCATION.location_address`
-- `treasureCount`: `TREASURE_MISSION.item_total_count`
-- `treasureItems`: 진행도의 `item_detail`과 `current_found_item_idx`를 조합한 전체 보물 목록
+신규 시작과 이어하기는 동일한 `_to_response()`와 `_to_mission_location()` 경로로 장소 정보를 조합하여 두 분기에서 필드가 달라지지 않게 한다.
 
-`treasureItems`는 `treasureIndex` 오름차순으로 정렬한다.
+1. `TREASURE_MISSION.location_id`로 연결된 `LOCATION`에서 id, 장소명, 주소와 좌표를 가져온다.
+2. `LOCATION.content_id`를 `app.services.kto.get_location_overview()`에 전달하여 TourAPI `detailCommon2.overview`를 조회한다. 이 공통 함수가 HTML 엔티티 변환, 태그 제거와 연속 공백 정리를 담당하므로 보물찾기 서비스에 동일한 정리 코드를 복제하지 않는다.
+3. 보물찾기 서비스의 별도 private 함수에서 정리된 설명의 첫 번째 문장만 추출한다. `.`, `!`, `?` 중 가장 먼저 등장한 종결 부호까지 포함하며, 종결 부호가 하나도 없으면 정리된 전체 문자열을 사용한다.
+4. 공통 TourAPI 함수가 `None`을 반환하거나 정리 결과가 비어 있으면 장소 한 줄 설명을 `null`로 둔다. 인증키 미설정, 외부 통신 실패 또는 `overview` 부재를 이유로 진행도 생성 트랜잭션이나 이어하기 응답을 실패시키지 않는다.
+5. 조회한 설명은 응답에만 사용하고 `LOCATION`이나 진행도 테이블에는 저장하지 않는다.
 
-신규 시작 `201 Created`와 이어하기 `200 OK` 모두 동일한 장소 id와 주소를 포함한다.
+TourAPI 조회는 진행도 생성 여부와 무관하게 응답 한 건을 조합할 때 한 번만 수행한다. 이어하기에서도 현재 장소 설명을 반환하지만 보물 좌표와 진행도 데이터는 기존 저장값을 그대로 사용한다.
+
+보물 목록은 진행도의 `item_detail`과 `current_found_item_idx`를 조합하고 `treasureIndex` 오름차순으로 정렬한다.
 
 ## 8. 오류 응답
 
@@ -135,11 +135,6 @@ Path 또는 Query의 형식이나 값이 유효하지 않은 경우 공통 요�
 ### 404 `TREASURE_MISSION_NOT_FOUND`
 
 `treasureMissionId`에 해당하는 보물찾기 미션이 존재하지 않는 경우 반환한다.
-
-## 9. 수정사항
-
-- 보물찾기 시작/이어하기 응답의 `location`에 `locationId`와 `locationAddress`를 추가한다.
-- 값은 미션에 연결된 `LOCATION.id`, `LOCATION.location_address`를 사용하며 신규 시작과 이어하기에 동일하게 적용한다.
 
 # 보물찾기 진행도 저장 비즈니스 룰
 

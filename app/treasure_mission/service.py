@@ -176,14 +176,42 @@ def _to_response(
 
 
 def _to_mission_location(location: Location) -> TreasureMissionLocationResponse:
-    """LOCATION 은 my=위도 / mx=경도로 저장한다."""
+    """LOCATION 은 my=위도 / mx=경도로 저장한다.
+
+    장소 한 줄 설명은 TourAPI `detailCommon2.overview` 의 첫 문장이다.
+    HTML 정리는 공통 함수가 하므로 여기서는 첫 문장만 잘라 쓴다.
+    조회에 실패해도(`None`) 신규 시작/이어하기 응답 전체를 실패시키지 않는다.
+    (app/treasure_mission/docs/BUSINESS_RULES.md - 7장)
+    """
     return TreasureMissionLocationResponse(
         location_id=location.id,
         location_title=location.location_title,
         location_address=location.location_address,
+        location_description=_to_first_sentence(kto.get_location_overview(location.content_id)),
         lat=location.my,
         lng=location.mx,
     )
+
+
+# 문장 종결 부호. 가장 먼저 나오는 하나까지를 첫 문장으로 본다.
+_SENTENCE_ENDINGS = (".", "!", "?")
+
+
+def _to_first_sentence(description: str | None) -> str | None:
+    """정리된 장소 설명에서 첫 문장만 남긴다.
+
+    종결 부호가 하나도 없으면 정리된 문자열을 그대로 쓰고, 설명이 없으면 `None` 이다.
+    """
+    if not description:
+        return None
+
+    ending_indexes = [
+        index for index in (description.find(mark) for mark in _SENTENCE_ENDINGS) if index != -1
+    ]
+    if not ending_indexes:
+        return description
+
+    return description[: min(ending_indexes) + 1]
 
 
 def _to_treasure_items(
