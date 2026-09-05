@@ -46,7 +46,7 @@ class NextLocationMissionResponse(CamelModel):
 class NextLocationSummaryResponse(CamelModel):
     """미션 완료 후 추천하는 다음 장소. (거리 없음)
 
-    사용자 좌표를 받지 않는 API(협동 미션 상태 조회)는 거리를 계산할 수 없어 이 형식을 쓴다.
+    사용자 좌표를 받지 않는 API(협동 미션 나가기)는 거리를 계산할 수 없어 이 형식을 쓴다.
     `location_image_url` 은 TourAPI 에서 조회하므로 조회하지 못하면 `null` 이다.
     """
 

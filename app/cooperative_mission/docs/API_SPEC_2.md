@@ -19,13 +19,18 @@
 
 `currentStep: 1 | 2 | 3`에서는 `reward`와 `nextLocation`을 `null`로 반환한다. 저장된 역할 진행도가 모두 인증 완료되어 `currentStep: 4`, `missionProgressStatus: COMPLETED`가 되면 참가자, 역할 카드, 역할 진행도 및 역할 집계 필드는 `null`로 반환하고 보상과 다음 추천 장소를 반환한다. `reward`의 AR 캐릭터, 포인트, 쿠폰은 각각 지급 결과에 따라 `null`일 수 있다.
 
+Query의 사용자 좌표는 4단계에서 추천된 다음 장소까지의 직선거리를 계산하는 데 사용하며, 거리는 `nextLocation.distanceMeter`에 미터 단위로 반환한다. 1~3단계에서는 좌표를 사용하지 않지만 폴링 요청마다 동일하게 전달한다.
+
 거절된 참여 요청은 참가자 row가 삭제되므로 정상 상태 응답을 반환하지 않는다. `PENDING` 상태로 polling하던 프론트가 `COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND`를 받으면 참여 요청이 거절된 것으로 처리한다.
 
 ---
 
 ### 요청 Query
 
-없음
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `latitude` | number | O | 사용자 현재 위치의 위도. `-90` 이상 `90` 이하 |
+| `longitude` | number | O | 사용자 현재 위치의 경도. `-180` 이상 `180` 이하 |
 
 ---
 
@@ -38,7 +43,7 @@
 요청 예시
 
 ```
-GET /api/v1/cooperative-missions/10/progress
+GET /api/v1/cooperative-missions/10/progress?latitude=33.4996&longitude=126.5312
 ```
 
 ---
@@ -99,6 +104,7 @@ Status Code : 200
 | `nextLocation.id` | number | 다음 장소 id |
 | `nextLocation.locationTitle` | string | 다음 장소명 |
 | `nextLocation.locationImageUrl` | string | null | 다음 장소 이미지 URL. 조회하지 못하면 `null` |
+| `nextLocation.distanceMeter` | number | Query의 사용자 위치에서 다음 장소까지의 직선거리(m) |
 | `nextLocation.mission` | object | null | 다음 장소의 미션. 연결된 미션이 없으면 `null` |
 | `nextLocation.mission.id` | number | 다음 미션 id |
 | `nextLocation.mission.missionType` | string | 다음 미션 유형. `CULTURE | COOPERATIVE | TREASURE` |
@@ -369,6 +375,7 @@ Status Code : 200
     "id": 39,
     "locationTitle": "한담 해안 산책로",
     "locationImageUrl": "https://example.com/locations/handam.jpg",
+    "distanceMeter": 4200,
     "mission": {
       "id": 342,
       "missionType": "TREASURE"

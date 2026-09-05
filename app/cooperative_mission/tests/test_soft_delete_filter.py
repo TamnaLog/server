@@ -52,6 +52,8 @@ ROLE_PROGRESS_ID = 100
 
 HOME_ENDPOINT = "/api/v1/users/me/home"
 HOME_PARAMS = {"latitude": 33.4507, "longitude": 126.5707}
+# 상태 조회는 4단계 다음 장소까지의 거리 계산에 쓸 사용자 좌표를 Query 로 받는다.
+STATUS_PARAMS = {"latitude": 33.4507, "longitude": 126.5707}
 JOIN_ENDPOINT = "/api/v1/cooperative-missions/join-requests"
 START_ENDPOINT = f"/api/v1/cooperative-missions/{COOPERATIVE_MISSION_ID}/progress"
 
@@ -230,7 +232,9 @@ def test_삭제된_참여자는_상태_조회의_참가자_목록에서_빠진�
 ) -> None:
     _soft_delete_participant(db_session, MEMBER_PARTICIPANT_ID)
 
-    response = client.get(_status_endpoint(), headers=auth_headers(CURRENT_USER_ID))
+    response = client.get(
+        _status_endpoint(), params=STATUS_PARAMS, headers=auth_headers(CURRENT_USER_ID)
+    )
 
     assert response.status_code == 200
     participant_ids = [
@@ -244,7 +248,9 @@ def test_삭제된_참여자_본인이_상태를_조회하면_404로_응답한�
 ) -> None:
     _soft_delete_participant(db_session, MEMBER_PARTICIPANT_ID)
 
-    response = client.get(_status_endpoint(), headers=auth_headers(MEMBER_USER_ID))
+    response = client.get(
+        _status_endpoint(), params=STATUS_PARAMS, headers=auth_headers(MEMBER_USER_ID)
+    )
 
     assert response.status_code == 404
     assert response.json() == {"code": "COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND"}
@@ -371,7 +377,9 @@ def test_삭제된_진행도는_상태_조회에서_404로_응답한다(
 ) -> None:
     _soft_delete_progress(db_session)
 
-    response = client.get(_status_endpoint(), headers=auth_headers(CURRENT_USER_ID))
+    response = client.get(
+        _status_endpoint(), params=STATUS_PARAMS, headers=auth_headers(CURRENT_USER_ID)
+    )
 
     assert response.status_code == 404
     assert response.json() == {"code": "COOPERATIVE_MISSION_PROGRESS_NOT_FOUND"}
@@ -444,12 +452,16 @@ def test_삭제된_역할_진행도는_상태_조회에서_빠진다(
     )
     _set_step(db_session, 2)
 
-    before = client.get(_status_endpoint(), headers=auth_headers(CURRENT_USER_ID))
+    before = client.get(
+        _status_endpoint(), params=STATUS_PARAMS, headers=auth_headers(CURRENT_USER_ID)
+    )
     assert before.json()["totalRoleCount"] == 1
 
     _soft_delete_role_progress(db_session, ROLE_PROGRESS_ID)
 
-    after = client.get(_status_endpoint(), headers=auth_headers(CURRENT_USER_ID))
+    after = client.get(
+        _status_endpoint(), params=STATUS_PARAMS, headers=auth_headers(CURRENT_USER_ID)
+    )
     assert after.status_code == 200
     assert after.json()["roleProgresses"] == []
     assert after.json()["totalRoleCount"] == 0

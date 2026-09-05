@@ -5,7 +5,7 @@ API 명세: app/cooperative_mission/docs/API_SPEC.md, app/cooperative_mission/do
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Depends, File, Path, Response, status
+from fastapi import APIRouter, Body, Depends, File, Path, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.cooperative_mission import service
@@ -246,12 +246,17 @@ def get_cooperative_mission_status(
     mission_progress_id: Annotated[
         int, Path(ge=1, description="조회할 COOPERATIVE_MISSION_PROGRESS.id")
     ],
+    latitude: Annotated[float, Query(ge=-90, le=90, description="사용자 현재 위치의 위도")],
+    longitude: Annotated[float, Query(ge=-180, le=180, description="사용자 현재 위치의 경도")],
 ) -> CooperativeMissionStatusResponse:
     """GET /api/v1/cooperative-missions/{cooperativeMissionProgressId}/progress - 협동 미션 상태 조회."""
+    # 좌표는 4단계 응답의 다음 장소까지 직선거리를 계산할 때만 쓴다.
     return service.get_cooperative_mission_status(
         db=db,
         current_user_id=current_user_id,
         mission_progress_id=mission_progress_id,
+        latitude=latitude,
+        longitude=longitude,
     )
 
 

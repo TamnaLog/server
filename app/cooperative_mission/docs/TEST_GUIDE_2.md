@@ -25,6 +25,10 @@
 특히 **키를 생략하지 않고 `null` 로 내려주는지**를 본다. 프론트가 폴링하며 같은 구조를 기대하기 때문이다.
 1단계 응답은 전체 body 를 통째로 비교해서 이 규칙이 깨지지 않는지 확인한다.
 
+요청은 Query 로 사용자 현재 위치(`latitude`, `longitude`)를 항상 받는다.
+좌표는 4단계 `nextLocation.distanceMeter` 계산에만 쓰지만 폴링 중 언제 4단계가 될지 알 수 없어
+모든 단계 요청에서 필수다. 그래서 좌표가 없거나 범위를 벗어나는 요청도 검증 대상에 넣는다.
+
 두 번째 축은 **호출자에 따라 달라지는 값**이다. `currentParticipant` 는 Bearer 토큰으로 정해지므로,
 같은 방을 팀원이 조회하면 자신의 `PENDING/ACCEPTED` 상태가 나와야 한다.
 거절당한 팀원은 참가자 row 가 사라져 `404 COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND` 를 받고,
@@ -65,7 +69,8 @@
 - `PENDING` 참가자에게는 지급하지 않는다.
 - 정산 후 지급 여부 세 개가 모두 `TRUE` 다. (등급에 없어 소멸한 보상 포함)
 - 여러 번 폴링해도 포인트·획득 기록이 늘지 않고 같은 보상 정보를 반환한다.
-- `nextLocation` 에는 사용자 좌표를 받지 않으므로 **`distanceMeter` 가 없다.**
+- `nextLocation.distanceMeter` 는 Query 좌표와 추천 장소 좌표로 계산한 직선거리(m)와 같다.
+  (공통 `distance.calculate_distance_meter()` 결과와 비교한다)
 - 추천할 장소가 하나도 없으면 `nextLocation` 만 `null` 이고 보상 정산은 정상 처리된다.
 
 ### 4. 404
@@ -78,6 +83,8 @@
 ### 5. 400 / 401
 
 - 진행도 id가 0 이하이거나 정수가 아니면 **400 `INVALID_REQUEST`**
+- Query 좌표가 없거나(둘 중 하나만 보낸 경우 포함), 숫자가 아니거나,
+  `latitude` `-90~90` / `longitude` `-180~180` 범위를 벗어나면 **400 `INVALID_REQUEST`**
 - 헤더의 사용자가 없으면 **401 `UNAUTHORIZED_USER`**
 
 ## 진행도 저장 테스트 의도

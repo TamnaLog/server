@@ -613,7 +613,11 @@ def _check_not_accepted(participant: CooperativeMissionParticipant) -> None:
 
 
 def get_cooperative_mission_status(
-    db: Session, current_user_id: int, mission_progress_id: int
+    db: Session,
+    current_user_id: int,
+    mission_progress_id: int,
+    latitude: float,
+    longitude: float,
 ) -> CooperativeMissionStatusResponse:
     """협동 미션 상태 조회.
 
@@ -624,6 +628,8 @@ def get_cooperative_mission_status(
     - 4단계: 보상과 다음 장소 (참가자/역할 정보는 내려주지 않는다)
 
     1~3단계 조회는 데이터를 바꾸지 않는다. 4단계는 아직 정산 전이면 보상을 지급한다.
+
+    사용자 좌표는 4단계에서 다음 장소까지의 직선거리를 계산할 때만 쓴다.
     """
     progress = _get_progress_for_status(db, mission_progress_id)
     participant = _get_my_participant(db, progress.id, current_user_id)
@@ -638,7 +644,14 @@ def get_cooperative_mission_status(
     )
 
     if progress.current_step == COMPLETED_STEP:
-        return _to_completed_status(db, response, progress, cooperative_mission)
+        return _to_completed_status(
+            db,
+            response,
+            progress,
+            cooperative_mission,
+            latitude=latitude,
+            longitude=longitude,
+        )
 
     response.current_participant = CurrentParticipantResponse(
         participant_id=participant.id,
@@ -707,15 +720,21 @@ def _to_completed_status(
     response: CooperativeMissionStatusResponse,
     progress: CooperativeMissionProgress,
     cooperative_mission: CooperativeMission,
+    latitude: float,
+    longitude: float,
 ) -> CooperativeMissionStatusResponse:
-    """완료 화면 응답을 만든다. 참가자/역할 정보 대신 보상과 다음 장소를 채운다."""
+    """완료 화면 응답을 만든다. 참가자/역할 정보 대신 보상과 다음 장소를 채운다.
+
+    다음 장소는 문화/보물 미션 완료와 같은 공통 로직을 쓰고,
+    사용자 좌표까지 넘겨 `distanceMeter` 를 포함한 응답을 만든다.
+    """
     response.reward = reward_granter.settle_cooperative_mission_reward(
         db,
         progress=progress,
         cooperative_mission=cooperative_mission,
         completed_role_count=reward_granter.count_completed_roles(db, progress.id),
     )
-    response.next_location = next_location.recommend_next_location_summary(db)
+    response.next_location = next_location.recommend_next_location(db, latitude, longitude)
     return response
 
 

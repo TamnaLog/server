@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.common import next_location
+from app.common import distance, next_location
 from app.cooperative_mission.models import (
     CooperativeMission,
     CooperativeMissionParticipant,
@@ -36,6 +36,12 @@ MISSION_TITLE = "함께 키우는 귤나무"
 LOCATION_ID = 1
 LOCATION_TITLE = "종화네 과수원"
 LOCATION_IMAGE_URL = "https://example.com/locations/gwaeon.jpg"
+LOCATION_MX = 126.5707
+LOCATION_MY = 33.4507
+
+# 다음 장소까지의 직선거리를 계산할 사용자 현재 위치
+USER_LATITUDE = 33.4996
+USER_LONGITUDE = 126.5312
 
 PROGRESS_ID = 10
 TEAM_TOKEN = "mock-team-token-10"
@@ -67,6 +73,11 @@ def _endpoint(progress_id: object = PROGRESS_ID) -> str:
     return f"/api/v1/cooperative-missions/{progress_id}/progress"
 
 
+def _location_query() -> dict[str, float]:
+    """다음 장소까지의 거리 계산에 쓰는 사용자 현재 위치 Query."""
+    return {"latitude": USER_LATITUDE, "longitude": USER_LONGITUDE}
+
+
 @pytest.fixture(autouse=True)
 def stub_location_image(monkeypatch: pytest.MonkeyPatch) -> None:
     """장소 이미지 조회(TourAPI)를 막아 외부 네트워크를 타지 않게 한다."""
@@ -94,8 +105,8 @@ def status_data(db_session: Session) -> None:
                 location_address="제주특별자치도 제주시 조천읍 감귤밭길 12",
                 location_category="농장",
                 radius=400,
-                mx=126.5707,
-                my=33.4507,
+                mx=LOCATION_MX,
+                my=LOCATION_MY,
             ),
             User(
                 id=CURRENT_USER_ID,
@@ -244,7 +255,9 @@ def _add_completed_roles(db_session: Session, count: int) -> None:
 
 
 def _get(client: TestClient, user_id: int = CURRENT_USER_ID) -> dict:
-    response = client.get(_endpoint(), headers=auth_headers(user_id))
+    response = client.get(
+        _endpoint(), params=_location_query(), headers=auth_headers(user_id)
+    )
     assert response.status_code == 200
     return response.json()
 
@@ -467,11 +480,13 @@ def test_4단계는_참가자_역할_정보를_null로_두고_보상과_다음_�
         "id": LOCATION_ID,
         "locationTitle": LOCATION_TITLE,
         "locationImageUrl": LOCATION_IMAGE_URL,
+        # Query 로 받은 사용자 위치에서 추천 장소까지의 직선거리(m)
+        "distanceMeter": distance.calculate_distance_meter(
+            USER_LATITUDE, USER_LONGITUDE, LOCATION_MY, LOCATION_MX
+        ),
         # 이 장소에 연결된 세부 미션은 이 협동 미션뿐이다.
         "mission": {"id": COOPERATIVE_MISSION_ID, "missionType": "COOPERATIVE"},
     }
-    # 사용자 좌표를 받지 않으므로 거리는 내려주지 않는다.
-    assert "distanceMeter" not in body["nextLocation"]
 
 
 @pytest.mark.parametrize(
@@ -609,7 +624,9 @@ def test_추천할_장소가_없으면_nextLocation은_null이다(
 def test_진행도가_없으면_404_PROGRESS_NOT_FOUND로_응답한다(
     client: TestClient, status_data: None
 ) -> None:
-    response = client.get(_endpoint(999), headers=auth_headers(CURRENT_USER_ID))
+    response = client.get(
+        _endpoint(999), params=_location_query(), headers=auth_headers(CURRENT_USER_ID)
+    )
 
     assert response.status_code == 404
     assert response.json() == {"code": "COOPERATIVE_MISSION_PROGRESS_NOT_FOUND"}
@@ -618,7 +635,9 @@ def test_진행도가_없으면_404_PROGRESS_NOT_FOUND로_응답한다(
 def test_참가자가_아니면_404_PARTICIPANT_NOT_FOUND로_응답한다(
     client: TestClient, status_data: None
 ) -> None:
-    response = client.get(_endpoint(), headers=auth_headers(OUTSIDER_USER_ID))
+    response = client.get(
+        _endpoint(), params=_location_query(), headers=auth_headers(OUTSIDER_USER_ID)
+    )
 
     assert response.status_code == 404
     assert response.json() == {"code": "COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND"}
@@ -633,7 +652,9 @@ def test_거절로_참가자가_삭제되면_404_PARTICIPANT_NOT_FOUND로_응답
     db_session.delete(participant)
     db_session.commit()
 
-    response = client.get(_endpoint(), headers=auth_headers(MEMBER_USER_ID))
+    response = client.get(
+        _endpoint(), params=_location_query(), headers=auth_headers(MEMBER_USER_ID)
+    )
 
     assert response.status_code == 404
     assert response.json() == {"code": "COOPERATIVE_MISSION_PARTICIPANT_NOT_FOUND"}
@@ -645,7 +666,9 @@ def test_완료된_방도_조회할_수_있다(
     # 진행 중인 방으로 제한하면 완료 화면을 볼 수 없다.
     _complete(db_session)
 
-    response = client.get(_endpoint(), headers=auth_headers(CURRENT_USER_ID))
+    response = client.get(
+        _endpoint(), params=_location_query(), headers=auth_headers(CURRENT_USER_ID)
+    )
 
     assert response.status_code == 200
 
@@ -653,7 +676,9 @@ def test_완료된_방도_조회할_수_있다(
 def test_토큰의_사용자가_없으면_401로_응답한다(
     client: TestClient, status_data: None
 ) -> None:
-    response = client.get(_endpoint(), headers=auth_headers(999))
+    response = client.get(
+        _endpoint(), params=_location_query(), headers=auth_headers(999)
+    )
 
     assert response.status_code == 401
     assert response.json() == {"code": "UNAUTHORIZED_USER"}
@@ -671,7 +696,39 @@ def test_토큰의_사용자가_없으면_401로_응답한다(
 def test_진행도_id가_잘못되면_400_INVALID_REQUEST로_응답한다(
     client: TestClient, status_data: None, progress_id: object
 ) -> None:
-    response = client.get(_endpoint(progress_id), headers=auth_headers(CURRENT_USER_ID))
+    response = client.get(
+        _endpoint(progress_id),
+        params=_location_query(),
+        headers=auth_headers(CURRENT_USER_ID),
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"code": "INVALID_REQUEST"}
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        pytest.param({}, id="좌표_누락"),
+        pytest.param({"latitude": USER_LATITUDE}, id="경도_누락"),
+        pytest.param({"longitude": USER_LONGITUDE}, id="위도_누락"),
+        pytest.param(
+            {"latitude": 91, "longitude": USER_LONGITUDE}, id="범위를_벗어난_위도"
+        ),
+        pytest.param(
+            {"latitude": USER_LATITUDE, "longitude": 181}, id="범위를_벗어난_경도"
+        ),
+        pytest.param(
+            {"latitude": "abc", "longitude": USER_LONGITUDE}, id="숫자가_아닌_위도"
+        ),
+    ],
+)
+def test_사용자_좌표가_잘못되면_400_INVALID_REQUEST로_응답한다(
+    client: TestClient, status_data: None, params: dict
+) -> None:
+    response = client.get(
+        _endpoint(), params=params, headers=auth_headers(CURRENT_USER_ID)
+    )
 
     assert response.status_code == 400
     assert response.json() == {"code": "INVALID_REQUEST"}

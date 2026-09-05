@@ -35,6 +35,9 @@ COOPERATIVE_MISSION_ID = 12
 LOCATION_ID = 1
 
 PROGRESS_ID = 10
+
+# 상태 조회는 4단계 다음 장소까지의 거리 계산에 쓸 사용자 좌표를 Query 로 받는다.
+STATUS_PARAMS = {"latitude": 33.4507, "longitude": 126.5707}
 TEAM_TOKEN = "mock-team-token-10"
 
 # 현재 사용자(1)가 방장이다.
@@ -634,6 +637,7 @@ def test_삭제된_방은_상태_조회에서_404가_된다(
 
     response = client.get(
         f"/api/v1/cooperative-missions/{PROGRESS_ID}/progress",
+        params=STATUS_PARAMS,
         headers=auth_headers(CURRENT_USER_ID),
     )
 
@@ -687,6 +691,7 @@ def test_3단계에서_나간_역할은_집계에서_빠진다(
 
     before = client.get(
         f"/api/v1/cooperative-missions/{PROGRESS_ID}/progress",
+        params=STATUS_PARAMS,
         headers=auth_headers(CURRENT_USER_ID),
     )
     assert before.json()["totalRoleCount"] == 2
@@ -696,6 +701,7 @@ def test_3단계에서_나간_역할은_집계에서_빠진다(
 
     after = client.get(
         f"/api/v1/cooperative-missions/{PROGRESS_ID}/progress",
+        params=STATUS_PARAMS,
         headers=auth_headers(CURRENT_USER_ID),
     )
     assert after.json()["totalRoleCount"] == 1

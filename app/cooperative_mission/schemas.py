@@ -7,7 +7,7 @@ from fastapi import UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-from app.common.next_location import NextLocationSummaryResponse
+from app.common.next_location import NextLocationResponse, NextLocationSummaryResponse
 from app.common.rewards import GrantedRewardResponse
 from app.cooperative_mission.models import (
     MissionStatus,
@@ -29,6 +29,7 @@ __all__ = [
     "JoinCooperativeMissionRequest",
     "JoinCooperativeMissionResponse",
     "MissionStatus",
+    "NextLocationResponse",
     "NextLocationSummaryResponse",
     "ParticipantResponse",
     "ParticipantRole",
@@ -115,6 +116,8 @@ class CooperativeMissionStatusResponse(CamelModel):
     | `role_cards` | `null` | 값 | `null` |
     | `role_progresses` / 역할 집계 | `null` | 값(없으면 빈 배열/0) | `null` |
     | `reward` / `next_location` | `null` | `null` | 값 |
+
+    4단계의 `next_location` 은 Query 로 받은 사용자 좌표 기준 직선거리(`distance_meter`)를 포함한다.
     """
 
     mission_progress_id: int
@@ -129,7 +132,7 @@ class CooperativeMissionStatusResponse(CamelModel):
     completed_role_count: int | None = None
     total_role_count: int | None = None
     reward: GrantedRewardResponse | None = None
-    next_location: NextLocationSummaryResponse | None = None
+    next_location: NextLocationResponse | None = None
 
 
 class CooperativeMissionLeaveResponse(CamelModel):

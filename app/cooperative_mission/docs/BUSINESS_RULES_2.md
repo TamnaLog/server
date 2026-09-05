@@ -5,10 +5,13 @@
 - HTTP 메서드: `GET`
 - 엔드포인트: `/api/v1/cooperative-missions/{cooperativeMissionProgressId}/progress`
 - Path의 `cooperativeMissionProgressId`로 조회할 `COOPERATIVE_MISSION_PROGRESS`를 식별한다.
-- Request Query와 Body는 받지 않는다.
+- Request Query로 사용자 현재 위치의 `latitude`, `longitude`를 받는다. 두 값 모두 필수이다.
+- Request Body는 받지 않는다.
 - 현재 사용자는 Authorization Bearer 토큰의 `get_current_user_id()`로 식별한다.
 
 프론트는 현재 사용자의 참가자 id, 참가자 역할 또는 참여 상태를 요청으로 전달하지 않는다. 백엔드가 현재 사용자 id와 진행도 id로 `COOPERATIVE_MISSION_PARTICIPANT`를 조회하여 호출 권한과 현재 참가자 정보를 판단한다.
+
+Query의 사용자 좌표는 4단계 응답의 다음 장소까지 직선거리를 계산하는 데만 사용한다. 1~3단계 응답에서는 좌표를 사용하지 않지만, 폴링 중 어느 시점에 4단계로 넘어갈지 알 수 없으므로 모든 폴링 요청에서 동일하게 전달받는다.
 
 ## 2. API 용도와 폴링
 
@@ -26,13 +29,13 @@
 
 ## 3. 처리 순서
 
-1. `cooperativeMissionProgressId`의 형식과 범위를 검증한다.
+1. `cooperativeMissionProgressId`와 Query의 `latitude`, `longitude` 형식과 범위를 검증한다.
 2. 진행도 id로 `COOPERATIVE_MISSION_PROGRESS`와 연결된 협동 미션 정보를 조회한다.
 3. 현재 사용자가 해당 진행도의 참가자인지 확인한다.
 4. 현재 사용자의 참가자 row로 `currentParticipant`를 구성한다.
 5. 진행도의 `current_step`에 따라 필요한 데이터만 조회한다.
 6. 4단계이면 보상 지급 여부를 확인하고 필요한 경우 보상 지급 로직을 실행한다.
-7. 4단계이면 `common`의 다음 장소 추천 로직을 현재 사용자 기준으로 실행한다.
+7. 4단계이면 `common`의 다음 장소 추천 로직을 현재 사용자 기준으로 실행하고, Query의 좌표로 추천 장소까지의 직선거리를 계산한다.
 8. 단계별 응답 구조를 조합하여 `200 OK`를 반환한다.
 
 ## 4. 진행도와 참가자 검증
@@ -198,7 +201,7 @@ completedRoleCount = progress_status가 COMPLETED인 역할 진행도 row 수
 - `completedRoleCount`: `null`
 - `totalRoleCount`: `null`
 - `reward`: 현재 사용자에게 제공할 보상 정보
-- `nextLocation`: 현재 사용자에게 추천할 다음 장소 정보
+- `nextLocation`: 현재 사용자에게 추천할 다음 장소 정보. Query의 사용자 위치에서의 직선거리 `distanceMeter`를 포함한다
 
 4단계 응답을 구성할 때 내부적으로 현재 사용자의 참가자 row는 권한과 보상 대상을 확인하는 데 사용하지만 응답의 `currentParticipant`에는 포함하지 않는다.
 
@@ -254,7 +257,11 @@ coupon_reward_granted = TRUE
 - 참가자마다 서로 다른 장소가 추천될 수 있다.
 - 이전 폴링에서 반환한 장소와 같은 장소를 유지할 의무는 없다.
 - 상태 조회 API는 별도의 다음 장소 추천 로직을 중복 구현하지 않는다.
+- 문화 미션, 보물찾기 미션 완료와 같이 거리를 포함하는 `recommend_next_location()`을 사용한다.
+- Query로 전달받은 사용자 위치에서 추천 장소까지의 직선거리를 `nextLocation.distanceMeter`에 미터 단위로 반환한다.
 - 추천 결과는 명세의 `nextLocation` 형식으로 변환하여 반환한다.
+- 추천할 장소가 없으면 `nextLocation: null`을 반환한다.
+- 추천 장소에 연결된 미션이 없으면 `nextLocation.mission: null`을 반환한다.
 
 1~3단계에서는 추천 로직을 실행하지 않고 `nextLocation: null`을 반환한다.
 
@@ -287,7 +294,11 @@ coupon_reward_granted = TRUE
 
 ### 400 `INVALID_REQUEST`
 
-`cooperativeMissionProgressId`가 정수가 아니거나 `1`보다 작으면 공통 요청 오류를 반환한다.
+다음 중 하나에 해당하면 공통 요청 오류를 반환한다.
+
+- `cooperativeMissionProgressId`가 정수가 아니거나 `1`보다 작은 경우
+- Query의 `latitude` 또는 `longitude`가 없거나 숫자가 아닌 경우
+- `latitude`가 `-90~90`, `longitude`가 `-180~180` 범위를 벗어난 경우
 
 ```json
 {
