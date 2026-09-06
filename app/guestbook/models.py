@@ -20,8 +20,9 @@ from sqlalchemy import (
     BigInteger,
     Date,
     DateTime,
-    Float,
+    Double,
     ForeignKey,
+    Index,
     Numeric,
     String,
     UniqueConstraint,
@@ -29,7 +30,12 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.database import Base, BigIntPk
+from app.core.database import (
+    Base,
+    BigIntPk,
+    CurrentTimestampOnUpdate,
+    mysql_table_args,
+)
 from app.map.models import Location
 from app.mission.models import Mission
 
@@ -48,34 +54,55 @@ class Guestbook(Base):
     """GUESTBOOK - 등록된 장소에 남기는 방명록."""
 
     __tablename__ = "GUESTBOOK"
+    __table_args__ = (
+        Index("idx_guestbook__user_visited_at", "user_id", "visited_at"),
+        Index("idx_guestbook__location", "location_id"),
+        Index("idx_guestbook__mission", "mission_id"),
+        mysql_table_args("장소 방명록"),
+    )
 
     id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("USER.id", ondelete="CASCADE"), nullable=False
+        BigInteger,
+        ForeignKey("USER.id", ondelete="CASCADE", name="fk_guestbook__user"),
+        nullable=False,
     )
     location_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("LOCATION.id", ondelete="CASCADE"), nullable=False
+        BigInteger,
+        ForeignKey("LOCATION.id", ondelete="CASCADE", name="fk_guestbook__location"),
+        nullable=False,
     )
     visited_at: Mapped[date] = mapped_column(Date, nullable=False)
-    content_img_url: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    content_img_url: Mapped[list[str] | None] = mapped_column(
+        JSON, nullable=True, comment="string[]"
+    )
     content_writing: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    content_audio_url: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
-    audio_title: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    content_audio_url: Mapped[list[str] | None] = mapped_column(
+        JSON, nullable=True, comment="string[]"
+    )
+    audio_title: Mapped[str | None] = mapped_column(
+        String(50), nullable=True, comment="녹음 파일 제목"
+    )
     content_weather: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # 섭씨 기온. 소수 첫째 자리까지 저장한다. (예: -3.5, 28.4)
     content_temperature_celsius: Mapped[Decimal | None] = mapped_column(
-        Numeric(4, 1), nullable=True
+        Numeric(4, 1), nullable=True, comment="섭씨 기온"
     )
     content_color_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
     saved_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     mission_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("MISSION.id", ondelete="SET NULL"), nullable=True
+        BigInteger,
+        ForeignKey("MISSION.id", ondelete="SET NULL", name="fk_guestbook__mission"),
+        nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now()
+        DateTime, nullable=False, server_default=func.current_timestamp()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+        DateTime,
+        nullable=False,
+        server_default=CurrentTimestampOnUpdate(),
+        onupdate=func.now(),
     )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -93,17 +120,25 @@ class GuestbookLike(Base):
         UniqueConstraint(
             "guestbook_id", "user_id", name="uk_guestbook_like__guestbook_user"
         ),
+        Index("idx_guestbook_like__user", "user_id"),
+        mysql_table_args("장소 방명록 좋아요"),
     )
 
     id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     guestbook_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("GUESTBOOK.id", ondelete="CASCADE"), nullable=False
+        BigInteger,
+        ForeignKey(
+            "GUESTBOOK.id", ondelete="CASCADE", name="fk_guestbook_like__guestbook"
+        ),
+        nullable=False,
     )
     user_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("USER.id", ondelete="CASCADE"), nullable=False
+        BigInteger,
+        ForeignKey("USER.id", ondelete="CASCADE", name="fk_guestbook_like__user"),
+        nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now()
+        DateTime, nullable=False, server_default=func.current_timestamp()
     )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -112,35 +147,57 @@ class RoadGuestbook(Base):
     """ROAD_GUESTBOOK - 등록된 장소가 아닌 길 위에 남기는 방명록."""
 
     __tablename__ = "ROAD_GUESTBOOK"
+    __table_args__ = (
+        Index("idx_road_guestbook__user_visited_at", "user_id", "visited_at"),
+        Index("idx_road_guestbook__location", "location_id"),
+        mysql_table_args("길 위의 방명록"),
+    )
 
     id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("USER.id", ondelete="CASCADE"), nullable=False
+        BigInteger,
+        ForeignKey("USER.id", ondelete="CASCADE", name="fk_road_guestbook__user"),
+        nullable=False,
     )
     location_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("LOCATION.id", ondelete="SET NULL"), nullable=True
+        BigInteger,
+        ForeignKey(
+            "LOCATION.id", ondelete="SET NULL", name="fk_road_guestbook__location"
+        ),
+        nullable=True,
     )
-    location_alias: Mapped[str] = mapped_column(String(100), nullable=False)
+    location_alias: Mapped[str] = mapped_column(
+        String(100), nullable=False, comment="사용자가 붙인 장소 이름"
+    )
     visited_at: Mapped[date] = mapped_column(Date, nullable=False)
-    content_img_url: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    content_img_url: Mapped[list[str] | None] = mapped_column(
+        JSON, nullable=True, comment="string[]"
+    )
     content_writing: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    content_audio_url: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
-    audio_title: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    content_audio_url: Mapped[list[str] | None] = mapped_column(
+        JSON, nullable=True, comment="string[]"
+    )
+    audio_title: Mapped[str | None] = mapped_column(
+        String(50), nullable=True, comment="녹음 파일 제목"
+    )
     content_weather: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # 섭씨 기온. 소수 첫째 자리까지 저장한다. (예: -3.5, 28.4)
     content_temperature_celsius: Mapped[Decimal | None] = mapped_column(
-        Numeric(4, 1), nullable=True
+        Numeric(4, 1), nullable=True, comment="섭씨 기온"
     )
     content_color_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # mx = 경도(longitude), my = 위도(latitude)
-    mx: Mapped[float] = mapped_column(Float, nullable=False)
-    my: Mapped[float] = mapped_column(Float, nullable=False)
+    mx: Mapped[float] = mapped_column(Double, nullable=False, comment="경도(longitude)")
+    my: Mapped[float] = mapped_column(Double, nullable=False, comment="위도(latitude)")
     saved_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now()
+        DateTime, nullable=False, server_default=func.current_timestamp()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+        DateTime,
+        nullable=False,
+        server_default=CurrentTimestampOnUpdate(),
+        onupdate=func.now(),
     )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -157,16 +214,26 @@ class RoadGuestbookLike(Base):
         UniqueConstraint(
             "road_guestbook_id", "user_id", name="uk_road_guestbook_like__guestbook_user"
         ),
+        Index("idx_road_guestbook_like__user", "user_id"),
+        mysql_table_args("길 위의 방명록 좋아요"),
     )
 
     id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     road_guestbook_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("ROAD_GUESTBOOK.id", ondelete="CASCADE"), nullable=False
+        BigInteger,
+        ForeignKey(
+            "ROAD_GUESTBOOK.id",
+            ondelete="CASCADE",
+            name="fk_road_guestbook_like__guestbook",
+        ),
+        nullable=False,
     )
     user_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("USER.id", ondelete="CASCADE"), nullable=False
+        BigInteger,
+        ForeignKey("USER.id", ondelete="CASCADE", name="fk_road_guestbook_like__user"),
+        nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now()
+        DateTime, nullable=False, server_default=func.current_timestamp()
     )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

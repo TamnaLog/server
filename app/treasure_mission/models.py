@@ -16,11 +16,12 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
-    Boolean,
     JSON,
     BigInteger,
+    Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -28,7 +29,12 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.database import Base, BigIntPk
+from app.core.database import (
+    Base,
+    BigIntPk,
+    CurrentTimestampOnUpdate,
+    mysql_table_args,
+)
 from app.map.models import Location
 from app.mission.models import Mission, MissionStatus
 
@@ -49,19 +55,25 @@ class ArCharacter(Base):
     """AR_CHARACTER - AR 캐릭터 마스터."""
 
     __tablename__ = "AR_CHARACTER"
+    __table_args__ = (mysql_table_args("AR 캐릭터 마스터"),)
 
     id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     character_name: Mapped[str] = mapped_column(String(50), nullable=False)
     character_description: Mapped[str] = mapped_column(String(200), nullable=False)
-    character_story_title: Mapped[str] = mapped_column(String(200), nullable=False)
+    character_story_title: Mapped[str] = mapped_column(
+        String(200), nullable=False, comment="캐릭터 이야기 제목"
+    )
     acquire_condition: Mapped[str] = mapped_column(String(200), nullable=False)
     character_img_url: Mapped[str] = mapped_column(String(500), nullable=False)
-    hashtags: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    hashtags: Mapped[list[str]] = mapped_column(JSON, nullable=False, comment="string[]")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now()
+        DateTime, nullable=False, server_default=func.current_timestamp()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+        DateTime,
+        nullable=False,
+        server_default=CurrentTimestampOnUpdate(),
+        onupdate=func.now(),
     )
 
 
@@ -74,22 +86,40 @@ class TreasureMission(Base):
     """
 
     __tablename__ = "TREASURE_MISSION"
+    __table_args__ = (
+        Index("idx_treasure_mission__mission", "mission_id"),
+        Index("idx_treasure_mission__location", "location_id"),
+        mysql_table_args("보물 찾기 미션"),
+    )
 
     id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     mission_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("MISSION.id", ondelete="CASCADE"), nullable=False
+        BigInteger,
+        ForeignKey(
+            "MISSION.id", ondelete="CASCADE", name="fk_treasure_mission__mission"
+        ),
+        nullable=False,
     )
     location_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("LOCATION.id", ondelete="RESTRICT"), nullable=False
+        BigInteger,
+        ForeignKey(
+            "LOCATION.id", ondelete="RESTRICT", name="fk_treasure_mission__location"
+        ),
+        nullable=False,
     )
     item_total_count: Mapped[int] = mapped_column(Integer, nullable=False)
     # 미션 보상. {ar_character_id, point, coupon_location, coupon_price}
-    reward_detail: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    reward_detail: Mapped[dict[str, Any]] = mapped_column(
+        JSON, nullable=False, comment="{ar_character_id, point, coupon_location, coupon_price}"
+    )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now()
+        DateTime, nullable=False, server_default=func.current_timestamp()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+        DateTime,
+        nullable=False,
+        server_default=CurrentTimestampOnUpdate(),
+        onupdate=func.now(),
     )
 
     mission: Mapped[Mission] = relationship(lazy="joined")
@@ -103,38 +133,76 @@ class TreasureMissionProgress(Base):
     """
 
     __tablename__ = "TREASURE_MISSION_PROGRESS"
+    __table_args__ = (
+        Index("idx_treasure_progress__user", "user_id", "mission_status"),
+        Index("idx_treasure_progress__mission", "treasure_mission_id"),
+        mysql_table_args("보물 찾기 진행도"),
+    )
 
     id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     treasure_mission_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("TREASURE_MISSION.id", ondelete="CASCADE"), nullable=False
+        BigInteger,
+        ForeignKey(
+            "TREASURE_MISSION.id",
+            ondelete="CASCADE",
+            name="fk_treasure_progress__mission",
+        ),
+        nullable=False,
     )
     user_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("USER.id", ondelete="CASCADE"), nullable=False
+        BigInteger,
+        ForeignKey("USER.id", ondelete="CASCADE", name="fk_treasure_progress__user"),
+        nullable=False,
     )
     # 이 진행도에서 찾아야 할 보물 좌표. [{index, mx, my}]
-    item_detail: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    item_detail: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON, nullable=False, comment="[{index, mx, my}] 진행도별 보물 좌표"
+    )
     # 찾은 보물 index 목록 (int[])
-    current_found_item_idx: Mapped[list[int]] = mapped_column(JSON, nullable=False)
+    current_found_item_idx: Mapped[list[int]] = mapped_column(
+        JSON, nullable=False, comment="int[]"
+    )
     # 진행 단계. 1 | 2 | 3 (3 = 완료)
     current_step: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=1, server_default="1"
+        Integer,
+        nullable=False,
+        default=1,
+        server_default="1",
+        comment="진행 단계. 1 | 2 | 3 (3 = 완료)",
     )
-    mission_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    mission_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, comment="IN_PROGRESS | COMPLETED"
+    )
     ar_character_reward_granted: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="0"
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="0",
+        comment="AR 캐릭터 보상 지급 여부",
     )
     point_reward_granted: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="0"
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="0",
+        comment="포인트 보상 지급 여부",
     )
     coupon_reward_granted: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="0"
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="0",
+        comment="쿠폰 보상 지급 여부",
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now()
+        DateTime, nullable=False, server_default=func.current_timestamp()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+        DateTime,
+        nullable=False,
+        server_default=CurrentTimestampOnUpdate(),
+        onupdate=func.now(),
     )
 
 
@@ -142,23 +210,37 @@ class AcquiredArCharacter(Base):
     """ACQUIRED_AR_CHARACTER - 사용자가 미션 보상으로 획득한 AR 캐릭터."""
 
     __tablename__ = "ACQUIRED_AR_CHARACTER"
-    __table_args__ = (UniqueConstraint("user_id", "ar_character_id"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "ar_character_id", name="uk_acquired__user_character"),
+        Index("idx_acquired__character", "ar_character_id"),
+        Index("idx_acquired__mission", "acquired_mission_id"),
+        mysql_table_args("획득한 AR 캐릭터"),
+    )
 
     id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     ar_character_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("AR_CHARACTER.id", ondelete="CASCADE"), nullable=False
+        BigInteger,
+        ForeignKey("AR_CHARACTER.id", ondelete="CASCADE", name="fk_acquired__character"),
+        nullable=False,
     )
     user_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("USER.id", ondelete="CASCADE"), nullable=False
+        BigInteger,
+        ForeignKey("USER.id", ondelete="CASCADE", name="fk_acquired__user"),
+        nullable=False,
     )
     acquired_mission_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("MISSION.id", ondelete="CASCADE"), nullable=False
+        BigInteger,
+        ForeignKey("MISSION.id", ondelete="CASCADE", name="fk_acquired__mission"),
+        nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now()
+        DateTime, nullable=False, server_default=func.current_timestamp()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+        DateTime,
+        nullable=False,
+        server_default=CurrentTimestampOnUpdate(),
+        onupdate=func.now(),
     )
 
     ar_character: Mapped[ArCharacter] = relationship(lazy="joined")
@@ -168,16 +250,25 @@ class PictureWithCharacter(Base):
     """PICTURE_WITH_CHARACTER - 사용자가 AR 캐릭터와 찍은 사진."""
 
     __tablename__ = "PICTURE_WITH_CHARACTER"
+    __table_args__ = (
+        Index("idx_picture__user_saved_at", "user_id", "saved_at"),
+        mysql_table_args("AR 캐릭터와 찍은 사진"),
+    )
 
     id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("USER.id", ondelete="CASCADE"), nullable=False
+        BigInteger,
+        ForeignKey("USER.id", ondelete="CASCADE", name="fk_picture__user"),
+        nullable=False,
     )
     picture_url: Mapped[str] = mapped_column(String(500), nullable=False)
     saved_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now()
+        DateTime, nullable=False, server_default=func.current_timestamp()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+        DateTime,
+        nullable=False,
+        server_default=CurrentTimestampOnUpdate(),
+        onupdate=func.now(),
     )

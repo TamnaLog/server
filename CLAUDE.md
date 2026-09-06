@@ -88,9 +88,27 @@
 - 현재 사용자 id가 필요하면 `Annotated[int, Depends(get_current_user_id)]`(`app/core/deps.py`)를 사용한다.
 
 ## 7. Database & Business Logic Rules
-- 스키마 변경이 필요하면 `docs/erd.md`와 `scripts/sql/01-schema.sql`을 함께 수정한다. 이 경우에는 해당 수정 내용을 공유한다.
+- 스키마 변경이 필요하면 `docs/erd.md`, `scripts/sql/01-schema.sql`, ORM 모델을 함께 수정하고 Alembic 리비전을 만든다. 이 경우에는 해당 수정 내용을 공유한다.
 - 조회/저장은 SQLAlchemy 2.0 스타일(`select()`, `db.get()`)을 사용한다.
 - 커밋은 service 계층에서 한 번만 수행한다.
+
+### 7.1 Schema Source of Truth
+- 스키마의 원본은 ORM 모델이고, `scripts/sql/01-schema.sql`은 같은 스키마를 DDL로 적어둔 문서다. 둘은 항상 일치해야 한다.
+- 모델은 DDL과 다음 항목까지 맞춘다. 어긋나면 `alembic --autogenerate`가 매번 가짜 diff를 만든다.
+  - 타입: 좌표(`mx`/`my`)는 `Double`(= MySQL `DOUBLE`). `Float`은 `FLOAT`이 되어 정밀도가 떨어진다.
+  - `created_at`: `server_default=func.current_timestamp()`
+  - `updated_at`: `server_default=CurrentTimestampOnUpdate()` (`app/core/database.py`)
+    - MySQL에만 `ON UPDATE CURRENT_TIMESTAMP`를 붙이고, 테스트용 SQLite에는 붙이지 않는다.
+  - 인덱스/유니크/FK 제약은 DDL과 같은 이름을 `__table_args__`와 `ForeignKey(name=...)`에 명시한다.
+  - 테이블 옵션과 코멘트는 `mysql_table_args("테이블 코멘트")`(`app/core/database.py`)로 지정하고, 컬럼 코멘트는 `mapped_column(comment=...)`에 DDL과 같은 문구를 넣는다.
+
+### 7.2 Migrations (Alembic)
+- 설정은 `alembic.ini` + `alembic/env.py`, 리비전은 `alembic/versions/`에 있다. 사용법은 `alembic/README`.
+- 접속 대상 DB는 `-x db_url=...` → `ALEMBIC_ENV_FILE` → 기본값 `.env` 순으로 정해진다.
+- 명령은 컨테이너 안에서 실행한다. Windows 호스트에는 Azure 접속용 SSL CA 파일이 없어서 `env.py`가 안내와 함께 멈춘다.
+- **`--autogenerate`는 로컬 MySQL에서만 돌린다.** Azure 개발용 DB는 `lower_case_table_names=1`이라 테이블명을 소문자로 저장해서, 거기서 비교하면 테이블 전체를 삭제/재생성하는 마이그레이션이 나온다. `env.py`가 이를 막는다.
+- 모델과 DB가 어긋났는지는 `alembic check`로 확인한다. (`No new upgrade operations detected.`)
+- 첫 리비전 `baseline current schema`는 기존 DB를 그대로 옮긴 것이라, 이미 존재하던 로컬/개발용 DB에는 `upgrade`가 아니라 `stamp head`로 적용했다.
 
 ## 8. Error Handling Rules
 - 모든 에러 응답 형식은 `{ "code": ... }` 이다. (`app/core/errors.py`) 응답에 `message`는 넣지 않는다.

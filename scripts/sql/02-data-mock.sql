@@ -282,22 +282,136 @@ VALUES
         {"quiz_index": 2, "img_url": null, "question": "제주를 대표하는 겨울 과일을 쓰세요.", "options": null, "answer": "감귤", "hint": "주황색 과일이에요.", "explanation": "감귤은 제주의 기후와 농업문화를 상징하는 대표 과일입니다."},
         {"quiz_index": 3, "img_url": null, "question": "제주 감귤밭에서 돌담이 하는 역할은?", "options": ["바람을 줄여 나무를 보호", "바닷물을 끌어오기", "햇빛을 완전히 차단", "나무를 이동시키기"], "answer": "바람을 줄여 나무를 보호", "hint": "제주의 강한 바람을 생각해 보세요.", "explanation": "감귤밭 돌담은 강한 바람을 줄여 감귤나무와 열매를 보호합니다."}
     ]',
-    '{"ar_character_id": 4, "point": 150, "coupon_location": "서귀포 감귤상점", "coupon_price": 3000}');
+    '{"ar_character_id": 4, "point": 150, "coupon_location": "서귀포 감귤상점", "coupon_price": 3000}'),
+
+    (16, 1, 3, '[
+        {"quiz_index": 1, "img_url": null, "question": "제주도의 가장 높은 산은 무엇일까요?", "options": ["한라산", "설악산", "지리산", "북한산"], "answer": "한라산", "hint": "제주 한가운데 자리한 산이에요.", "explanation": "한라산은 해발 1,947m로 대한민국에서 가장 높은 산입니다."},
+        {"quiz_index": 2, "img_url": null, "question": "한라산 정상의 화구호 이름은 무엇일까요?", "options": ["백록담", "천지", "주산지", "세량지"], "answer": "백록담", "hint": "흰 사슴에 관한 전설이 전해져요.", "explanation": "한라산 정상에는 화산 활동으로 형성된 백록담이 있습니다."},
+        {"quiz_index": 3, "img_url": null, "question": "한라산은 어느 국립공원에 속할까요?", "options": ["한라산국립공원", "다도해해상국립공원", "지리산국립공원", "설악산국립공원"], "answer": "한라산국립공원", "hint": "산 이름이 그대로 들어가요.", "explanation": "한라산 일대는 한라산국립공원으로 지정되어 보호받고 있습니다."}
+    ]', '{"ar_character_id": 5, "point": 120, "coupon_location": "백록담 산책상점", "coupon_price": 2000}'),
+
+    (17, 1, 3, '[
+        {"quiz_index": 1, "img_url": null, "question": "제주 해안에서 바람을 이용해 물고기를 잡던 전통 시설은?", "options": ["원담", "정낭", "불턱", "테왁"], "answer": "원담", "hint": "돌로 둥글게 둘러 만든 시설이에요.", "explanation": "원담은 밀물과 썰물의 차이를 이용해 고기를 잡던 제주 전통 어로 시설입니다."},
+        {"quiz_index": 2, "img_url": null, "question": "제주 바다에서 가장 큰 조수 차가 나타나는 때는?", "options": ["사리", "조금", "정오", "한낮"], "answer": "사리", "hint": "음력 보름과 그믐 무렵이에요.", "explanation": "사리에는 밀물과 썰물의 수위 차가 크게 나타납니다."},
+        {"quiz_index": 3, "img_url": null, "question": "원담의 주재료는 무엇일까요?", "options": ["현무암", "철", "유리", "대나무"], "answer": "현무암", "hint": "제주 해안의 검은 돌이에요.", "explanation": "원담은 제주 해안에서 쉽게 구할 수 있는 현무암을 쌓아 만들었습니다."}
+    ]', '{"ar_character_id": 6, "point": 180, "coupon_location": "바당물결 휴게점", "coupon_price": 3000}'),
+
+    (18, 1, 3, '[
+        {"quiz_index": 1, "img_url": null, "question": "제주의 대표적인 화산 지형인 작은 산을 무엇이라 하나요?", "options": ["오름", "고원", "분지", "협곡"], "answer": "오름", "hint": "제주 곳곳에서 볼 수 있어요.", "explanation": "오름은 제주에서 독립된 소형 화산체를 부르는 말입니다."},
+        {"quiz_index": 2, "img_url": null, "question": "제주 오름의 꼭대기에 흔히 볼 수 있는 지형은?", "options": ["분화구", "빙하", "삼각주", "갯벌"], "answer": "분화구", "hint": "화산 활동의 흔적이에요.", "explanation": "많은 오름 정상에는 화산 분출로 만들어진 분화구가 남아 있습니다."},
+        {"quiz_index": 3, "img_url": null, "question": "오름 탐방 시 지켜야 할 행동은?", "options": ["지정 탐방로 이용", "식물 채취", "쓰레기 투기", "출입 제한 구역 진입"], "answer": "지정 탐방로 이용", "hint": "자연을 보호하는 방법이에요.", "explanation": "오름의 생태를 보호하려면 지정된 탐방로를 이용해야 합니다."}
+    ]', '{"ar_character_id": 7, "point": 150, "coupon_location": "오름바람 매점", "coupon_price": 2500}'),
+
+    (19, 1, 3, '[
+        {"quiz_index": 1, "img_url": null, "question": "제주 전통 물항아리를 등에 지고 나르던 도구는?", "options": ["물허벅", "테왁", "빗창", "정낭"], "answer": "물허벅", "hint": "물을 담는 둥근 옹기예요.", "explanation": "물허벅은 제주 여성들이 물을 길어 나를 때 사용한 옹기입니다."},
+        {"quiz_index": 2, "img_url": null, "question": "물허벅을 운반할 때 등에 받치던 바구니는?", "options": ["물구덕", "망사리", "차롱", "테우리"], "answer": "물구덕", "hint": "대나무로 짠 운반 도구예요.", "explanation": "물구덕은 물허벅을 등에 안정적으로 지기 위한 대나무 바구니입니다."},
+        {"quiz_index": 3, "img_url": null, "question": "제주에서 물을 귀하게 여긴 주된 이유는?", "options": ["지표수가 부족해서", "비가 오지 않아서", "강이 너무 많아서", "물이 얼어서"], "answer": "지표수가 부족해서", "hint": "화산암 지질을 생각해 보세요.", "explanation": "물이 화산암층 아래로 잘 스며들어 지표수가 부족했기 때문입니다."}
+    ]', '{"ar_character_id": 8, "point": 100, "coupon_location": "용천수 이야기방", "coupon_price": 1500}'),
+
+    (20, 1, 3, '[
+        {"quiz_index": 1, "img_url": null, "question": "제주 목축 문화를 상징하는 말 관리인을 무엇이라 불렀을까요?", "options": ["테우리", "잠녀", "심방", "훈장"], "answer": "테우리", "hint": "소와 말을 돌보던 사람이에요.", "explanation": "테우리는 제주에서 소와 말을 방목하고 관리하던 목동을 뜻합니다."},
+        {"quiz_index": 2, "img_url": null, "question": "제주마가 주로 방목되던 지역은?", "options": ["중산간 초지", "해저", "도심 지하", "모래사장"], "answer": "중산간 초지", "hint": "해안과 한라산 사이 지역이에요.", "explanation": "제주마는 풀이 풍부한 중산간 초지에서 주로 방목되었습니다."},
+        {"quiz_index": 3, "img_url": null, "question": "목축지 경계를 표시하는 제주 돌담은?", "options": ["잣성", "밭담", "산담", "원담"], "answer": "잣성", "hint": "한라산 중산간에 이어진 돌담이에요.", "explanation": "잣성은 말과 소의 방목 범위를 구분하기 위해 중산간에 쌓은 돌담입니다."}
+    ]', '{"ar_character_id": 9, "point": 200, "coupon_location": "조랑말 구름카페", "coupon_price": 3500}'),
+
+    (21, 1, 3, '[
+        {"quiz_index": 1, "img_url": null, "question": "제주 신화에서 농경의 여신으로 알려진 인물은?", "options": ["자청비", "설문대할망", "삼승할망", "영등할망"], "answer": "자청비", "hint": "세경본풀이의 주인공이에요.", "explanation": "자청비는 제주 세경본풀이에 등장하는 농경의 여신입니다."},
+        {"quiz_index": 2, "img_url": null, "question": "제주를 만들었다고 전해지는 거대한 여신은?", "options": ["설문대할망", "자청비", "영등할망", "오늘이"], "answer": "설문대할망", "hint": "한라산과 관련된 창조 설화예요.", "explanation": "설문대할망은 제주섬과 한라산을 만들었다고 전해지는 거대한 여신입니다."},
+        {"quiz_index": 3, "img_url": null, "question": "제주 신들의 이야기를 풀어내는 무속 서사시는?", "options": ["본풀이", "판소리", "가사", "시조"], "answer": "본풀이", "hint": "신의 근본을 풀어낸다는 뜻이에요.", "explanation": "본풀이는 신의 내력과 이야기를 노래로 전하는 제주 무속 서사시입니다."}
+    ]', '{"ar_character_id": 10, "point": 250, "coupon_location": "신화정원 기념상점", "coupon_price": 4000}'),
+
+    (22, 1, 3, '[
+        {"quiz_index": 1, "img_url": null, "question": "제주에서 바람의 신을 맞이하는 대표적인 민속 행사는?", "options": ["영등굿", "단오제", "강릉농악", "은산별신제"], "answer": "영등굿", "hint": "음력 2월에 열려요.", "explanation": "영등굿은 바람의 신 영등할망을 맞고 보내며 풍요를 기원하는 제주 굿입니다."},
+        {"quiz_index": 2, "img_url": null, "question": "영등할망이 제주에 머문다고 전해지는 달은?", "options": ["음력 2월", "음력 5월", "음력 8월", "음력 12월"], "answer": "음력 2월", "hint": "봄바람이 시작되는 무렵이에요.", "explanation": "제주에서는 음력 2월을 영등달이라 부르며 영등할망을 맞이합니다."},
+        {"quiz_index": 3, "img_url": null, "question": "영등굿에서 주로 기원하는 것은?", "options": ["풍어와 안전", "폭설", "가뭄", "전쟁"], "answer": "풍어와 안전", "hint": "바다에서 일하는 사람들의 바람이에요.", "explanation": "해녀와 어민들은 영등굿을 통해 풍어와 바다에서의 안전을 기원합니다."}
+    ]', '{"ar_character_id": 11, "point": 180, "coupon_location": "영등바람 찻집", "coupon_price": 3000}'),
+
+    (23, 1, 3, '[
+        {"quiz_index": 1, "img_url": null, "question": "제주 전통 초가집의 지붕을 묶는 줄은?", "options": ["집줄", "닻줄", "빨랫줄", "낚싯줄"], "answer": "집줄", "hint": "강한 바람에 지붕이 날리지 않게 해요.", "explanation": "제주 초가의 지붕은 새끼로 만든 집줄을 바둑판처럼 엮어 단단히 묶었습니다."},
+        {"quiz_index": 2, "img_url": null, "question": "제주 초가집 지붕의 주재료는?", "options": ["띠풀", "철판", "기와", "유리"], "answer": "띠풀", "hint": "제주 들판에서 자라는 풀이에요.", "explanation": "제주 초가 지붕은 바람에 강한 띠풀을 두껍게 덮어 만들었습니다."},
+        {"quiz_index": 3, "img_url": null, "question": "제주 초가가 낮게 지어진 이유는?", "options": ["강풍에 견디기 위해", "눈을 쌓기 위해", "햇빛을 막기 위해", "배를 보관하기 위해"], "answer": "강풍에 견디기 위해", "hint": "제주는 바람이 강해요.", "explanation": "건물 높이를 낮추면 강한 바람이 가하는 힘을 줄일 수 있습니다."}
+    ]', '{"ar_character_id": 1, "point": 130, "coupon_location": "초가지붕 공방", "coupon_price": 2000}'),
+
+    (24, 1, 3, '[
+        {"quiz_index": 1, "img_url": null, "question": "제주에서 제사를 지낼 때 음식을 담는 대나무 그릇은?", "options": ["차롱", "테왁", "물구덕", "정낭"], "answer": "차롱", "hint": "네모난 대나무 바구니예요.", "explanation": "차롱은 음식을 담아 운반하거나 보관하던 제주 전통 대나무 바구니입니다."},
+        {"quiz_index": 2, "img_url": null, "question": "차롱의 주재료는 무엇일까요?", "options": ["대나무", "현무암", "무쇠", "유리"], "answer": "대나무", "hint": "가늘게 쪼개 엮어요.", "explanation": "차롱은 대나무를 가늘게 쪼개 촘촘하게 엮어 만듭니다."},
+        {"quiz_index": 3, "img_url": null, "question": "제주 전통 공예를 보존하는 올바른 방법은?", "options": ["기술을 배우고 기록하기", "도구를 폐기하기", "완성품을 훼손하기", "재료를 무단 채취하기"], "answer": "기술을 배우고 기록하기", "hint": "다음 세대에 전하는 방법이에요.", "explanation": "전통 공예 기술을 배우고 기록하면 지역의 생활문화를 이어갈 수 있습니다."}
+    ]', '{"ar_character_id": 2, "point": 100, "coupon_location": "대나무차롱 작업실", "coupon_price": 2000}'),
+
+    (25, 1, 3, '[
+        {"quiz_index": 1, "img_url": null, "question": "제주의 대표적인 해안 폭포로 바다로 직접 떨어지는 곳은?", "options": ["정방폭포", "천지연폭포", "엉또폭포", "비룡폭포"], "answer": "정방폭포", "hint": "서귀포 해안에 있어요.", "explanation": "정방폭포는 물줄기가 바다 가까이 직접 떨어지는 제주 대표 폭포입니다."},
+        {"quiz_index": 2, "img_url": null, "question": "정방폭포가 위치한 도시는?", "options": ["서귀포시", "제주시", "부산시", "강릉시"], "answer": "서귀포시", "hint": "제주 남쪽 도시예요.", "explanation": "정방폭포는 제주특별자치도 서귀포시에 있습니다."},
+        {"quiz_index": 3, "img_url": null, "question": "폭포 탐방 시 안전한 행동은?", "options": ["지정된 길 이용", "젖은 바위에서 뛰기", "난간 넘기", "통제구역 진입"], "answer": "지정된 길 이용", "hint": "미끄러운 지형을 주의해야 해요.", "explanation": "폭포 주변은 미끄러우므로 지정된 탐방로와 안전 수칙을 따라야 합니다."}
+    ]', '{"ar_character_id": 3, "point": 160, "coupon_location": "정방물소리 카페", "coupon_price": 3000}'),
+
+    (26, 1, 3, '[
+        {"quiz_index": 1, "img_url": null, "question": "제주 서쪽의 대표적인 섬으로 산방산 앞바다에 있는 섬은?", "options": ["가파도", "마라도", "비양도", "차귀도"], "answer": "가파도", "hint": "청보리로 유명해요.", "explanation": "가파도는 산방산 남쪽 바다에 있으며 청보리밭으로 잘 알려져 있습니다."},
+        {"quiz_index": 2, "img_url": null, "question": "가파도의 봄철 대표 농작물은?", "options": ["청보리", "인삼", "사과", "밤"], "answer": "청보리", "hint": "섬을 초록빛으로 물들여요.", "explanation": "가파도에서는 봄마다 넓은 청보리밭을 볼 수 있습니다."},
+        {"quiz_index": 3, "img_url": null, "question": "대한민국 최남단 섬으로 알려진 곳은?", "options": ["마라도", "우도", "비양도", "가파도"], "answer": "마라도", "hint": "가파도보다 더 남쪽이에요.", "explanation": "마라도는 대한민국의 최남단 섬으로 알려져 있습니다."}
+    ]', '{"ar_character_id": 4, "point": 220, "coupon_location": "청보리 섬마켓", "coupon_price": 4000}'),
+
+    (27, 1, 3, '[
+        {"quiz_index": 1, "img_url": null, "question": "제주 바닷가에서 소금을 만들던 밭은?", "options": ["염전", "목장", "다랑논", "과수원"], "answer": "염전", "hint": "바닷물을 증발시켜요.", "explanation": "염전은 바닷물을 햇볕과 바람으로 증발시켜 소금을 얻는 곳입니다."},
+        {"quiz_index": 2, "img_url": null, "question": "소금을 만드는 데 중요한 자연 요소는?", "options": ["햇빛과 바람", "눈과 얼음", "용암과 불", "안개와 서리"], "answer": "햇빛과 바람", "hint": "물을 증발시키는 요소예요.", "explanation": "강한 햇빛과 바람은 바닷물의 수분을 빠르게 증발시킵니다."},
+        {"quiz_index": 3, "img_url": null, "question": "제주 전통 소금 생산과 관련된 자원은?", "options": ["바닷물", "용천수", "빗물", "지하 광석"], "answer": "바닷물", "hint": "섬을 둘러싼 물이에요.", "explanation": "제주에서는 주변 바다의 바닷물을 활용해 소금을 생산했습니다."}
+    ]', '{"ar_character_id": 5, "point": 140, "coupon_location": "소금바람 상회", "coupon_price": 2500}'),
+
+    (28, 1, 3, '[
+        {"quiz_index": 1, "img_url": null, "question": "제주에서 무덤 주변을 두르는 돌담은?", "options": ["산담", "밭담", "잣성", "원담"], "answer": "산담", "hint": "묘를 뜻하는 제주말과 담이 합쳐졌어요.", "explanation": "산담은 무덤을 보호하고 영역을 표시하기 위해 둘러쌓은 돌담입니다."},
+        {"quiz_index": 2, "img_url": null, "question": "산담 입구에 세우는 돌기둥은?", "options": ["정주석", "망주석", "비석", "장승"], "answer": "정주석", "hint": "정낭을 걸기도 했어요.", "explanation": "산담 입구의 정주석에는 정낭을 걸어 출입을 표시하기도 했습니다."},
+        {"quiz_index": 3, "img_url": null, "question": "제주 돌담 문화의 공통 재료는?", "options": ["현무암", "화강암", "석회암", "사암"], "answer": "현무암", "hint": "검은 화산석이에요.", "explanation": "제주 돌담은 화산 활동으로 생긴 현무암을 주로 사용합니다."}
+    ]', '{"ar_character_id": 6, "point": 170, "coupon_location": "돌담기억 책방", "coupon_price": 3000}'),
+
+    (29, 1, 3, '[
+        {"quiz_index": 1, "img_url": null, "question": "제주에서 음력 정월대보름 무렵 들불을 놓던 풍습과 관련된 축제는?", "options": ["들불축제", "유채꽃축제", "감귤축제", "칠십리축제"], "answer": "들불축제", "hint": "오름의 묵은 풀을 태우는 풍습에서 시작됐어요.", "explanation": "제주들불축제는 목축지의 해묵은 풀을 태우던 방애 풍습을 현대적으로 재현한 축제입니다."},
+        {"quiz_index": 2, "img_url": null, "question": "제주들불축제로 유명한 오름은?", "options": ["새별오름", "다랑쉬오름", "용눈이오름", "아부오름"], "answer": "새별오름", "hint": "애월읍에 있는 오름이에요.", "explanation": "새별오름은 제주들불축제가 열리는 대표 장소입니다."},
+        {"quiz_index": 3, "img_url": null, "question": "전통 들불 풍습의 목적은?", "options": ["해충 제거와 새 풀 돋기", "바닷물 증발", "집 짓기", "물고기 잡기"], "answer": "해충 제거와 새 풀 돋기", "hint": "목축지를 관리하는 방법이에요.", "explanation": "묵은 풀을 태우면 해충을 줄이고 가축이 먹을 새 풀이 돋는 데 도움이 됐습니다."}
+    ]', '{"ar_character_id": 7, "point": 230, "coupon_location": "새별노을 간식점", "coupon_price": 4500}'),
+
+    (30, 1, 3, '[
+        {"quiz_index": 1, "img_url": null, "question": "제주의 전통 시장에서 흔히 맛볼 수 있는 국수는?", "options": ["고기국수", "냉면", "막국수", "쫄면"], "answer": "고기국수", "hint": "돼지고기 육수를 사용해요.", "explanation": "고기국수는 돼지고기 육수와 수육을 올려 먹는 제주 대표 음식입니다."},
+        {"quiz_index": 2, "img_url": null, "question": "제주 향토 음식 몸국의 몸은 무엇을 뜻할까요?", "options": ["모자반", "미역", "톳", "다시마"], "answer": "모자반", "hint": "갈색 해조류예요.", "explanation": "제주어로 모자반을 몸이라 하며 돼지 육수에 넣어 몸국을 끓입니다."},
+        {"quiz_index": 3, "img_url": null, "question": "제주 빙떡 속에 주로 들어가는 재료는?", "options": ["무채", "감자", "팥", "고구마"], "answer": "무채", "hint": "메밀 전병에 넣어 말아요.", "explanation": "빙떡은 메밀 전병에 양념한 무채를 넣어 말아 만든 제주 음식입니다."}
+    ]', '{"ar_character_id": 8, "point": 200, "coupon_location": "올레맛길 식당", "coupon_price": 4000}');
 
 
 -- ---------------------------------------------------------------------
--- COOPERATIVE_MISSION : 미션 정보
+-- COOPERATIVE_MISSION : 장소 1~30에 대응하는 미션 정보
 -- ---------------------------------------------------------------------
 
 INSERT INTO `COOPERATIVE_MISSION`
     (`id`, `mission_id`, `location_id`, `reward_detail`)
 VALUES
-    (1, 2, 3,
-     '{"ar_character_id": 5, "point": 100, "coupon_location": "종화네 과수원", "coupon_price": 1000}'),
-    (2, 2, 6,
-     '{"ar_character_id": 6, "point": 200, "coupon_location": "카멜리아힐 가든카페", "coupon_price": 4000}'),
-    (3, 2, 10,
-     '{"ar_character_id": 7, "point": 250, "coupon_location": "애월 한담 베이커리", "coupon_price": 5000}');
+    (1,  2, 1,  '{"ar_character_id": 1, "point": 100, "coupon_location": "귤빛 협동상점 1호점", "coupon_price": 1000}'),
+    (2,  2, 2,  '{"ar_character_id": 2, "point": 120, "coupon_location": "바람길 팀카페", "coupon_price": 1500}'),
+    (3,  2, 3,  '{"ar_character_id": 3, "point": 150, "coupon_location": "돌담옆 쉼터", "coupon_price": 2000}'),
+    (4,  2, 4,  '{"ar_character_id": 4, "point": 180, "coupon_location": "파도소리 상회", "coupon_price": 2500}'),
+    (5,  2, 5,  '{"ar_character_id": 5, "point": 200, "coupon_location": "오름친구 매점", "coupon_price": 3000}'),
+    (6,  2, 6,  '{"ar_character_id": 6, "point": 220, "coupon_location": "동백정원 카페", "coupon_price": 3500}'),
+    (7,  2, 7,  '{"ar_character_id": 7, "point": 250, "coupon_location": "노을조랑 휴게소", "coupon_price": 4000}'),
+    (8,  2, 8,  '{"ar_character_id": 8, "point": 130, "coupon_location": "물방울 기념점", "coupon_price": 2000}'),
+    (9,  2, 9,  '{"ar_character_id": 9, "point": 160, "coupon_location": "물빛골목 공방", "coupon_price": 2500}'),
+    (10, 2, 10, '{"ar_character_id": 10, "point": 190, "coupon_location": "숲노루 찻집", "coupon_price": 3000}'),
+    (11, 2, 11, '{"ar_character_id": 11, "point": 210, "coupon_location": "돌멍이 잡화점", "coupon_price": 3500}'),
+    (12, 2, 12, '{"ar_character_id": 1, "point": 240, "coupon_location": "제주별 협동마켓", "coupon_price": 4000}'),
+    (13, 2, 13, '{"ar_character_id": 2, "point": 110, "coupon_location": "용암길 베이커리", "coupon_price": 1500}'),
+    (14, 2, 14, '{"ar_character_id": 3, "point": 140, "coupon_location": "숨비소리 카페", "coupon_price": 2000}'),
+    (15, 2, 15, '{"ar_character_id": 4, "point": 170, "coupon_location": "시장요정 간식점", "coupon_price": 2500}'),
+    (16, 2, 16, '{"ar_character_id": 5, "point": 200, "coupon_location": "협재파도 상점", "coupon_price": 3000}'),
+    (17, 2, 17, '{"ar_character_id": 6, "point": 230, "coupon_location": "동백꽃 구름집", "coupon_price": 3500}'),
+    (18, 2, 18, '{"ar_character_id": 7, "point": 260, "coupon_location": "애월노을 상회", "coupon_price": 4500}'),
+    (19, 2, 19, '{"ar_character_id": 8, "point": 125, "coupon_location": "천지연 물소리점", "coupon_price": 1800}'),
+    (20, 2, 20, '{"ar_character_id": 9, "point": 155, "coupon_location": "쇠소깍 물빛점", "coupon_price": 2300}'),
+    (21, 2, 21, '{"ar_character_id": 10, "point": 185, "coupon_location": "어리목 숲가게", "coupon_price": 2800}'),
+    (22, 2, 22, '{"ar_character_id": 11, "point": 215, "coupon_location": "현무암 작업실", "coupon_price": 3300}'),
+    (23, 2, 23, '{"ar_character_id": 1, "point": 245, "coupon_location": "자청비 씨앗상점", "coupon_price": 3800}'),
+    (24, 2, 24, '{"ar_character_id": 2, "point": 275, "coupon_location": "동굴빛 기념관", "coupon_price": 4800}'),
+    (25, 2, 25, '{"ar_character_id": 3, "point": 135, "coupon_location": "해녀마을 쉼터", "coupon_price": 2000}'),
+    (26, 2, 26, '{"ar_character_id": 4, "point": 165, "coupon_location": "오메기 골목점", "coupon_price": 2500}'),
+    (27, 2, 27, '{"ar_character_id": 5, "point": 195, "coupon_location": "푸른파도 카페", "coupon_price": 3000}'),
+    (28, 2, 28, '{"ar_character_id": 6, "point": 225, "coupon_location": "동백숲 찻집", "coupon_price": 3500}'),
+    (29, 2, 29, '{"ar_character_id": 7, "point": 255, "coupon_location": "조랑말 들판점", "coupon_price": 4200}'),
+    (30, 2, 30, '{"ar_character_id": 8, "point": 300, "coupon_location": "제주탐험 보상소", "coupon_price": 5000}');
 
 
 -- ---------------------------------------------------------------------
@@ -328,20 +442,43 @@ VALUES
 
 
 -- ---------------------------------------------------------------------
--- TREASURE_MISSION : 미션 정보 (보물 좌표는 진행도에서 정해진다)
+-- TREASURE_MISSION : 장소 31~60에 대응하는 미션 정보
+-- 보물 좌표는 진행도 생성 시 사용자 위치를 기준으로 정해진다.
 -- ---------------------------------------------------------------------
 
 INSERT INTO `TREASURE_MISSION`
     (`id`, `mission_id`, `location_id`, `item_total_count`, `reward_detail`)
 VALUES
-    (1, 3, 4, 3,
-     '{"ar_character_id": 8, "point": 150, "coupon_location": "서귀포 올레시장 분식", "coupon_price": 3000}'),
-
-    (2, 3, 8, 3,
-     '{"ar_character_id": 9, "point": 150, "coupon_location": "하효 감귤빵집", "coupon_price": 3000}'),
-
-    (3, 3, 7, 3,
-     '{"ar_character_id": 10, "point": 200, "coupon_location": "새별 오름 휴게소", "coupon_price": 4000}');
+    (1,  3, 31, 3, '{"ar_character_id": 8,  "point": 150, "coupon_location": "보물섬 간식상회", "coupon_price": 3000}'),
+    (2,  3, 32, 3, '{"ar_character_id": 9,  "point": 180, "coupon_location": "숨은지도 카페", "coupon_price": 3500}'),
+    (3,  3, 33, 3, '{"ar_character_id": 10, "point": 200, "coupon_location": "황금나침반 휴게점", "coupon_price": 4000}'),
+    (4,  3, 34, 3, '{"ar_character_id": 11, "point": 120, "coupon_location": "파란상자 기념점", "coupon_price": 2000}'),
+    (5,  3, 35, 3, '{"ar_character_id": 1,  "point": 160, "coupon_location": "제주보물 공방", "coupon_price": 3000}'),
+    (6,  3, 36, 3, '{"ar_character_id": 2,  "point": 220, "coupon_location": "용암동굴 매점", "coupon_price": 4500}'),
+    (7,  3, 37, 3, '{"ar_character_id": 3,  "point": 140, "coupon_location": "바다친구 상점", "coupon_price": 2500}'),
+    (8,  3, 38, 3, '{"ar_character_id": 4,  "point": 190, "coupon_location": "오메기 보물가게", "coupon_price": 3500}'),
+    (9,  3, 39, 3, '{"ar_character_id": 5,  "point": 250, "coupon_location": "협재탐험 휴게소", "coupon_price": 5000}'),
+    (10, 3, 40, 3, '{"ar_character_id": 6,  "point": 130, "coupon_location": "동백상자 카페", "coupon_price": 2000}'),
+    (11, 3, 41, 3, '{"ar_character_id": 7,  "point": 170, "coupon_location": "노을지도 상회", "coupon_price": 3000}'),
+    (12, 3, 42, 3, '{"ar_character_id": 8,  "point": 210, "coupon_location": "물방울 탐험점", "coupon_price": 4000}'),
+    (13, 3, 43, 3, '{"ar_character_id": 9,  "point": 110, "coupon_location": "물빛보물 찻집", "coupon_price": 1500}'),
+    (14, 3, 44, 3, '{"ar_character_id": 10, "point": 180, "coupon_location": "숲노루 보급소", "coupon_price": 3200}'),
+    (15, 3, 45, 3, '{"ar_character_id": 11, "point": 230, "coupon_location": "돌멍이 비밀상점", "coupon_price": 4500}'),
+    (16, 3, 46, 3, '{"ar_character_id": 1,  "point": 150, "coupon_location": "씨앗지도 문구점", "coupon_price": 2800}'),
+    (17, 3, 47, 3, '{"ar_character_id": 2,  "point": 200, "coupon_location": "검은돌 보물점", "coupon_price": 3800}'),
+    (18, 3, 48, 3, '{"ar_character_id": 3,  "point": 260, "coupon_location": "숨비해안 카페", "coupon_price": 5000}'),
+    (19, 3, 49, 3, '{"ar_character_id": 4,  "point": 125, "coupon_location": "시장골목 보급소", "coupon_price": 2200}'),
+    (20, 3, 50, 3, '{"ar_character_id": 5,  "point": 175, "coupon_location": "파도나침반 상점", "coupon_price": 3300}'),
+    (21, 3, 51, 3, '{"ar_character_id": 6,  "point": 225, "coupon_location": "동백숲 비밀가게", "coupon_price": 4300}'),
+    (22, 3, 52, 3, '{"ar_character_id": 7,  "point": 135, "coupon_location": "조랑말 지도점", "coupon_price": 2400}'),
+    (23, 3, 53, 3, '{"ar_character_id": 8,  "point": 185, "coupon_location": "폭포보물 쉼터", "coupon_price": 3400}'),
+    (24, 3, 54, 3, '{"ar_character_id": 9,  "point": 235, "coupon_location": "계곡물빛 상회", "coupon_price": 4400}'),
+    (25, 3, 55, 3, '{"ar_character_id": 10, "point": 145, "coupon_location": "한라숲 탐험점", "coupon_price": 2600}'),
+    (26, 3, 56, 3, '{"ar_character_id": 11, "point": 195, "coupon_location": "현무암 보물창고", "coupon_price": 3600}'),
+    (27, 3, 57, 3, '{"ar_character_id": 1,  "point": 245, "coupon_location": "자청비 탐험상점", "coupon_price": 4800}'),
+    (28, 3, 58, 3, '{"ar_character_id": 2,  "point": 155, "coupon_location": "용암빛 기념가게", "coupon_price": 2900}'),
+    (29, 3, 59, 3, '{"ar_character_id": 3,  "point": 205, "coupon_location": "바당숨비 보급소", "coupon_price": 3900}'),
+    (30, 3, 60, 3, '{"ar_character_id": 4,  "point": 300, "coupon_location": "제주황금 보상소", "coupon_price": 5000}');
 
 
 -- ---------------------------------------------------------------------

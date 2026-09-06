@@ -21,13 +21,20 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.database import Base, BigIntPk
+from app.core.database import (
+    Base,
+    BigIntPk,
+    CurrentTimestampOnUpdate,
+    mysql_table_args,
+)
 from app.map.models import Location
 from app.mission.models import Mission, MissionStatus
 
@@ -68,21 +75,39 @@ class CooperativeMission(Base):
     """
 
     __tablename__ = "COOPERATIVE_MISSION"
+    __table_args__ = (
+        Index("idx_cooperative_mission__mission", "mission_id"),
+        Index("idx_cooperative_mission__location", "location_id"),
+        mysql_table_args("협동 미션"),
+    )
 
     id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     mission_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("MISSION.id", ondelete="CASCADE"), nullable=False
+        BigInteger,
+        ForeignKey(
+            "MISSION.id", ondelete="CASCADE", name="fk_cooperative_mission__mission"
+        ),
+        nullable=False,
     )
     location_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("LOCATION.id", ondelete="RESTRICT"), nullable=False
+        BigInteger,
+        ForeignKey(
+            "LOCATION.id", ondelete="RESTRICT", name="fk_cooperative_mission__location"
+        ),
+        nullable=False,
     )
     # 미션 보상. {ar_character_id, point, coupon_location, coupon_price}
-    reward_detail: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    reward_detail: Mapped[dict[str, Any]] = mapped_column(
+        JSON, nullable=False, comment="{ar_character_id, point, coupon_location, coupon_price}"
+    )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now()
+        DateTime, nullable=False, server_default=func.current_timestamp()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+        DateTime,
+        nullable=False,
+        server_default=CurrentTimestampOnUpdate(),
+        onupdate=func.now(),
     )
 
     mission: Mapped[Mission] = relationship(lazy="joined")
@@ -96,33 +121,61 @@ class CooperativeMissionProgress(Base):
     """
 
     __tablename__ = "COOPERATIVE_MISSION_PROGRESS"
+    __table_args__ = (
+        UniqueConstraint("team_token", name="uk_cooperative_progress__team_token"),
+        Index("idx_cooperative_progress__mission", "cooperative_mission_id"),
+        mysql_table_args("협동 미션 진행도(방)"),
+    )
 
     id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     cooperative_mission_id: Mapped[int] = mapped_column(
         BigInteger,
-        ForeignKey("COOPERATIVE_MISSION.id", ondelete="CASCADE"),
+        ForeignKey(
+            "COOPERATIVE_MISSION.id",
+            ondelete="CASCADE",
+            name="fk_cooperative_progress__mission",
+        ),
         nullable=False,
     )
     current_step: Mapped[int] = mapped_column(
         Integer, nullable=False, default=1, server_default="1"
     )
-    mission_status: Mapped[str] = mapped_column(String(20), nullable=False)
-    team_token: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    mission_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, comment="IN_PROGRESS | COMPLETED"
+    )
+    team_token: Mapped[str] = mapped_column(
+        String(100), nullable=False, comment="팀 단위 초대 토큰"
+    )
     ar_character_reward_granted: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="0"
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="0",
+        comment="AR 캐릭터 보상 지급 여부",
     )
     point_reward_granted: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="0"
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="0",
+        comment="포인트 보상 지급 여부",
     )
     coupon_reward_granted: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="0"
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="0",
+        comment="쿠폰 보상 지급 여부",
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now()
+        DateTime, nullable=False, server_default=func.current_timestamp()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+        DateTime,
+        nullable=False,
+        server_default=CurrentTimestampOnUpdate(),
+        onupdate=func.now(),
     )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -135,17 +188,23 @@ class CooperativeRoleCard(Base):
     """
 
     __tablename__ = "COOPERATIVE_ROLE_CARD"
+    __table_args__ = (mysql_table_args("협동 미션 역할 카드"),)
 
     id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     role_name: Mapped[str] = mapped_column(String(20), nullable=False)
     role_description: Mapped[str] = mapped_column(String(200), nullable=False)
     # 역할 수행을 위해 찾아야 하는 장소/대상 목록 (string[])
-    location_to_find: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    location_to_find: Mapped[list[str]] = mapped_column(
+        JSON, nullable=False, comment="string[]"
+    )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now()
+        DateTime, nullable=False, server_default=func.current_timestamp()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+        DateTime,
+        nullable=False,
+        server_default=CurrentTimestampOnUpdate(),
+        onupdate=func.now(),
     )
 
 
@@ -157,24 +216,42 @@ class CooperativeMissionParticipant(Base):
     """
 
     __tablename__ = "COOPERATIVE_MISSION_PARTICIPANT"
+    __table_args__ = (
+        Index("idx_participant__progress", "cooperative_mission_progress_id"),
+        Index("idx_participant__user", "user_id"),
+        mysql_table_args("협동 미션 참여자"),
+    )
 
     id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     cooperative_mission_progress_id: Mapped[int] = mapped_column(
         BigInteger,
-        ForeignKey("COOPERATIVE_MISSION_PROGRESS.id", ondelete="CASCADE"),
+        ForeignKey(
+            "COOPERATIVE_MISSION_PROGRESS.id",
+            ondelete="CASCADE",
+            name="fk_participant__progress",
+        ),
         nullable=False,
     )
     user_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("USER.id", ondelete="CASCADE"), nullable=False
+        BigInteger,
+        ForeignKey("USER.id", ondelete="CASCADE", name="fk_participant__user"),
+        nullable=False,
     )
-    participant_status: Mapped[str] = mapped_column(String(20), nullable=False)
-    participant_role: Mapped[str] = mapped_column(String(20), nullable=False)
+    participant_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, comment="PENDING | ACCEPTED"
+    )
+    participant_role: Mapped[str] = mapped_column(
+        String(20), nullable=False, comment="HOST | MEMBER"
+    )
     joined_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now()
+        DateTime, nullable=False, server_default=func.current_timestamp()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+        DateTime,
+        nullable=False,
+        server_default=CurrentTimestampOnUpdate(),
+        onupdate=func.now(),
     )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -189,25 +266,43 @@ class CooperativeRoleProgress(Base):
     """
 
     __tablename__ = "COOPERATIVE_ROLE_PROGRESS"
+    __table_args__ = (
+        Index("idx_role_progress__participant", "participant_id"),
+        Index("idx_role_progress__role_card", "cooperative_role_card_id"),
+        mysql_table_args("협동 미션 역할 진행도"),
+    )
 
     id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     participant_id: Mapped[int] = mapped_column(
         BigInteger,
-        ForeignKey("COOPERATIVE_MISSION_PARTICIPANT.id", ondelete="CASCADE"),
+        ForeignKey(
+            "COOPERATIVE_MISSION_PARTICIPANT.id",
+            ondelete="CASCADE",
+            name="fk_role_progress__participant",
+        ),
         nullable=False,
     )
     cooperative_role_card_id: Mapped[int] = mapped_column(
         BigInteger,
-        ForeignKey("COOPERATIVE_ROLE_CARD.id", ondelete="CASCADE"),
+        ForeignKey(
+            "COOPERATIVE_ROLE_CARD.id",
+            ondelete="CASCADE",
+            name="fk_role_progress__role_card",
+        ),
         nullable=False,
     )
     item_img_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    progress_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    progress_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, comment="IN_PROGRESS | COMPLETED"
+    )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now()
+        DateTime, nullable=False, server_default=func.current_timestamp()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+        DateTime,
+        nullable=False,
+        server_default=CurrentTimestampOnUpdate(),
+        onupdate=func.now(),
     )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
