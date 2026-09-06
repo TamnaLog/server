@@ -65,17 +65,17 @@ Status Code : 200
 | `missionProgressId` | number | 협동 미션 진행도 id |
 | `missionId` | number | 협동 미션 id. `COOPERATIVE_MISSION.id` |
 | `missionTitle` | string | 협동 미션 제목 |
-| `missionProgressStatus` | string | 협동 미션 진행 상태. `IN_PROGRESS | COMPLETED` |
+| `missionProgressStatus` | string | 협동 미션 진행 상태. `IN_PROGRESS \| COMPLETED` |
 | `currentStep` | number | 현재 단계. `1: 초대, 2: 역할 카드 배정, 3: 미션 수행, 4: 미션 완료` |
-| `currentParticipant` | object | null | Bearer 토큰으로 식별한 현재 사용자의 참가자 정보. 4단계이면 `null` |
+| `currentParticipant` | object \| null | Bearer 토큰으로 식별한 현재 사용자의 참가자 정보. 4단계이면 `null` |
 | `currentParticipant.participantId` | number | 현재 사용자의 참가자 id |
-| `currentParticipant.participantRole` | string | 현재 사용자의 역할. `HOST | MEMBER` |
-| `currentParticipant.participantStatus` | string | 현재 사용자의 참여 상태. `PENDING | ACCEPTED` |
+| `currentParticipant.participantRole` | string | 현재 사용자의 역할. `HOST \| MEMBER` |
+| `currentParticipant.participantStatus` | string | 현재 사용자의 참여 상태. `PENDING \| ACCEPTED` |
 | `participants` | object[] | 해당 진행도의 방장과 참여 요청 목록 |
 | `participants[].participantId` | number | 참가자 id |
 | `participants[].name` | string | 참가자 닉네임 |
-| `participants[].participantRole` | string | 참가자 역할. `HOST | MEMBER` |
-| `participants[].participantStatus` | string | 참여 상태. `PENDING | ACCEPTED` |
+| `participants[].participantRole` | string | 참가자 역할. `HOST \| MEMBER` |
+| `participants[].participantStatus` | string | 참여 상태. `PENDING \| ACCEPTED` |
 | `roleCards` | object[] | 협동 미션에서 사용하는 공통 역할 카드 전체 목록 |
 | `roleCards[].roleCardId` | number | 역할 카드 id |
 | `roleCards[].roleName` | string | 역할 이름 |
@@ -87,27 +87,27 @@ Status Code : 200
 | `roleProgresses[].participantName` | string | 역할을 맡은 참가자 닉네임 |
 | `roleProgresses[].roleCardId` | number | 배정된 역할 카드 id |
 | `roleProgresses[].roleName` | string | 배정된 역할 이름 |
-| `roleProgresses[].progressStatus` | string | 역할 인증 진행 상태. `IN_PROGRESS | COMPLETED` |
-| `roleProgresses[].itemImgUrl` | string | null | 역할 인증 이미지 URL. 저장된 이미지가 없으면 `null` |
-| `completedRoleCount` | number | null | 저장된 역할 진행도 중 인증을 완료한 수. 2~3단계에서만 반환 |
-| `totalRoleCount` | number | null | 실제로 생성된 역할 진행도 수. 2~3단계에서만 반환하며 배정하지 않은 역할 카드는 포함하지 않음 |
-| `reward` | object | null | 현재 사용자에게 지급된 완료 보상. 4단계에서만 객체로 반환 |
-| `reward.arCharacter` | object | null | 지급된 AR 캐릭터. 지급되지 않았으면 `null` |
+| `roleProgresses[].progressStatus` | string | 역할 인증 진행 상태. `IN_PROGRESS \| COMPLETED` |
+| `roleProgresses[].itemImgUrl` | string \| null | 역할 인증 이미지 URL. 저장된 이미지가 없으면 `null` |
+| `completedRoleCount` | number \| null | 저장된 역할 진행도 중 인증을 완료한 수. 2~3단계에서만 반환 |
+| `totalRoleCount` | number \| null | 실제로 생성된 역할 진행도 수. 2~3단계에서만 반환하며 배정하지 않은 역할 카드는 포함하지 않음 |
+| `reward` | object \| null | 현재 사용자에게 지급된 완료 보상. 4단계에서만 객체로 반환 |
+| `reward.arCharacter` | object \| null | 지급된 AR 캐릭터. 지급되지 않았으면 `null` |
 | `reward.arCharacter.id` | number | AR 캐릭터 id |
 | `reward.arCharacter.name` | string | AR 캐릭터 이름 |
 | `reward.arCharacter.imageUrl` | string | AR 캐릭터 이미지 URL |
-| `reward.point` | number | null | 지급된 포인트. 지급되지 않았으면 `null` |
-| `reward.coupon` | object | null | 지급된 쿠폰. 지급되지 않았으면 `null` |
+| `reward.point` | number \| null | 지급된 포인트. 지급되지 않았으면 `null` |
+| `reward.coupon` | object \| null | 지급된 쿠폰. 지급되지 않았으면 `null` |
 | `reward.coupon.couponLocation` | string | 쿠폰 사용처 |
 | `reward.coupon.couponPrice` | number | 쿠폰 금액 |
-| `nextLocation` | object | null | 다음 추천 장소. 4단계에서만 객체로 반환 |
+| `nextLocation` | object \| null | 다음 추천 장소. 4단계에서만 객체로 반환 |
 | `nextLocation.id` | number | 다음 장소 id |
 | `nextLocation.locationTitle` | string | 다음 장소명 |
-| `nextLocation.locationImageUrl` | string | null | 다음 장소 이미지 URL. 조회하지 못하면 `null` |
+| `nextLocation.locationImageUrl` | string \| null | 다음 장소 이미지 URL. 조회하지 못하면 `null` |
 | `nextLocation.distanceMeter` | number | Query의 사용자 위치에서 다음 장소까지의 직선거리(m) |
-| `nextLocation.mission` | object | null | 다음 장소의 미션. 연결된 미션이 없으면 `null` |
+| `nextLocation.mission` | object \| null | 다음 장소의 미션. 연결된 미션이 없으면 `null` |
 | `nextLocation.mission.id` | number | 다음 미션 id |
-| `nextLocation.mission.missionType` | string | 다음 미션 유형. `CULTURE | COOPERATIVE | TREASURE` |
+| `nextLocation.mission.missionType` | string | 다음 미션 유형. `CULTURE \| COOPERATIVE \| TREASURE` |
 
 1단계: 초대 진행 중인 경우
 
