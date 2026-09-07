@@ -1,8 +1,6 @@
 """마이페이지 도메인 라우터.
 
 API 명세: app/mypage/docs/API_SPEC.md
-
-여행 마무리 엽서 저장은 아직 명세가 확정되지 않아 TODO 로 남겨둔다.
 """
 
 from typing import Annotated, Any
