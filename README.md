@@ -58,6 +58,8 @@ scripts/sql/01-schema.sql      테이블 생성 (docs/erd.md 기준 25개)
 scripts/sql/02-data-mock.sql   목업 데이터 (사용자 1 = 나, 제주 장소/미션/방명록)
 ```
 
+`02-data-mock.sql`은 `LOCATION` 행을 참조하지만 `LOCATION` INSERT를 갖고 있지 않습니다. (장소는 `scripts/insert_location.py`가 TourAPI에서 받아 채웁니다) 그래서 `LOCATION`이 비어 있는 상태로 목업을 넣으면 `VISITED_LOCATION` INSERT가 FK 위반으로 실패하고 초기화가 중단됩니다. 스키마만 필요하면 `02-data-mock.sql`은 건너뜁니다.
+
 SQL 파일을 수정한 뒤 다시 반영하려면 볼륨을 지우고 새로 띄워야 합니다. 이미 볼륨이 있으면 자동 실행이 건너뛰어집니다.
 
 ```powershell
@@ -71,6 +73,30 @@ docker compose -f docker-compose.dev.yml up --build
 docker compose -f docker-compose.dev.yml exec -T mysql mysql -uroot -proot_password tour < scripts/sql/01-schema.sql
 docker compose -f docker-compose.dev.yml exec -T mysql mysql -uroot -proot_password tour < scripts/sql/02-data-mock.sql
 ```
+
+### DB 마이그레이션 (Alembic)
+
+스키마 변경은 Alembic 리비전으로 관리합니다. 첫 리비전(`baseline current schema`)은 기존 DB를 그대로 옮긴 것이라, 이미 만들어져 있던 로컬/개발용 DB에는 `upgrade`가 아니라 `stamp head`로 적용했습니다.
+
+명령은 컨테이너 안에서 실행합니다. Windows 호스트에서 직접 실행하면 Azure 접속에 필요한 SSL CA 파일이 없습니다.
+
+```powershell
+# 새 마이그레이션 생성 (반드시 로컬 MySQL 대상)
+docker compose -f docker-compose.dev.yml run --rm --no-deps api alembic revision --autogenerate -m "설명"
+
+# 로컬 적용
+docker compose -f docker-compose.dev.yml run --rm --no-deps api alembic upgrade head
+
+# 개발용(Azure) 적용
+docker compose -f docker-compose.dev.yml run --rm --no-deps -e ALEMBIC_ENV_FILE=.env.azure.database api alembic upgrade head
+
+# 모델과 DB가 어긋났는지 확인 ("No new upgrade operations detected." 면 정상)
+docker compose -f docker-compose.dev.yml run --rm --no-deps api alembic check
+```
+
+Azure 개발용 DB는 `lower_case_table_names=1`이라 테이블명을 소문자로 저장합니다. 거기서 `--autogenerate`를 돌리면 테이블 25개를 전부 삭제하고 다시 만드는 마이그레이션이 나오므로 `alembic/env.py`가 막아 둡니다. **마이그레이션 생성은 항상 로컬 MySQL에서** 하고, 개발용 DB에는 `upgrade`로 적용만 합니다.
+
+접속 대상 DB는 `alembic -x db_url=...` → `ALEMBIC_ENV_FILE` 환경변수 → 기본값 `.env` 순으로 정해집니다.
 
 ## Deployment
 

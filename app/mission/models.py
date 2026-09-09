@@ -18,10 +18,15 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from sqlalchemy import JSON, BigInteger, DateTime, String, func
+from sqlalchemy import JSON, DateTime, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.database import Base, BigIntPk
+from app.core.database import (
+    Base,
+    BigIntPk,
+    CurrentTimestampOnUpdate,
+    mysql_table_args,
+)
 
 
 class MissionType(str, Enum):
@@ -43,18 +48,29 @@ class Mission(Base):
     """MISSION - 미션 공통."""
 
     __tablename__ = "MISSION"
+    __table_args__ = (
+        Index("idx_mission__type", "mission_type"),
+        mysql_table_args("미션 공통"),
+    )
 
     id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
-    mission_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    mission_type: Mapped[str] = mapped_column(
+        String(50), nullable=False, comment="CULTURE | COOPERATIVE | TREASURE"
+    )
     mission_title: Mapped[str] = mapped_column(String(50), nullable=False)
     description: Mapped[str] = mapped_column(String(200), nullable=False)
     # [{step, step_title, description}]
-    step_detail: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    step_detail: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON, nullable=False, comment="[{step, step_title, description}]"
+    )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now()
+        DateTime, nullable=False, server_default=func.current_timestamp()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+        DateTime,
+        nullable=False,
+        server_default=CurrentTimestampOnUpdate(),
+        onupdate=func.now(),
     )
 
     @property

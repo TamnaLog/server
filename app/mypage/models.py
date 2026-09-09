@@ -16,7 +16,7 @@ import해서 사용한다. (USER 는 여러 도메인이 공유해 app/user/mode
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, String, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.cooperative_mission.models import (
@@ -25,7 +25,12 @@ from app.cooperative_mission.models import (
     CooperativeMissionProgress,
     ParticipantStatus,
 )
-from app.core.database import Base, BigIntPk
+from app.core.database import (
+    Base,
+    BigIntPk,
+    CurrentTimestampOnUpdate,
+    mysql_table_args,
+)
 from app.culture_mission.models import CultureMission, CultureMissionProgress
 from app.map.models import Location, VisitedLocation
 from app.mission.models import Mission, MissionStatus, MissionType
@@ -67,15 +72,24 @@ class TravelEndingContent(Base):
     """
 
     __tablename__ = "TRAVEL_ENDING_CONTENT"
+    __table_args__ = (
+        Index("idx_travel_ending__user", "user_id"),
+        mysql_table_args("여행 마무리 엽서"),
+    )
 
     id: Mapped[int] = mapped_column(BigIntPk, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("USER.id", ondelete="CASCADE"), nullable=False
+        BigInteger,
+        ForeignKey("USER.id", ondelete="CASCADE", name="fk_travel_ending__user"),
+        nullable=False,
     )
     image_url: Mapped[str] = mapped_column(String(500), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now()
+        DateTime, nullable=False, server_default=func.current_timestamp()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+        DateTime,
+        nullable=False,
+        server_default=CurrentTimestampOnUpdate(),
+        onupdate=func.now(),
     )

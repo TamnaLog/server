@@ -15,6 +15,9 @@ RUN pip install --upgrade pip \
     && pip install -r requirements.txt
 
 COPY app ./app
+# 배포된 컨테이너에서 `alembic upgrade head` 를 실행할 수 있게 마이그레이션도 함께 넣는다.
+COPY alembic.ini ./alembic.ini
+COPY alembic ./alembic
 
 EXPOSE 8000
 

@@ -1,0 +1,35 @@
+Alembic 마이그레이션.
+
+기준
+- 스키마의 원본은 ORM 모델(app/<domain>/models.py)이다.
+- scripts/sql/01-schema.sql 은 같은 스키마를 DDL 로 적어둔 문서이고, 둘은 항상 일치해야 한다.
+- 첫 리비전(baseline current schema)은 기존 DB 를 그대로 옮긴 것이라, 이미 만들어져 있던
+  로컬/개발용 DB 에는 `alembic upgrade` 가 아니라 `alembic stamp head` 로 적용했다.
+
+새 마이그레이션 만들기 (반드시 로컬 MySQL 대상)
+  docker compose -f docker-compose.dev.yml run --rm --no-deps api \
+      alembic revision --autogenerate -m "설명"
+
+  Azure 개발용 DB 는 lower_case_table_names=1 이라 테이블명을 소문자로 저장한다.
+  거기서 autogenerate 를 돌리면 테이블 전체를 삭제/재생성하는 마이그레이션이 나오므로
+  env.py 가 막아 둔다. 비교 작업은 항상 로컬 MySQL 에서 한다.
+
+적용
+  # 로컬
+  docker compose -f docker-compose.dev.yml run --rm --no-deps api alembic upgrade head
+
+  # 개발용(Azure)
+  docker compose -f docker-compose.dev.yml run --rm --no-deps \
+      -e ALEMBIC_ENV_FILE=.env.azure.database api alembic upgrade head
+
+드리프트 확인
+  alembic check    # "No new upgrade operations detected." 가 나와야 정상
+
+접속 대상 DB 정하는 순서 (alembic/env.py)
+  1. alembic -x db_url=...
+  2. ALEMBIC_ENV_FILE 이 가리키는 env 파일
+  3. 기본값 .env
+
+Windows 호스트에서 직접 실행하면 Azure 접속에 필요한 SSL CA
+(/etc/ssl/certs/ca-certificates.crt)가 없어서 env.py 가 안내와 함께 멈춘다.
+그래서 명령은 컨테이너 안에서 실행한다.

@@ -1,8 +1,9 @@
 """한국관광공사 TourAPI 장소를 Azure MySQL LOCATION에 저장한다.
 
 처리 순서:
-1. 한국관광공사 TourAPI에서 제주 관광지·문화시설·행사/공연/축제를 전부 조회한다.
-2. contentId 오름차순으로 정렬하고 모든 데이터를 검증한다.
+1. 한국관광공사 TourAPI에서 제주 지역 장소를 전부 조회한다.
+2. 분류체계 대분류(`lclsSystm1`)가 저장 대상인 장소만 골라 코드를 한글 카테고리명으로 바꾸고,
+   contentId 오름차순으로 정렬한 뒤 모든 데이터를 검증한다.
 3. LOCATION에 인증 반경 100m로 장소를 저장한다.
 
 별도 옵션 없이 실행하면 .env의 TourAPI 설정과 .env.azure.database의
@@ -30,10 +31,16 @@ TOUR_API_TIMEOUT_SECONDS = 30.0
 LOCATION_TITLE_MAX_LENGTH = 100
 LOCATION_ADDRESS_MAX_LENGTH = 255
 
-CONTENT_TYPES = {
-    "12": "관광지",
-    "14": "문화시설",
-    "15": "행사·공연·축제",
+# 저장 대상 분류체계 대분류(lclsSystm1) 코드 -> LOCATION.location_category 에 저장할 한글명.
+# 코드와 이름은 TourAPI `lclsSystmCode2` 응답 기준이고, 표기만 기존 스타일(가운뎃점)에 맞췄다.
+# 여기에 없는 대분류(AC 숙박, HS 역사관광, NA 자연관광 등)는 저장하지 않는다.
+LOCATION_CATEGORIES = {
+    "EV": "축제·공연·행사",
+    "EX": "체험관광",
+    "FD": "음식",
+    "SH": "쇼핑",
+    "VE": "문화관광",
+    "LS": "레저스포츠",
 }
 
 
@@ -72,9 +79,9 @@ def required(config: dict[str, str], name: str) -> str:
 
 
 def fetch_locations(config: dict[str, str]) -> list[LocationRow]:
-    """대상 콘텐츠 유형을 모두 조회하고 contentId 오름차순으로 반환한다."""
+    """제주 장소를 모두 조회한 뒤 저장 대상 분류만 contentId 오름차순으로 반환한다."""
     base_url = required(config, "KTO_BASE_URL").rstrip("/")
-    common_params = {
+    params = {
         "serviceKey": required(config, "KTO_SERVICE_KEY"),
         "MobileOS": config.get("KTO_MOBILE_OS", "ETC"),
         "MobileApp": config.get("KTO_MOBILE_APP", "jamkkanjeju"),
@@ -85,40 +92,44 @@ def fetch_locations(config: dict[str, str]) -> list[LocationRow]:
 
     by_content_id: dict[int, LocationRow] = {}
     with httpx.Client(base_url=base_url, timeout=TOUR_API_TIMEOUT_SECONDS) as client:
-        for content_type_id, category in CONTENT_TYPES.items():
-            for item in _fetch_content_type(client, common_params, content_type_id):
-                row = _to_location(item, category)
-                before = by_content_id.get(row.content_id)
-                if before is not None and before != row:
-                    raise ValueError(f"중복 contentId의 데이터가 서로 다릅니다: {row.content_id}")
-                by_content_id[row.content_id] = row
+        for item in _fetch_area_based_list(client, params):
+            category = LOCATION_CATEGORIES.get(str(item.get("lclsSystm1") or "").strip())
+            # 저장 대상 대분류가 아닌 장소는 건너뛴다.
+            if category is None:
+                continue
+
+            row = _to_location(item, category)
+            before = by_content_id.get(row.content_id)
+            if before is not None and before != row:
+                raise ValueError(f"중복 contentId의 데이터가 서로 다릅니다: {row.content_id}")
+            by_content_id[row.content_id] = row
+
+    if not by_content_id:
+        raise RuntimeError("저장 대상 분류에 해당하는 TourAPI 장소가 없습니다.")
 
     return sorted(by_content_id.values(), key=lambda row: row.content_id)
 
 
-def _fetch_content_type(
-    client: httpx.Client, common_params: dict[str, Any], content_type_id: str
+def _fetch_area_based_list(
+    client: httpx.Client, params: dict[str, Any]
 ) -> list[dict[str, Any]]:
+    """지역 기반 장소 목록을 마지막 페이지까지 조회한다.
+
+    콘텐츠 유형으로 나눠 받지 않고 지역 전체를 받는다.
+    저장 대상 판단은 분류체계 대분류(`lclsSystm1`)로 하기 때문이다.
+    """
     items: list[dict[str, Any]] = []
     page_no = 1
     total_count: int | None = None
 
     while total_count is None or len(items) < total_count:
-        response = client.get(
-            "/areaBasedList2",
-            params={
-                **common_params,
-                "contentTypeId": content_type_id,
-                "pageNo": page_no,
-            },
-        )
+        response = client.get("/areaBasedList2", params={**params, "pageNo": page_no})
         response.raise_for_status()
         payload = response.json().get("response", {})
         header = payload.get("header", {})
         if header.get("resultCode") != "0000":
             raise RuntimeError(
-                f"TourAPI 오류(contentTypeId={content_type_id}): "
-                f"{header.get('resultCode')} {header.get('resultMsg')}"
+                f"TourAPI 오류: {header.get('resultCode')} {header.get('resultMsg')}"
             )
 
         body = payload.get("body", {})
@@ -128,7 +139,7 @@ def _fetch_content_type(
         if isinstance(page_items, dict):
             page_items = [page_items]
         if not isinstance(page_items, list):
-            raise ValueError(f"TourAPI items 형식이 올바르지 않습니다: {content_type_id}")
+            raise ValueError("TourAPI items 형식이 올바르지 않습니다.")
 
         items.extend(item for item in page_items if isinstance(item, dict))
         if not page_items:
@@ -138,7 +149,7 @@ def _fetch_content_type(
     if len(items) != total_count:
         raise RuntimeError(
             f"TourAPI 전체 건수와 조회 건수가 다릅니다: "
-            f"contentTypeId={content_type_id}, total={total_count}, fetched={len(items)}"
+            f"total={total_count}, fetched={len(items)}"
         )
     return items
 
@@ -259,7 +270,7 @@ def main() -> None:
     locations = fetch_locations(config)
     counts = {
         category: sum(row.category == category for row in locations)
-        for category in CONTENT_TYPES.values()
+        for category in LOCATION_CATEGORIES.values()
     }
 
     print(f"대상 DB: {required(config, 'MYSQL_HOST')} / {required(config, 'MYSQL_DATABASE')}")
