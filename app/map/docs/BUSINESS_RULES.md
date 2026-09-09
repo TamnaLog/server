@@ -427,8 +427,17 @@ duration_minutes = calculate_duration_minutes(distance_meter)
 | `id` | `LOCATION.id` |
 | `locationTitle` | `LOCATION.location_title` |
 | `locationCategory` | `LOCATION.location_category` |
+| `representativeImageUrl` | `LOCATION.content_id`로 TourAPI `detailCommon2`를 조회하여 얻은 `firstimage` |
 | `distanceMeter` | 공통 거리 모듈의 계산 결과 |
 | `durationMinutes` | 공통 거리 모듈의 계산 결과 |
+
+### 장소 대표 이미지
+
+- 장소 대표 이미지는 `LOCATION.content_id`를 기준으로 TourAPI `detailCommon2`를 조회하고 응답의 `firstimage`를 사용한다.
+- `firstimage`가 없거나 TourAPI 호출·응답 해석에 실패하면 `representativeImageUrl = null`을 반환한다.
+- 장소 이미지 조회 실패는 지도 모달 전체 실패 사유로 처리하지 않는다.
+- 이 필드는 `targetType = LOCATION` 응답에만 포함하며 `targetType = ROAD_GUESTBOOK` 응답에는 추가하지 않는다.
+- 방명록의 `guestbooks[].representativeImageUrl`과 장소의 최상위 `representativeImageUrl`은 서로 다른 값이다. 전자는 방명록 첨부 이미지 배열의 첫 번째 URL이고, 후자는 TourAPI 장소 대표 이미지다.
 
 ### 장소 미션
 
@@ -566,12 +575,13 @@ GUESTBOOK.id DESC
 4. `targetType`에 따라 삭제되지 않은 조회 대상을 찾는다.
 5. 조회 대상이 없으면 `404 MAP_MODAL_TARGET_NOT_FOUND`를 반환한다.
 6. 사용자 좌표와 대상 좌표로 거리와 예상 이동 시간을 계산한다.
-7. `LOCATION`이면 장소에 연결된 보물찾기 또는 협동 미션을 조회한다.
-8. 연결된 미션이 있으면 공통 미션 정보, 현재 사용자의 완료 이력과 보상별 지급 이력을 조회하여 단일 `mission` 객체를 조합한다.
-9. `LOCATION`이면 삭제되지 않은 전체 방명록 개수와 최신 방명록 최대 3개를 조회한다.
-10. 장소 방명록의 작성자와 연결된 공통 미션 정보를 함께 조회하여 응답을 조합한다.
-11. `ROAD_GUESTBOOK`이면 작성자 정보와 저장된 콘텐츠를 조합한다.
-12. 대상 유형에 맞는 응답을 `200 OK`로 반환한다.
+7. `LOCATION`이면 `LOCATION.content_id`로 TourAPI `detailCommon2`를 조회하여 `firstimage`를 대표 이미지로 조합한다.
+8. `LOCATION`이면 장소에 연결된 보물찾기 또는 협동 미션을 조회한다.
+9. 연결된 미션이 있으면 공통 미션 정보, 현재 사용자의 완료 이력과 보상별 지급 이력을 조회하여 단일 `mission` 객체를 조합한다.
+10. `LOCATION`이면 삭제되지 않은 전체 방명록 개수와 최신 방명록 최대 3개를 조회한다.
+11. 장소 방명록의 작성자와 연결된 공통 미션 정보를 함께 조회하여 응답을 조합한다.
+12. `ROAD_GUESTBOOK`이면 작성자 정보와 저장된 콘텐츠를 조합한다.
+13. 대상 유형에 맞는 응답을 `200 OK`로 반환한다.
 
 장소 미션의 세부 정보, 완료 이력과 보상 이력을 각각 진행도마다 반복 조회하지 않는다. 장소의 최신 방명록도 작성자와 미션을 방명록마다 반복 조회하지 않도록 JOIN 또는 일괄 조회를 사용하여 N+1 문제를 방지한다. 이 API는 조회 전용이므로 DB 데이터를 생성하거나 변경하지 않는다.
 
@@ -587,6 +597,9 @@ GUESTBOOK.id DESC
 - 협동 미션의 삭제된 참가자, `PENDING` 참가자와 삭제된 진행도는 현재 사용자의 완료·보상 이력에서 제외한다.
 - 모달 조회 전후로 사용자 보유 보상과 진행도 보상 지급 여부가 변경되지 않는다.
 - 미션이 없는 장소나 방명록이 없는 장소도 `404`가 아닌 정상 응답을 반환한다.
+- `LOCATION` 조회 시 TourAPI `firstimage`가 있으면 최상위 `representativeImageUrl`로 반환한다.
+- TourAPI에 `firstimage`가 없거나 조회가 실패하면 `representativeImageUrl = null`로 정상 응답한다.
+- `ROAD_GUESTBOOK` 조회 응답에는 장소 대표 이미지 필드를 포함하지 않는다.
 
 ## 8. 오류 처리
 

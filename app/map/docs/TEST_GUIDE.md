@@ -160,16 +160,20 @@ DB에서는 범위로 후보만 좁히고 실제 사각형 안인지 다시 판�
 
 ### 1. `targetType = LOCATION`
 
-- 응답 9개 필드를 **통째로 비교**한다.
-  (`id` / `locationTitle` / `locationCategory` / `distanceMeter` / `durationMinutes` /
-  `isVisited` / `mission` / `guestbooksCount` / `guestbooks`)
+- 응답 10개 필드를 **통째로 비교**한다.
+  (`id` / `locationTitle` / `locationCategory` / `representativeImageUrl` /
+  `distanceMeter` / `durationMinutes` / `isVisited` / `mission` /
+  `guestbooksCount` / `guestbooks`)
+- **최상위 `representativeImageUrl`은 TourAPI 장소 대표 이미지**다.
+  장소의 `content_id`로 조회하고, 못 가져오면 `null`이되 전체 조회는 200이다.
+  방명록의 같은 이름 필드(첨부 이미지 첫 장)와 **다른 값**이라는 것도 함께 확인한다.
 - **정렬**: `visited_at DESC`, 같으면 `id DESC`. 최대 3개.
   - 저장 시각이 더 최신이어도 방문일이 과거면 뒤로 간다.
 - **`guestbooksCount`는 전체 개수**다. 방명록 5개면 개수 5, 목록 3.
 - 삭제된 방명록은 **개수와 목록 양쪽에서** 빠진다.
 - 다른 장소의 방명록은 섞이지 않는다.
 - 방명록이 없어도 404가 아니라 **200 + 개수 0 + 빈 배열**이다.
-- 대표 이미지는 배열 첫 번째 URL. `null`이거나 빈 배열이면 `null`.
+- 방명록 대표 이미지는 첨부 배열의 첫 번째 URL. `null`이거나 빈 배열이면 `null`.
 - 작성자는 **`userId`와 `userNickname`을 함께** 준다. (장소 상세 조회와 같은 필드)
 - 작성자에게 배정된 AR 캐릭터 이미지(`characterImgUrl`)도 방명록마다 함께 준다.
   배정된 캐릭터가 없으면 `null`이고, 작성자가 다르면 각자의 캐릭터를 따라간다.
@@ -218,6 +222,7 @@ DB에서는 범위로 후보만 좁히고 실제 사각형 안인지 다시 판�
 - **빈 배열로 저장돼 있어도 `null`로 정규화**한다. (`content_img_url` / `content_audio_url`)
 - 값이 있으면 배열 순서를 바꾸지 않는다.
 - 작성일은 `saved_at`이 아니라 `visited_at` 기준이다.
+- **장소 대표 이미지 필드가 없다.** 이 경로에서는 TourAPI를 호출하지도 않는다.
 - 방문 기록이 있어도 이 응답에는 **`isVisited`를 넣지 않는다.** (`LOCATION` 전용 필드)
 
 ### 4. 404 `MAP_MODAL_TARGET_NOT_FOUND`

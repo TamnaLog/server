@@ -18,6 +18,7 @@ from app.cooperative_mission.models import (
     ParticipantStatus,
 )
 from app.guestbook.models import Guestbook, RoadGuestbook
+from app.map import service
 from app.map.models import Location, VisitedLocation
 from app.map.service import LOCATION_MODAL_GUESTBOOK_LIMIT
 from app.mission.models import Mission, MissionStatus
@@ -51,6 +52,10 @@ COOPERATIVE_MISSION_TITLE = "현애원 협동 미션"
 AR_CHARACTER_ID = 3
 AR_CHARACTER_NAME = "점박이 물범"
 AR_CHARACTER_IMAGE_URL = "https://example.com/ar-characters/3.png"
+
+# TourAPI 장소 대표 이미지. 방명록 첨부 이미지와는 다른 값이다.
+LOCATION_CONTENT_ID = 126273
+LOCATION_IMAGE_URL = "https://example.com/locations/hyeonaewon.jpg"
 COUPON_LOCATION = "현애원 카페"
 COUPON_PRICE = 3000
 REWARD_POINT = 100
@@ -92,6 +97,19 @@ def _road_params(**overrides: object) -> dict[str, object]:
     )
 
 
+@pytest.fixture(autouse=True)
+def stub_location_image(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """TourAPI 장소 대표 이미지 조회를 막고 호출된 content_id 를 기록한다."""
+    called: list[int] = []
+
+    def fake_get_location_image_url(content_id: int) -> str | None:
+        called.append(content_id)
+        return LOCATION_IMAGE_URL if content_id == LOCATION_CONTENT_ID else None
+
+    monkeypatch.setattr(service, "get_location_image_url", fake_get_location_image_url)
+    return called
+
+
 @pytest.fixture
 def modal_data(db_session: Session) -> None:
     """장소 2곳 + 사용자 2명 + 미션 1개. 방명록은 테스트마다 직접 붙인다."""
@@ -118,7 +136,7 @@ def modal_data(db_session: Session) -> None:
             ),
             Location(
                 id=LOCATION_ID,
-                content_id=126273,
+                content_id=LOCATION_CONTENT_ID,
                 location_title=LOCATION_TITLE,
                 location_address="제주특별자치도 서귀포시 표선면",
                 location_category=LOCATION_CATEGORY,
@@ -272,6 +290,7 @@ def test_장소_모달을_조회하면_기본_정보와_방명록을_반환한�
         "id": LOCATION_ID,
         "locationTitle": LOCATION_TITLE,
         "locationCategory": LOCATION_CATEGORY,
+        "representativeImageUrl": LOCATION_IMAGE_URL,
         "distanceMeter": expected_distance,
         "durationMinutes": distance.calculate_duration_minutes(expected_distance),
         "isVisited": False,
@@ -300,6 +319,62 @@ def test_장소_모달을_조회하면_기본_정보와_방명록을_반환한�
             },
         ],
     }
+
+
+def test_장소_대표_이미지는_장소의_content_id로_조회한다(
+    client: TestClient, modal_data: None, stub_location_image: list[int]
+) -> None:
+    body = _get(client, _params())
+
+    assert body["representativeImageUrl"] == LOCATION_IMAGE_URL
+    assert stub_location_image == [LOCATION_CONTENT_ID]
+
+
+def test_TourAPI_이미지를_조회하지_못하면_null로_두고_실패시키지_않는다(
+    client: TestClient, modal_data: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(service, "get_location_image_url", lambda content_id: None)
+
+    response = client.get(ENDPOINT, params=_params())
+
+    assert response.status_code == 200
+    assert response.json()["representativeImageUrl"] is None
+
+
+def test_장소_대표_이미지와_방명록_대표_이미지는_다른_값이다(
+    client: TestClient, db_session: Session, modal_data: None
+) -> None:
+    guestbook_image_url = "https://example.com/guestbooks/1-1.jpg"
+    _add_guestbook(
+        db_session, guestbook_id=1, content_img_url=[guestbook_image_url]
+    )
+
+    body = _get(client, _params())
+
+    # 최상위는 TourAPI 장소 이미지, 방명록은 첨부 이미지 첫 장이다.
+    assert body["representativeImageUrl"] == LOCATION_IMAGE_URL
+    assert body["guestbooks"][0]["representativeImageUrl"] == guestbook_image_url
+
+
+def test_길바닥_방명록_응답에는_장소_대표_이미지가_없다(
+    client: TestClient, db_session: Session, modal_data: None
+) -> None:
+    _add_road_guestbook(db_session)
+
+    assert "representativeImageUrl" not in _get(client, _road_params())
+
+
+def test_길바닥_방명록_조회는_TourAPI를_호출하지_않는다(
+    client: TestClient,
+    db_session: Session,
+    modal_data: None,
+    stub_location_image: list[int],
+) -> None:
+    _add_road_guestbook(db_session)
+
+    _get(client, _road_params())
+
+    assert stub_location_image == []
 
 
 def test_방명록이_없어도_200과_빈_배열을_반환한다(

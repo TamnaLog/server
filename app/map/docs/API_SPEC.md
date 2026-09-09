@@ -217,7 +217,7 @@ Status Code : `200 OK`
 
 조회 대상은 `LOCATION | ROAD_GUESTBOOK`만 지원하며, 선택한 대상의 ID와 사용자의 현재 GPS 좌표를 Query로 전송한다.
 
-`LOCATION`을 조회하면 장소 기본 정보, 현재 사용자의 방문 여부와 해당 장소를 참조하는 최신 방명록을 작성자 AR 캐릭터 이미지와 함께 최대 3개 반환하고, `ROAD_GUESTBOOK`을 조회하면 해당 길바닥 방명록의 상세 콘텐츠를 반환한다.
+`LOCATION`을 조회하면 장소 기본 정보, TourAPI 장소 대표 이미지, 현재 사용자의 방문 여부와 해당 장소를 참조하는 최신 방명록을 작성자 AR 캐릭터 이미지와 함께 최대 3개 반환하고, `ROAD_GUESTBOOK`을 조회하면 해당 길바닥 방명록의 상세 콘텐츠를 반환한다.
 
 작성일은 모두 방명록의 `visited_at`을 기준으로 한다.
 
@@ -226,8 +226,8 @@ Status Code : `200 OK`
 ### 요청 Query
 
 | 자료형  | 변수명          | 필수 여부 | 설명                                                               |
-| ------- | --------------- | --------- | ------------------------------------------------------------------ | --------------- |
-| string  | `targetType`    | 필수      | 조회 대상 유형. `LOCATION                                          | ROAD_GUESTBOOK` |
+| ------- | --------------- | --------- | ------------------------------------------------------------------ |
+| string  | `targetType`    | 필수      | 조회 대상 유형. `LOCATION \| ROAD_GUESTBOOK`                      |
 | integer | `targetId`      | 필수      | `LOCATION`이면 LOCATION ID, `ROAD_GUESTBOOK`이면 ROAD_GUESTBOOK ID |
 | number  | `userLatitude`  | 필수      | 사용자의 현재 GPS 위도                                             |
 | number  | `userLongitude` | 필수      | 사용자의 현재 GPS 경도                                             |
@@ -261,16 +261,17 @@ Status Code : `200 OK`
 **targetType = LOCATION**
 
 | 자료형  | 변수명                                        | 설명                                                                                 |
-| ------- | --------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| ------- | --------------------------------------------- | ------------------------------------------------------------------------------------ |
 | integer | `id`                                          | LOCATION ID                                                                          |
 | string  | `locationTitle`                               | 장소 이름                                                                            |
 | string  | `locationCategory`                            | 장소 분류                                                                            |
+| string \| null | `representativeImageUrl`                   | `LOCATION.content_id`로 TourAPI에서 조회한 `firstimage` URL. 이미지가 없거나 조회에 실패하면 null |
 | number  | `distanceMeter`                               | 사용자의 현재 위치와 장소 사이의 직선거리(m)                                         |
 | integer | `durationMinutes`                             | 사용자의 현재 위치에서 장소까지의 예상 이동 시간(분)                                 |
 | boolean | `isVisited`                                   | 현재 사용자의 해당 장소 방문 여부. 방문 기록이 한 건 이상 있으면 true, 없으면 false  |
-| object  | null                                          | `mission`                                                                            | 해당 장소에 연결된 미션 정보. 미션이 없으면 null              |
+| object \| null | `mission`                                   | 해당 장소에 연결된 미션 정보. 미션이 없으면 null                                     |
 | integer | `mission.missionId`                           | `missionType`에 해당하는 유형별 세부 미션 ID                                         |
-| string  | `mission.missionType`                         | 장소에 연결된 미션 유형. `TREASURE                                                   | COOPERATIVE`                                                  |
+| string  | `mission.missionType`                         | 장소에 연결된 미션 유형. `TREASURE \| COOPERATIVE`                                  |
 | string  | `mission.missionTitle`                        | 미션 이름                                                                            |
 | boolean | `mission.isCompleted`                         | 현재 사용자의 해당 미션 완료 여부                                                    |
 | object  | `mission.rewardDetail`                        | 해당 미션의 전체 보상 정보. 수령 여부와 관계없이 AR 캐릭터, 포인트, 쿠폰을 모두 포함 |
@@ -289,19 +290,20 @@ Status Code : `200 OK`
 | integer | `guestbooksCount`                             | 해당 장소를 참조하는 방명록 전체 개수. 없으면 0                                      |
 | array   | `guestbooks`                                  | 해당 장소를 참조하는 방명록 중 `visited_at` 최신순 최대 3개. 없으면 빈 배열          |
 | integer | `guestbooks[].id`                             | 방명록 ID                                                                            |
-| string  | null                                          | `guestbooks[].representativeImageUrl`                                                | 방명록 이미지 배열의 첫 번째 이미지 URL. 이미지가 없으면 null |
+| string \| null | `guestbooks[].representativeImageUrl`        | 방명록 이미지 배열의 첫 번째 이미지 URL. 이미지가 없으면 null                        |
 | integer | `guestbooks[].userId`                         | 방명록 작성자 사용자 ID                                                              |
 | string  | `guestbooks[].userNickname`                   | 방명록 작성자 닉네임                                                                 |
-| string  | null                                          | `guestbooks[].characterImgUrl`                                                       | 방명록 작성자의 AR 캐릭터 이미지 URL. 배정된 캐릭터가 없으면 null |
-| string  | null                                          | `guestbooks[].missionTitle`                                                          | 방명록이 참조하는 미션 이름. 참조하는 미션이 없으면 null      |
+| string \| null | `guestbooks[].characterImgUrl`               | 방명록 작성자의 AR 캐릭터 이미지 URL. 배정된 캐릭터가 없으면 null                    |
+| string \| null | `guestbooks[].missionTitle`                  | 방명록이 참조하는 미션 이름. 참조하는 미션이 없으면 null                             |
 | string  | `guestbooks[].visitedAt`                      | 방명록 방문·작성일. `visited_at` 기준, `YYYY-MM-DD` 형식                             |
-| string  | null                                          | `guestbooks[].contentWriting`                                                        | 방명록 글 내용. 없으면 null                                   |
+| string \| null | `guestbooks[].contentWriting`                | 방명록 글 내용. 없으면 null                                                          |
 
 ```json
 {
   "id": 39,
   "locationTitle": "현애원",
   "locationCategory": "관광지",
+  "representativeImageUrl": "https://example.com/images/locations/hyeonaewon.jpg",
   "distanceMeter": 1200,
   "durationMinutes": 15,
   "isVisited": true,
@@ -359,6 +361,7 @@ Status Code : `200 OK`
 - 각 보상의 `isReceived`는 현재 사용자가 해당 미션의 과거 및 현재 진행도에서 그 보상을 한 번이라도 지급받았는지를 나타낸다.
 - `isCompleted`와 보상 수령 여부는 서로 독립적으로 계산한다.
 - `isVisited`는 현재 사용자와 조회 장소가 일치하는 `VISITED_LOCATION`의 존재 여부를 나타낸다. 방명록 작성 여부나 미션 완료 여부와는 관계없다.
+- `representativeImageUrl`은 `LOCATION.content_id`로 TourAPI `detailCommon2`를 조회하여 얻은 `firstimage`를 사용한다. `firstimage`가 없거나 TourAPI 조회에 실패하면 null을 반환하며, 이미지 조회 실패만으로 모달 조회 전체를 실패시키지 않는다.
 - `guestbooksCount`는 반환 목록의 길이가 아니라 해당 장소를 참조하는 전체 방명록 개수다.
 - `guestbooks`는 `visited_at DESC`로 정렬하고, 날짜가 같으면 방명록 ID가 큰 순서로 최대 3개를 반환한다.
 - `guestbooks[].userId`는 방명록 작성자의 `GUESTBOOK.user_id`이며, 프론트가 작성자별 화면으로 이동할 때 사용한다.
@@ -368,18 +371,18 @@ Status Code : `200 OK`
 **targetType = ROAD_GUESTBOOK**
 
 | 자료형   | 변수명            | 설명                                                               |
-| -------- | ----------------- | ------------------------------------------------------------------ | ------------------------------------- |
+| -------- | ----------------- | ------------------------------------------------------------------ |
 | integer  | `id`              | ROAD_GUESTBOOK ID                                                  |
 | string   | `userNickname`    | 길바닥 방명록 작성자 닉네임                                        |
 | string   | `locationAlias`   | 작성자가 지정한 장소 별칭                                          |
 | number   | `distanceMeter`   | 사용자의 현재 위치와 길바닥 방명록 좌표 사이의 직선거리(m)         |
 | integer  | `durationMinutes` | 사용자의 현재 위치에서 길바닥 방명록 좌표까지의 예상 이동 시간(분) |
 | string   | `visitedAt`       | 방문·작성일. `visited_at` 기준, `YYYY-MM-DD` 형식                  |
-| string[] | null              | `contentImageUrls`                                                 | 사진 URL 목록. 사진이 없으면 null     |
-| string   | null              | `contentWriting`                                                   | 글 내용. 없으면 null                  |
-| string[] | null              | `contentAudioUrls`                                                 | 오디오 URL 목록. 오디오가 없으면 null |
-| string   | null              | `contentWeather`                                                   | 날씨 콘텐츠. 없으면 null              |
-| string   | null              | `contentColorCode`                                                 | 색상 코드 콘텐츠. 없으면 null         |
+| string[] \| null | `contentImageUrls`                                      | 사진 URL 목록. 사진이 없으면 null                                  |
+| string \| null   | `contentWriting`                                        | 글 내용. 없으면 null                                               |
+| string[] \| null | `contentAudioUrls`                                      | 오디오 URL 목록. 오디오가 없으면 null                              |
+| string \| null   | `contentWeather`                                        | 날씨 콘텐츠. 없으면 null                                           |
+| string \| null   | `contentColorCode`                                      | 색상 코드 콘텐츠. 없으면 null                                      |
 
 ```json
 {

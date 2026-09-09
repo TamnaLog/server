@@ -225,11 +225,15 @@ class LocationModalResponse(CamelModel):
     `guestbooks_count` 는 아래 목록의 길이가 아니라 그 장소의 전체 방명록 개수다.
     연결된 미션이 없으면 `mission` 은 `null` 이다.
     `is_visited` 는 현재 사용자의 이 장소 방문 이력 유무이고 값과 관계없이 항상 내려준다.
+
+    `representative_image_url` 은 TourAPI 의 장소 대표 이미지다.
+    방명록의 `representative_image_url`(첨부 이미지 첫 장)과는 다른 값이다.
     """
 
     id: int
     location_title: str
     location_category: str
+    representative_image_url: str | None = None
     distance_meter: int
     duration_minutes: int
     is_visited: bool

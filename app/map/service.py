@@ -382,6 +382,8 @@ def _to_location_modal(
         id=location.id,
         location_title=location.location_title,
         location_category=location.location_category,
+        # 이미지 조회에 실패해도 모달 조회 전체를 실패시키지 않고 null 로 둔다.
+        representative_image_url=get_location_image_url(location.content_id),
         distance_meter=distance_meter,
         duration_minutes=distance.calculate_duration_minutes(distance_meter),
         is_visited=_is_visited(db, current_user_id, location.id),
