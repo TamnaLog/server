@@ -834,7 +834,4 @@ def _find_coupon_location_image_urls(
     같은 장소를 여러 쿠폰이 가리켜도 TourAPI 는 한 번만 호출한다.
     이미지를 얻지 못해도 조회 전체를 실패시키지 않고 그 장소만 `None` 이다.
     """
-    return {
-        content_id: kto.get_location_image_url(content_id)
-        for content_id in {location.content_id for location in locations}
-    }
+    return kto.get_location_image_urls(location.content_id for location in locations)

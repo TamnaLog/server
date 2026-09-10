@@ -19,7 +19,7 @@ from app.map.location_missions import LocationMission
 from app.map.models import Location
 from app.map.schemas import MissionLocationResponse, RecommendedLocationResponse
 from app.mission.schemas import MissionType
-from app.services.kto import get_location_image_url
+from app.services.kto import get_location_image_urls
 
 
 # 두 응답은 정렬 기준(거리, 장소 id)을 똑같이 갖는다.
@@ -39,10 +39,24 @@ def build_recommended_locations(
 
     현재 기준: 보물찾기도 협동 미션도 연결되지 않은 장소를 전부 담는다.
     """
-    recommended = [
-        _to_recommended_location(location, user_latitude, user_longitude)
+    recommendable = [
+        location
         for location in locations
         if _is_recommendable(location, treasure_missions, cooperative_missions)
+    ]
+    # 장소마다 순서대로 부르지 않고 대표 이미지를 한 번에 조회한다.
+    image_urls = get_location_image_urls(
+        location.content_id for location in recommendable
+    )
+
+    recommended = [
+        _to_recommended_location(
+            location,
+            user_latitude,
+            user_longitude,
+            image_urls.get(location.content_id),
+        )
+        for location in recommendable
     ]
     return _sort_by_distance(recommended)
 
@@ -75,7 +89,7 @@ def build_mission_locations(
 
     현재 기준: 보물찾기 또는 협동 미션이 연결된 장소를 전부 담는다.
     """
-    mission_locations = []
+    found_missions = []
     for location in locations:
         mission = _pick_mission(
             location, treasure_missions, cooperative_missions
@@ -83,9 +97,23 @@ def build_mission_locations(
         if mission is None:
             continue
 
-        mission_locations.append(
-            _to_mission_location(location, mission, user_latitude, user_longitude)
+        found_missions.append((location, mission))
+
+    # 장소마다 순서대로 부르지 않고 대표 이미지를 한 번에 조회한다.
+    image_urls = get_location_image_urls(
+        location.content_id for location, _ in found_missions
+    )
+
+    mission_locations = [
+        _to_mission_location(
+            location,
+            mission,
+            user_latitude,
+            user_longitude,
+            image_urls.get(location.content_id),
         )
+        for location, mission in found_missions
+    ]
     return _sort_by_distance(mission_locations)
 
 
@@ -120,14 +148,17 @@ def _pick_mission(
 
 
 def _to_recommended_location(
-    location: Location, user_latitude: float, user_longitude: float
+    location: Location,
+    user_latitude: float,
+    user_longitude: float,
+    representative_image_url: str | None,
 ) -> RecommendedLocationResponse:
     return RecommendedLocationResponse(
         location_id=location.id,
         location_title=location.location_title,
         location_category=location.location_category,
         # 이미지 조회에 실패해도 검색 전체를 실패시키지 않고 null 로 둔다.
-        representative_image_url=get_location_image_url(location.content_id),
+        representative_image_url=representative_image_url,
         distance_meter=_to_distance_meter(location, user_latitude, user_longitude),
     )
 
@@ -137,6 +168,7 @@ def _to_mission_location(
     mission: tuple[LocationMission, MissionType],
     user_latitude: float,
     user_longitude: float,
+    representative_image_url: str | None,
 ) -> MissionLocationResponse:
     found_mission, mission_type = mission
     return MissionLocationResponse(
@@ -145,7 +177,7 @@ def _to_mission_location(
         mission_type=mission_type,
         location_title=location.location_title,
         mission_title=found_mission.mission_title,
-        representative_image_url=get_location_image_url(location.content_id),
+        representative_image_url=representative_image_url,
         distance_meter=_to_distance_meter(location, user_latitude, user_longitude),
     )
 

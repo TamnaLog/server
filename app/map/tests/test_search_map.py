@@ -3,6 +3,7 @@
 기준 문서: app/map/docs/API_SPEC.md, app/map/docs/BUSINESS_RULES.md
 """
 
+from collections.abc import Iterable
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -77,8 +78,16 @@ def stub_location_image(monkeypatch: pytest.MonkeyPatch) -> list[int]:
         called.append(content_id)
         return IMAGE_URL if content_id == SEONGSAN_CONTENT_ID else None
 
+    def fake_get_location_image_urls(
+        content_ids: Iterable[int], **_: object
+    ) -> dict[int, str | None]:
+        return {
+            content_id: fake_get_location_image_url(content_id)
+            for content_id in dict.fromkeys(content_ids)
+        }
+
     monkeypatch.setattr(
-        search_classifier, "get_location_image_url", fake_get_location_image_url
+        search_classifier, "get_location_image_urls", fake_get_location_image_urls
     )
     return called
 

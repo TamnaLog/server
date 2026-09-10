@@ -3,6 +3,7 @@
 기준 문서: app/map/docs/API_SPEC.md, app/map/docs/BUSINESS_RULES.md
 """
 
+from collections.abc import Iterable
 from datetime import date, datetime
 
 import pytest
@@ -128,7 +129,16 @@ def stub_location_image(monkeypatch: pytest.MonkeyPatch) -> list[int]:
         called.append(content_id)
         return REPRESENTATIVE_IMAGE_URL if content_id == MISSION_CONTENT_ID else None
 
-    monkeypatch.setattr(service, "get_location_image_url", fake_get_location_image_url)
+    def fake_get_location_image_urls(
+        content_ids: Iterable[int], **_: object
+    ) -> dict[int, str | None]:
+        # 실제 구현처럼 같은 장소는 한 번만 조회한다.
+        return {
+            content_id: fake_get_location_image_url(content_id)
+            for content_id in dict.fromkeys(content_ids)
+        }
+
+    monkeypatch.setattr(service, "get_location_image_urls", fake_get_location_image_urls)
     return called
 
 
@@ -776,7 +786,11 @@ def test_조회_결과가_없어도_200과_빈_배열을_반환한다(
 def test_TourAPI_이미지를_조회하지_못하면_null로_두고_실패시키지_않는다(
     client: TestClient, map_data: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(service, "get_location_image_url", lambda content_id: None)
+    monkeypatch.setattr(
+        service,
+        "get_location_image_urls",
+        lambda content_ids, **_: dict.fromkeys(content_ids),
+    )
 
     assert _location(_get(client), MISSION_LOCATION_ID)["representativeImageUrl"] is None
 

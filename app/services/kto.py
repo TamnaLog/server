@@ -1,5 +1,10 @@
 import html
 import re
+import threading
+import time
+from collections import OrderedDict
+from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor, wait
 from typing import Any
 
 import httpx
@@ -45,6 +50,68 @@ def get_location_image_url(content_id: int) -> str | None:
         return None
 
     return item.get("firstimage") or item.get("firstimage2") or None
+
+
+# 대표 이미지를 한 번에 조회할 때 동시에 띄우는 최대 요청 수.
+# 프로세스 전체가 공유하므로 요청이 몰려도 스레드 수가 이 값을 넘지 않는다.
+_IMAGE_FETCH_MAX_WORKERS = 16
+
+# 대표 이미지 일괄 조회에 쓸 수 있는 총 시간(초).
+# TourAPI 가 느려도 요청 하나가 이 시간 이상 이미지 때문에 늘어지지 않게 하는 상한이다.
+_IMAGE_FETCH_BUDGET_SECONDS = 3.0
+
+_image_fetch_executor: ThreadPoolExecutor | None = None
+_image_fetch_executor_lock = threading.Lock()
+
+
+def _get_image_fetch_executor() -> ThreadPoolExecutor:
+    """대표 이미지 조회용 공용 스레드풀. 처음 쓸 때 한 번만 만든다."""
+    global _image_fetch_executor
+
+    with _image_fetch_executor_lock:
+        if _image_fetch_executor is None:
+            _image_fetch_executor = ThreadPoolExecutor(
+                max_workers=_IMAGE_FETCH_MAX_WORKERS,
+                thread_name_prefix="kto-image",
+            )
+        return _image_fetch_executor
+
+
+def get_location_image_urls(
+    content_ids: Iterable[int],
+    *,
+    budget_seconds: float = _IMAGE_FETCH_BUDGET_SECONDS,
+) -> dict[int, str | None]:
+    """여러 장소의 대표 이미지 URL 을 한 번에 조회한다. (`content_id` → 이미지 URL)
+
+    장소마다 순서대로 부르면 TourAPI 가 느릴 때 응답 시간이 장소 수만큼 쌓인다.
+    그래서 캐시에 없는 것만 동시에 부르고, 전체 조회에 `budget_seconds` 상한을 둔다.
+
+    예산 안에 끝나지 못한 장소는 `None` 이다. 이미지 URL 은 부가 정보라
+    지도/검색 응답 전체를 실패시키지 않는다. 예산을 넘긴 조회도 취소하지 않고
+    백그라운드에서 끝나면 캐시에 들어가므로 다음 요청은 바로 값을 얻는다.
+
+    (app/map/docs/BUSINESS_RULES.md - 지도 콘텐츠 조회 / TourAPI 이미지 조회)
+    """
+    unique_ids = list(dict.fromkeys(content_ids))
+    if not unique_ids:
+        return {}
+
+    image_urls: dict[int, str | None] = dict.fromkeys(unique_ids)
+    executor = _get_image_fetch_executor()
+    futures = {
+        executor.submit(get_location_image_url, content_id): content_id
+        for content_id in unique_ids
+    }
+
+    done, _ = wait(futures, timeout=budget_seconds)
+    for future in done:
+        try:
+            image_urls[futures[future]] = future.result()
+        except Exception:  # noqa: BLE001 - 이미지 하나 때문에 응답 전체를 실패시키지 않는다.
+            image_urls[futures[future]] = None
+
+    return image_urls
 
 
 def get_location_overview(content_id: int) -> str | None:
@@ -150,7 +217,15 @@ def _get_json(path: str, params: dict[str, Any]) -> dict[str, Any] | None:
 
     DB 세션이 동기라 라우트도 동기로 동작하므로 여기서도 동기 클라이언트를 사용한다.
     TourAPI 값은 부가 정보라, 인증키 미설정·통신 실패·JSON 오류를 예외로 올리지 않는다.
+
+    같은 요청은 캐시에서 바로 돌려준다. 장소 정보는 거의 바뀌지 않고,
+    지도처럼 장소를 여러 개 그리는 화면에서 같은 장소를 반복해서 부르기 때문이다.
     """
+    cache_key = _to_cache_key(path, params)
+    cached, body = _cache_get(cache_key)
+    if cached:
+        return body
+
     settings = get_settings()
     if not settings.kto_service_key:
         return None
@@ -170,9 +245,73 @@ def _get_json(path: str, params: dict[str, Any]) -> dict[str, Any] | None:
             response.raise_for_status()
             body = response.json()
     except (httpx.HTTPError, ValueError):
+        _cache_put(cache_key, None)
         return None
 
-    return body if isinstance(body, dict) else None
+    result = body if isinstance(body, dict) else None
+    _cache_put(cache_key, result)
+    return result
+
+
+# ---------------------------------------------------------------------
+# 응답 캐시
+# ---------------------------------------------------------------------
+
+# 조회에 성공한 응답을 캐시에 두는 시간(초). 장소 정보는 거의 바뀌지 않는다.
+_CACHE_TTL_SECONDS = 24 * 60 * 60
+
+# 실패한 조회를 캐시에 두는 시간(초).
+# 실패도 잠깐 기억해야 TourAPI 가 느릴 때 같은 장소로 매번 타임아웃까지 기다리지 않는다.
+# 대신 성공보다 훨씬 짧게 둬서 일시적인 장애가 오래 남지 않게 한다.
+_CACHE_FAILURE_TTL_SECONDS = 5 * 60
+
+# 캐시에 둘 최대 항목 수. 넘으면 오래 안 쓴 항목부터 버린다.
+_CACHE_MAX_ENTRIES = 2000
+
+_CacheKey = tuple[str, tuple[tuple[str, str], ...]]
+
+# 워커 프로세스 안에서만 유지되는 캐시라 재시작하면 비워진다.
+# 여러 스레드가 동시에 쓰므로 잠금으로 보호한다.
+_cache: OrderedDict[_CacheKey, tuple[float, dict[str, Any] | None]] = OrderedDict()
+_cache_lock = threading.Lock()
+
+
+def _to_cache_key(path: str, params: dict[str, Any]) -> _CacheKey:
+    """캐시 키. 인증키는 응답을 가르지 않으므로 넣지 않는다."""
+    return path, tuple(sorted((key, str(value)) for key, value in params.items()))
+
+
+def _cache_get(key: _CacheKey) -> tuple[bool, dict[str, Any] | None]:
+    """`(캐시에 있었는지, 값)`. 실패(`None`)도 캐시하므로 두 값을 함께 돌려준다."""
+    with _cache_lock:
+        entry = _cache.get(key)
+        if entry is None:
+            return False, None
+
+        expires_at, body = entry
+        if expires_at <= time.monotonic():
+            del _cache[key]
+            return False, None
+
+        _cache.move_to_end(key)
+        return True, body
+
+
+def _cache_put(key: _CacheKey, body: dict[str, Any] | None) -> None:
+    """응답을 캐시에 넣는다. 성공과 실패의 유지 시간이 다르다."""
+    ttl = _CACHE_TTL_SECONDS if body is not None else _CACHE_FAILURE_TTL_SECONDS
+
+    with _cache_lock:
+        _cache[key] = (time.monotonic() + ttl, body)
+        _cache.move_to_end(key)
+        while len(_cache) > _CACHE_MAX_ENTRIES:
+            _cache.popitem(last=False)
+
+
+def clear_cache() -> None:
+    """캐시를 비운다. (테스트에서 호출 간섭을 없애는 용도)"""
+    with _cache_lock:
+        _cache.clear()
 
 
 def _items(body: dict[str, Any]) -> list[dict[str, Any]]:

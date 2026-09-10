@@ -17,6 +17,7 @@ from app.core import models as all_models  # noqa: F401  (전체 테이블 메�
 from app.core.database import Base, get_db
 from app.core.security import TOKEN_TYPE, hash_access_token
 from app.main import app
+from app.services import kto
 
 
 # 테스트에서 기본으로 사용하는 사용자 id
@@ -44,6 +45,18 @@ def access_token_hash(user_id: int) -> str:
 def auth_headers(user_id: int) -> dict[str, str]:
     """해당 사용자로 요청할 때 쓸 인증 헤더."""
     return {"Authorization": f"{TOKEN_TYPE} {access_token(user_id)}"}
+
+
+@pytest.fixture(autouse=True)
+def clear_kto_cache() -> Generator[None, None, None]:
+    """TourAPI 응답 캐시를 테스트마다 비운다.
+
+    캐시는 프로세스 안에서 유지되므로 비우지 않으면 앞 테스트의 조회 결과가
+    다음 테스트에 그대로 남아 스텁이 호출되지 않는다.
+    """
+    kto.clear_cache()
+    yield
+    kto.clear_cache()
 
 
 @pytest.fixture
