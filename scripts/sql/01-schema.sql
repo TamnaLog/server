@@ -96,7 +96,7 @@ CREATE TABLE `STEP_COUNT` (
     `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    -- 사용자별 기록 날짜당 한 행만 둔다. (`saved_at` 은 기록 날짜의 KST 자정)
+    -- 사용자별 측정 시각당 한 행만 둔다. (`saved_at` 은 프론트가 걸음 수를 측정한 시각)
     -- 조회에 쓰던 (user_id, saved_at) 인덱스 역할도 이 유니크 키가 대신한다.
     UNIQUE KEY `uk_step_count__user_saved_at` (`user_id`, `saved_at`),
     CONSTRAINT `fk_step_count__user`
@@ -449,6 +449,7 @@ CREATE TABLE `AR_CHARACTER` (
     `character_story_title` VARCHAR(200) NOT NULL                COMMENT '캐릭터 이야기 제목',
     `acquire_condition`     VARCHAR(200) NOT NULL,
     `character_img_url`     VARCHAR(500) NOT NULL,
+    `character_color`       VARCHAR(20)  NULL                    COMMENT '캐릭터 대표 색상',
     `hashtags`              JSON         NOT NULL                COMMENT 'string[]',
     `created_at`            DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`            DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -465,7 +466,7 @@ CREATE TABLE `ACQUIRED_AR_CHARACTER` (
     `id`                  BIGINT   NOT NULL AUTO_INCREMENT,
     `ar_character_id`     BIGINT   NOT NULL,
     `user_id`             BIGINT   NOT NULL,
-    `acquired_mission_id` BIGINT   NOT NULL,
+    `acquired_mission_id` BIGINT   NULL,
     `created_at`          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
@@ -477,7 +478,7 @@ CREATE TABLE `ACQUIRED_AR_CHARACTER` (
     CONSTRAINT `fk_acquired__user`
         FOREIGN KEY (`user_id`) REFERENCES `USER` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_acquired__mission`
-        FOREIGN KEY (`acquired_mission_id`) REFERENCES `MISSION` (`id`) ON DELETE CASCADE
+        FOREIGN KEY (`acquired_mission_id`) REFERENCES `MISSION` (`id`) ON DELETE SET NULL
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '획득한 AR 캐릭터';
 
 CREATE TABLE `TRAVEL_ENDING_CONTENT` (

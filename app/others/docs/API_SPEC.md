@@ -6,19 +6,17 @@
 
 ### API 설명
 
-프론트가 사용자의 하루 누적 걸음 수를 저장할 때 호출한다. 프론트는 자정마다 기록 대상 날짜와 해당 날짜의 최종 누적 걸음 수를 전송한다.
+프론트가 특정 시점의 사용자 누적 걸음 수를 저장할 때 호출한다. 프론트는 걸음 수를 측정한 시각, 해당 시점의 누적 걸음 수, 목표 걸음 수 달성 여부를 전송한다.
 
-서버는 액세스 토큰으로 식별한 현재 사용자와 요청의 `recordedDate`를 기준으로 `STEP_COUNT`를 저장한다. 클라이언트에서 사용자 id는 받지 않는다.
+서버는 액세스 토큰으로 현재 사용자를 식별한다. `STEP_COUNT.user_id`에는 현재 사용자 ID, `saved_at`에는 요청의 `recordedAt`, `steps_count`에는 요청의 `stepsCount`를 저장한다. 클라이언트에서 사용자 ID는 받지 않는다.
 
-`STEP_COUNT.user_id`에는 현재 사용자 id, `steps_count`에는 요청의 `stepsCount`, `saved_at`에는 `recordedDate`의 KST 자정에 해당하는 offset 없는 `YYYY-MM-DDT00:00:00` 값을 저장한다.
+`isGoalAchieved = true`이면 AR 캐릭터 ID `1`, `2`, `3` 중 하나를 무작위로 선택한다. 현재 사용자가 선택된 캐릭터를 보유하지 않았다면 `ACQUIRED_AR_CHARACTER`에 획득 기록을 생성하고 `acquired_mission_id`는 `NULL`로 저장한다. 이미 보유했다면 중복 저장하지 않는다.
 
-한 사용자와 기록 날짜 조합에는 한 행만 유지한다. 같은 `recordedDate`로 처음 요청하면 새 행을 생성하고, 기존 행이 있으면 새 행을 추가하지 않고 `steps_count`를 요청값으로 갱신한다. 재요청 값은 기존 값보다 작아도 요청값으로 교체한다.
+이미 보유한 캐릭터가 선택된 경우에도 다시 추첨하지 않는다. 선택된 캐릭터의 이름과 이미지 URL을 동일하게 응답한다.
 
-사용자별 날짜당 한 행을 DB 수준에서도 보장하기 위해 `(user_id, saved_at)` 유니크 제약을 사용한다. 동시 요청으로 유니크 충돌이 발생하면 기존 행을 다시 조회해 요청값으로 갱신한다.
+`isGoalAchieved = false`이면 캐릭터를 추첨하거나 획득 기록을 생성하지 않으며, 응답의 캐릭터 이름과 이미지 URL은 `null`이다.
 
-`recordedDate`는 KST 기준 현재 날짜 또는 과거 날짜만 허용한다. 미래 날짜는 저장하지 않는다.
-
-저장이 완료되면 별도의 응답 데이터를 반환하지 않고 `204 No Content`를 반환한다.
+저장이 완료되면 선택된 캐릭터 정보와 현재 사용자의 목표 걸음 수를 `200 OK`로 반환한다. 목표 걸음 수는 현재 ERD 기준 `USER.target_step`에서 가져온다.
 
 ---
 
@@ -38,17 +36,19 @@
 
 Content-Type : `application/json`
 
-| 필드           | 타입         | 필수 | 설명                                                                             |
-| -------------- | ------------ | ---- | -------------------------------------------------------------------------------- |
-| `recordedDate` | string(date) | O    | 걸음 수 기록 대상 날짜. KST 기준 `YYYY-MM-DD` 형식이며 미래 날짜는 허용하지 않음 |
-| `stepsCount`   | number       | O    | 해당 날짜의 최종 누적 걸음 수. 0 이상의 정수                                     |
+| 필드             | 타입              | 필수 | 설명                                                                                 |
+| ---------------- | ----------------- | ---- | ------------------------------------------------------------------------------------ |
+| `recordedAt`     | string(date-time) | O    | 걸음 수를 측정한 시각. KST 기준 offset 없는 `YYYY-MM-DDTHH:mm:ss` 형식               |
+| `stepsCount`     | integer           | O    | 해당 시점의 누적 걸음 수. 0 이상의 정수                                              |
+| `isGoalAchieved` | boolean           | O    | 프론트가 판단한 목표 걸음 수 달성 여부. true이면 AR 캐릭터 1~3 중 하나를 무작위 선택 |
 
 요청 예시
 
 ```json
 {
-  "recordedDate": "2026-09-02",
-  "stepsCount": 8241
+  "recordedAt": "2026-09-10T18:30:00",
+  "stepsCount": 10234,
+  "isGoalAchieved": true
 }
 ```
 
@@ -56,9 +56,33 @@ Content-Type : `application/json`
 
 ### 정상 응답 데이터
 
-Status Code : 204
+Status Code : `200 OK`
 
-응답 Body 없음
+| 필드               | 타입           | 설명                                                                                          |
+| ------------------ | -------------- | --------------------------------------------------------------------------------------------- |
+| `characterName`    | string \| null | `isGoalAchieved = true`일 때 무작위로 선택된 AR 캐릭터 이름. false이면 null                   |
+| `characterImageUrl` | string \| null | 선택된 AR 캐릭터 이미지 URL. 목표 미달이면 null                                               |
+| `targetStep`       | integer        | 현재 사용자의 목표 걸음 수. 현재 ERD 기준 `USER.target_step`                                 |
+
+목표 걸음 수 달성 응답 예시
+
+```json
+{
+  "characterName": "누비",
+  "characterImageUrl": "https://cdn.jamkkan-jeju.dev/ar/nubi.png",
+  "targetStep": 10000
+}
+```
+
+목표 걸음 수 미달 응답 예시
+
+```json
+{
+  "characterName": null,
+  "characterImageUrl": null,
+  "targetStep": 10000
+}
+```
 
 ---
 

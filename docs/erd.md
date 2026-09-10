@@ -252,7 +252,7 @@ ACQUIRED_AR_CHARACTER {
     bigint id PK "NOT NULL"
     bigint ar_character_id FK "NOT NULL"
     bigint user_id FK "NOT NULL"
-    bigint acquired_mission_id FK "NOT NULL"
+    bigint acquired_mission_id FK "NULL"
     datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
     datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 }
@@ -264,6 +264,7 @@ AR_CHARACTER {
 	varchar_200 character_story_title "NOT NULL"
 	varchar_200 acquire_condition "NOT NULL"
 	varchar_500 character_img_url "NOT NULL"
+	varchar_20 character_color "NULL"
 	json hashtags "NOT NULL, json: string[]"
 	datetime created_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
 	datetime updated_at "NOT NULL, DEFAULT: CURRENT_TIMESTAMP"
@@ -317,7 +318,7 @@ MISSION ||--o{ CULTURE_MISSION : categorizes
 MISSION ||--o{ COOPERATIVE_MISSION : categorizes
 MISSION ||--o{ TREASURE_MISSION : categorizes
 MISSION o|--o{ GUESTBOOK : relates_to
-MISSION ||--o{ ACQUIRED_AR_CHARACTER : rewards
+MISSION o|--o{ ACQUIRED_AR_CHARACTER : rewards
 
 CULTURE_MISSION ||--o{ CULTURE_MISSION_PROGRESS : tracks
 

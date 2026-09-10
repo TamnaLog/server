@@ -22,13 +22,37 @@
 
 ### AR 캐릭터 도감
 
-- 도감은 `AR_CHARACTER` 전체를 기준으로 구성하고, 현재 사용자의 `(user_id, ar_character_id)` 획득 기록 존재 여부로 각 캐릭터의 획득 상태를 판정한다.
+- 도감은 `AR_CHARACTER.id BETWEEN 1 AND 6`인 캐릭터만 기준으로 구성하고, 현재 사용자의 `(user_id, ar_character_id)` 획득 기록 존재 여부로 각 캐릭터의 획득 상태를 판정한다.
 - 획득 날짜는 `ACQUIRED_AR_CHARACTER.created_at`을 KST의 `YYYY-MM-DD`로 변환한다.
 - 획득 장소는 획득 기록의 `acquired_mission_id`에서 유형별 미션을 거쳐 연결된 `LOCATION.location_title`을 사용한다. 장소 연결이 없는 문화 미션이거나 장소를 확인할 수 없으면 `null`로 처리한다.
 - 캐릭터별 획득 가능 미션은 각 유형별 미션의 `reward_detail.ar_character_id`가 캐릭터 ID와 같은 항목으로 구성한다.
 - 획득 가능 미션은 내부 공통 `MISSION.id ASC`로 정렬한 뒤 최대 3개만 사용한다. 외부에 노출하는 미션 ID는 공통 ID가 아니라 해당 유형별 세부 미션 ID다.
 - 획득 가능 미션이 없으면 빈 배열을 사용한다. 캐릭터 획득 여부는 획득 가능 미션 목록의 존재 여부나 미션 완료 여부로 추론하지 않는다.
 - 전체 도감과 미션 정보를 캐릭터마다 반복 조회하지 않고 일괄 조회하여 N+1 쿼리를 방지한다.
+
+### 수정사항
+
+#### 캐릭터 대표 색상 반환
+
+- `profile.selectedArCharacter.characterColor`과 `arCharacters[].characterColor`은 `AR_CHARACTER.character_color`에서 가져온다.
+- `character_color`가 `NULL`이면 응답 필드를 생략하지 않고 `characterColor = null`로 반환한다.
+- 획득 여부와 관계없이 도감에 포함된 모든 캐릭터에 동일한 규칙을 적용한다.
+
+#### 캐릭터 ID 노출 범위 제한
+
+- `arCharacters` 도감 배열에 노출할 수 있는 AR 캐릭터 ID 범위만 1 이상 6 이하로 고정한다.
+- 도감 조회는 다음 조건과 순서를 사용한다.
+
+```text
+AR_CHARACTER.id BETWEEN 1 AND 6
+ORDER BY AR_CHARACTER.id ASC
+```
+
+- ID가 1~6 밖인 캐릭터는 현재 사용자가 획득했거나 미션 보상으로 설정되어 있어도 `arCharacters`에 포함하지 않는다.
+- ID 1~6 제한은 `profile.selectedArCharacter`에 적용하지 않는다. 대표 캐릭터는 기존 규칙대로 `USER.ar_character_id`로 연결된 `AR_CHARACTER`를 반환하며, 연결된 캐릭터가 없을 때만 `null`이다.
+- 획득 이력과 캐릭터별 보상 미션도 도감에 포함되는 ID 1~6에 필요한 데이터만 조회·조합한다.
+- 이 제한은 마이페이지 조회 응답에만 적용하며 DB의 `AR_CHARACTER` 또는 `ACQUIRED_AR_CHARACTER` 데이터를 삭제하거나 수정하지 않는다.
+- 캐릭터 색상과 ID 제한 외의 마이페이지 조회 규칙은 변경하지 않는다.
 
 ## 사용자 정보 조회
 

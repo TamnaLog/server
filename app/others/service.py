@@ -2,59 +2,125 @@
 
 기준 문서: app/others/docs/API_SPEC.md, app/others/docs/BUSINESS_RULES.md
 
-`STEP_COUNT` 는 소유 도메인인 app/user/models.py,
-`GPS` / `LOCATION` / `VISITED_LOCATION` 은 app/map/models.py 에서 import해서 쓴다.
+`STEP_COUNT` / `USER` 는 소유 도메인인 app/user/models.py,
+`GPS` / `LOCATION` / `VISITED_LOCATION` 은 app/map/models.py,
+`AR_CHARACTER` / `ACQUIRED_AR_CHARACTER` 는 app/treasure_mission/models.py 에서 import해서 쓴다.
 """
 
-from datetime import date, datetime, time
+import random
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.map.models import Gps, Location, VisitedLocation
-from app.others.schemas import GpsSaveRequest, StepCountSaveRequest
+from app.others.schemas import (
+    GpsSaveRequest,
+    StepCountSaveRequest,
+    StepCountSaveResponse,
+)
 from app.others.visit_detector import LocationArea, find_visited_location_ids
-from app.user.models import StepCount
+from app.treasure_mission.models import AcquiredArCharacter, ArCharacter
+from app.user.models import StepCount, User
+
+
+# 목표 걸음 수를 달성했을 때 보상으로 추첨하는 AR 캐릭터 후보.
+# (app/others/docs/BUSINESS_RULES.md - 걸음 수 저장 / 목표 달성 캐릭터 추첨)
+STEP_GOAL_REWARD_CHARACTER_IDS = (1, 2, 3)
 
 
 def save_step_count(
     db: Session, current_user_id: int, request: StepCountSaveRequest
-) -> None:
-    """하루 누적 걸음 수를 저장한다. (사용자 + 기록 날짜당 한 행)
+) -> StepCountSaveResponse:
+    """걸음 수를 저장하고, 목표를 달성했으면 보상 캐릭터를 추첨해서 지급한다.
 
-    같은 날짜로 다시 보내면 행을 추가하지 않고 `steps_count` 만 요청값으로 바꾼다.
-    프론트가 보낸 값이 그 날짜의 최종값이므로, **기존 값보다 작아도 그대로 덮어쓴다.**
-    (서버가 최댓값을 고르거나 누적해서 더하지 않는다)
+    `saved_at` 은 서버가 요청을 받은 시각이 아니라 프론트가 걸음 수를 측정한 시각
+    (`recordedAt`)이다. 같은 시각으로 다시 보내면 행을 추가하지 않고 `steps_count` 만
+    요청값으로 바꾼다. 프론트가 보낸 값이 그 시점의 최종값이므로,
+    **기존 값보다 작아도 그대로 덮어쓴다.** (서버가 최댓값을 고르거나 누적해서 더하지 않는다)
 
-    조회·생성·갱신을 한 트랜잭션에서 처리하고 커밋까지 끝나야 성공이다.
+    `isGoalAchieved` 는 프론트의 판정을 그대로 믿는다. 저장하지 않고, 걸음 수와
+    목표 걸음 수를 다시 비교해서 뒤집지도 않는다.
+
+    걸음 수 저장과 캐릭터 획득은 한 트랜잭션이고, 커밋까지 끝나야 성공이다.
     """
-    saved_at = _to_kst_midnight(request.recorded_date)
-    step_count = _find_step_count(db, current_user_id, saved_at)
+    target_step = _get_user(db, current_user_id).target_step
+    # 추첨은 쓰기 전에 끝낸다. 후보 캐릭터가 없으면 걸음 수도 저장하지 않고 500 이다.
+    character = _draw_goal_reward_character(db) if request.is_goal_achieved else None
+    # 커밋하면 ORM 객체가 만료돼 다시 조회하므로 응답에 쓸 값은 미리 읽어 둔다.
+    response = StepCountSaveResponse(
+        character_name=character.character_name if character is not None else None,
+        character_image_url=(
+            character.character_img_url if character is not None else None
+        ),
+        target_step=target_step,
+    )
+    character_id = character.id if character is not None else None
+
+    try:
+        _save_step_count_and_reward(db, current_user_id, request, character_id)
+        db.commit()
+    except IntegrityError:
+        # 동시 요청이 같은 행을 먼저 만든 경우다. 되돌린 뒤 그 행을 기준으로 한 번 더 반영한다.
+        # (이미 있는 행은 조회로 찾아 갱신하거나 그대로 두므로 두 번째 시도는 충돌하지 않는다)
+        db.rollback()
+        _save_step_count_and_reward(db, current_user_id, request, character_id)
+        db.commit()
+
+    return response
+
+
+def _get_user(db: Session, current_user_id: int) -> User:
+    """현재 사용자. 인증 의존성이 이미 확인했으므로 없으면 500 으로 드러낸다."""
+    user = db.get(User, current_user_id)
+    if user is None:
+        raise RuntimeError(f"사용자를 찾지 못했습니다. (id {current_user_id})")
+    return user
+
+
+def _draw_goal_reward_character(db: Session) -> ArCharacter:
+    """보상 캐릭터를 후보 중에서 균등한 확률로 하나 뽑는다.
+
+    이미 보유한 캐릭터가 뽑혀도 다시 추첨하지 않는다. (응답에는 그대로 내려간다)
+    후보 id 의 캐릭터가 없으면 마스터/목업 데이터가 잘못된 것이라 500 으로 드러낸다.
+    """
+    character_id = random.choice(STEP_GOAL_REWARD_CHARACTER_IDS)
+    character = db.get(ArCharacter, character_id)
+    if character is None:
+        raise RuntimeError(f"보상 AR 캐릭터가 없습니다. (id {character_id})")
+    return character
+
+
+def _save_step_count_and_reward(
+    db: Session,
+    current_user_id: int,
+    request: StepCountSaveRequest,
+    ar_character_id: int | None,
+) -> None:
+    """걸음 수 기록과 캐릭터 획득 기록을 한 트랜잭션에 담는다. (커밋은 호출한 쪽에서)"""
+    step_count = _find_step_count(db, current_user_id, request.recorded_at)
 
     if step_count is None:
-        _create_step_count(db, current_user_id, saved_at, request.steps_count)
+        db.add(
+            StepCount(
+                user_id=current_user_id,
+                saved_at=request.recorded_at,
+                steps_count=request.steps_count,
+            )
+        )
     else:
         # `created_at` 은 처음 기록한 시각 그대로 두고 걸음 수만 바꾼다.
         step_count.steps_count = request.steps_count
 
-    db.commit()
-
-
-def _to_kst_midnight(recorded_date: date) -> datetime:
-    """기록 날짜를 저장 키로 쓸 KST 자정으로 바꾼다.
-
-    `saved_at` 은 요청을 받은 시각이 아니라 **기록 대상 날짜**다.
-    요청 시각으로 날짜를 정하면 자정 전후 요청이 다른 날짜로 갈라진다.
-    (입력값은 프로젝트 정책대로 timezone 변환 없이 KST 로 취급한다)
-    """
-    return datetime.combine(recorded_date, time.min)
+    if ar_character_id is not None:
+        _acquire_character(db, current_user_id, ar_character_id)
 
 
 def _find_step_count(
     db: Session, current_user_id: int, saved_at: datetime
 ) -> StepCount | None:
-    """그 사용자·날짜의 기록. 없으면 `None`."""
+    """그 사용자·측정 시각의 기록. 없으면 `None`."""
     statement = select(StepCount).where(
         StepCount.user_id == current_user_id,
         StepCount.saved_at == saved_at,
@@ -62,31 +128,28 @@ def _find_step_count(
     return db.scalars(statement).first()
 
 
-def _create_step_count(
-    db: Session, current_user_id: int, saved_at: datetime, steps_count: int
-) -> None:
-    """기록을 새로 만든다.
+def _acquire_character(db: Session, current_user_id: int, ar_character_id: int) -> None:
+    """보유하지 않은 캐릭터면 획득 기록을 만든다. 이미 보유했으면 아무것도 하지 않는다.
 
-    동시 요청이 먼저 같은 날짜의 행을 만들었으면 유니크 제약에 걸린다.
-    그때는 중복 행을 만들지 않고 그 행을 다시 찾아 요청값으로 갱신한다.
+    걸음 수 달성 보상은 미션에서 받은 보상이 아니라 연결할 미션이 없다.
+    그래서 `acquired_mission_id` 는 `NULL` 로 두고, 임의의 미션 id 로 출처를 위조하지 않는다.
     """
-    db.add(
-        StepCount(user_id=current_user_id, saved_at=saved_at, steps_count=steps_count)
-    )
-    try:
-        db.flush()
-        return
-    except IntegrityError:
-        db.rollback()
-
-    existing = _find_step_count(db, current_user_id, saved_at)
-    if existing is None:
-        # 유니크 충돌이 아닌 다른 이유였다면 그대로 500 으로 드러낸다.
-        raise RuntimeError(
-            f"걸음 수 기록을 만들지 못했습니다. (사용자 {current_user_id}, {saved_at:%Y-%m-%d})"
+    existing = db.scalars(
+        select(AcquiredArCharacter.id).where(
+            AcquiredArCharacter.user_id == current_user_id,
+            AcquiredArCharacter.ar_character_id == ar_character_id,
         )
+    ).first()
+    if existing is not None:
+        return
 
-    existing.steps_count = steps_count
+    db.add(
+        AcquiredArCharacter(
+            user_id=current_user_id,
+            ar_character_id=ar_character_id,
+            acquired_mission_id=None,
+        )
+    )
 
 
 # ---------------------------------------------------------------------

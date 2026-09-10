@@ -65,6 +65,9 @@ class ArCharacter(Base):
     )
     acquire_condition: Mapped[str] = mapped_column(String(200), nullable=False)
     character_img_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    character_color: Mapped[str | None] = mapped_column(
+        String(20), nullable=True, comment="캐릭터 대표 색상"
+    )
     hashtags: Mapped[list[str]] = mapped_column(JSON, nullable=False, comment="string[]")
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.current_timestamp()
@@ -207,7 +210,12 @@ class TreasureMissionProgress(Base):
 
 
 class AcquiredArCharacter(Base):
-    """ACQUIRED_AR_CHARACTER - 사용자가 미션 보상으로 획득한 AR 캐릭터."""
+    """ACQUIRED_AR_CHARACTER - 사용자가 획득한 AR 캐릭터.
+
+    `acquired_mission_id` 는 획득 출처인 공통 `MISSION.id` 다. 미션 보상이 아닌 경로로
+    획득한 경우(예: 걸음 수 목표 달성 보상)에는 연결할 미션이 없어서 `NULL` 이다.
+    미션이 삭제되면 획득 기록은 남기고 출처만 `NULL` 이 된다. (FK `ON DELETE SET NULL`)
+    """
 
     __tablename__ = "ACQUIRED_AR_CHARACTER"
     __table_args__ = (
@@ -228,10 +236,10 @@ class AcquiredArCharacter(Base):
         ForeignKey("USER.id", ondelete="CASCADE", name="fk_acquired__user"),
         nullable=False,
     )
-    acquired_mission_id: Mapped[int] = mapped_column(
+    acquired_mission_id: Mapped[int | None] = mapped_column(
         BigInteger,
-        ForeignKey("MISSION.id", ondelete="CASCADE", name="fk_acquired__mission"),
-        nullable=False,
+        ForeignKey("MISSION.id", ondelete="SET NULL", name="fk_acquired__mission"),
+        nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.current_timestamp()

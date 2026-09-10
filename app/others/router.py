@@ -11,7 +11,11 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user_id
 from app.others import service
-from app.others.schemas import GpsSaveRequest, StepCountSaveRequest
+from app.others.schemas import (
+    GpsSaveRequest,
+    StepCountSaveRequest,
+    StepCountSaveResponse,
+)
 
 
 router = APIRouter(prefix="/api/v1/users/me", tags=["others"])
@@ -20,19 +24,18 @@ router = APIRouter(prefix="/api/v1/users/me", tags=["others"])
 @router.put(
     "/step-counts",
     summary="걸음 수 저장",
-    status_code=status.HTTP_204_NO_CONTENT,
-    response_class=Response,
+    status_code=status.HTTP_200_OK,
+    response_model=StepCountSaveResponse,
 )
 def save_step_count(
     db: Annotated[Session, Depends(get_db)],
     current_user_id: Annotated[int, Depends(get_current_user_id)],
     request: StepCountSaveRequest,
-) -> Response:
+) -> StepCountSaveResponse:
     """PUT /api/v1/users/me/step-counts - 걸음 수 저장."""
-    service.save_step_count(
+    return service.save_step_count(
         db=db, current_user_id=current_user_id, request=request
     )
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(

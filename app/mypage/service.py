@@ -11,8 +11,8 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import distinct, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy import ColumnElement, distinct, func, select
+from sqlalchemy.orm import Mapped, Session
 
 from app.common import images, rewards
 from app.common.rewards import GrantedRewards
@@ -20,6 +20,8 @@ from app.core.errors import ConflictError, InvalidRequestError
 from app.mission import reward_history
 from app.mypage import travel_ending_image_generator
 from app.mypage.constants import (
+    AR_CHARACTER_COLLECTION_MAX_ID,
+    AR_CHARACTER_COLLECTION_MIN_ID,
     TRAVEL_ENDING_CREATION_POINT_COST,
 )
 from app.mypage.travel_ending_image_generator import SourceType, TravelEndingSource
@@ -107,6 +109,7 @@ def _build_profile(user: User) -> ProfileResponse:
 
     여행 유형과 대표 캐릭터는 없을 수 있고, 그때는 일부만 채우지 않고 통째로 `null` 이다.
     대표 캐릭터는 `USER.ar_character_id` 로만 정한다. 획득 여부는 도감에서 따로 판정한다.
+    도감의 id 1~6 제한은 대표 캐릭터에는 적용하지 않는다.
     """
     travel_style = user.user_travel_style
     ar_character = user.ar_character
@@ -125,6 +128,7 @@ def _build_profile(user: User) -> ProfileResponse:
                 id=ar_character.id,
                 name=ar_character.character_name,
                 image_url=ar_character.character_img_url,
+                character_color=ar_character.character_color,
             )
             if ar_character is not None
             else None
@@ -339,15 +343,30 @@ class _RewardMission:
     mission_title: str
 
 
+def _in_collection_range(column: Mapped[int]) -> ColumnElement[bool]:
+    """도감에 넣을 캐릭터 id 범위 조건. (`BETWEEN 1 AND 6`)"""
+    return column.between(AR_CHARACTER_COLLECTION_MIN_ID, AR_CHARACTER_COLLECTION_MAX_ID)
+
+
+def _is_in_collection_range(ar_character_id: int) -> bool:
+    """도감에 넣을 캐릭터 id 인지 판단한다."""
+    return AR_CHARACTER_COLLECTION_MIN_ID <= ar_character_id <= AR_CHARACTER_COLLECTION_MAX_ID
+
+
 def _build_ar_characters(
     db: Session, current_user_id: int
 ) -> list[ArCharacterCollectionResponse]:
-    """도감을 만든다. 획득 여부와 관계없이 전체 캐릭터를 담는다.
+    """도감을 만든다. 획득 여부와 관계없이 id 1~6 캐릭터를 담는다.
 
+    범위 밖 캐릭터는 획득했거나 미션 보상으로 설정돼 있어도 도감에 넣지 않는다.
     캐릭터마다 다시 조회하지 않도록 획득 이력·보상 미션·획득 장소를 먼저 한 번씩만
     모아 두고 맞춘다. (N+1 방지)
     """
-    characters = db.scalars(select(ArCharacter).order_by(ArCharacter.id)).all()
+    characters = db.scalars(
+        select(ArCharacter)
+        .where(_in_collection_range(ArCharacter.id))
+        .order_by(ArCharacter.id)
+    ).all()
     acquired = _find_acquired(db, current_user_id)
     reward_missions = _find_reward_missions(db)
     location_titles = _find_mission_location_titles(db)
@@ -373,19 +392,16 @@ def _to_collection_response(
     """도감 한 칸을 만든다.
 
     미획득이면 획득 날짜·장소만 `null` 이고 나머지 정보는 획득한 캐릭터와 똑같이 준다.
-    획득했어도 장소가 없는 미션(문화 미션)으로 받았으면 장소는 `null` 이다.
+    획득했어도 장소가 없는 미션(문화 미션)이거나 획득 출처가 없으면 장소는 `null` 이다.
     """
     return ArCharacterCollectionResponse(
         id=character.id,
         name=character.character_name,
         image_url=character.character_img_url,
+        character_color=character.character_color,
         is_acquired=acquired is not None,
         acquired_at=_to_acquired_date(acquired),
-        acquired_location=(
-            location_titles.get(acquired.acquired_mission_id)
-            if acquired is not None
-            else None
-        ),
+        acquired_location=_to_acquired_location(acquired, location_titles),
         story_title=character.character_story_title,
         story_content=character.character_description,
         hashtags=character.hashtags,
@@ -400,6 +416,19 @@ def _to_collection_response(
             for reward_mission in reward_missions[:ACQUIRED_MISSION_LIMIT]
         ],
     )
+
+
+def _to_acquired_location(
+    acquired: AcquiredArCharacter | None, location_titles: dict[int, str]
+) -> str | None:
+    """획득 장소. 미획득이거나 장소를 확인할 수 없으면 `None`.
+
+    획득 출처가 없는 기록(`acquired_mission_id` 가 `NULL`)은 연결할 미션이 없으므로
+    장소도 `None` 이다. (예: 걸음 수 목표 달성 보상, 출처 미션이 삭제된 기록)
+    """
+    if acquired is None or acquired.acquired_mission_id is None:
+        return None
+    return location_titles.get(acquired.acquired_mission_id)
 
 
 def _to_acquired_date(acquired: AcquiredArCharacter | None) -> date | None:
@@ -418,9 +447,11 @@ def _find_acquired(
     """현재 사용자의 캐릭터 획득 이력. `캐릭터 id → 획득 기록`.
 
     `(user_id, ar_character_id)` 가 유니크라 캐릭터당 한 건이다.
+    도감에 넣을 id 1~6 캐릭터의 이력만 읽는다.
     """
     statement = select(AcquiredArCharacter).where(
-        AcquiredArCharacter.user_id == current_user_id
+        AcquiredArCharacter.user_id == current_user_id,
+        _in_collection_range(AcquiredArCharacter.ar_character_id),
     )
     return {acquired.ar_character_id: acquired for acquired in db.scalars(statement).all()}
 
@@ -437,7 +468,8 @@ def _find_reward_missions(db: Session) -> dict[int, list[_RewardMission]]:
     for model in (CultureMission, TreasureMission, CooperativeMission):
         for mission in db.scalars(select(model)).all():
             ar_character_id = (mission.reward_detail or {}).get("ar_character_id")
-            if not ar_character_id:
+            # 도감에 없는 캐릭터(id 1~6 밖)의 보상 미션은 조합하지 않는다.
+            if not ar_character_id or not _is_in_collection_range(ar_character_id):
                 continue
 
             reward_missions.setdefault(ar_character_id, []).append(
