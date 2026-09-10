@@ -459,7 +459,7 @@ VALUES
 
 
 -- ---------------------------------------------------------------------
--- CULTURE_MISSION_PROGRESS : 홈 조회 예시용 진행 중 미션 1건 + 엽서 생성 테스트용 완료 미션 1건
+-- CULTURE_MISSION_PROGRESS : 홈 조회 예시용 진행 중 미션 1건
 -- ---------------------------------------------------------------------
 
 INSERT INTO `CULTURE_MISSION_PROGRESS`
@@ -468,8 +468,7 @@ INSERT INTO `CULTURE_MISSION_PROGRESS`
      `ar_character_reward_granted`, `point_reward_granted`, `coupon_reward_granted`,
      `completed_at`)
 VALUES
-    (1, 1, 1, 'IN_PROGRESS', 2, 1, FALSE, FALSE, FALSE, NULL),
-    (2, 2, 1, 'COMPLETED',   3, 3, TRUE,  TRUE,  TRUE,  '2026-08-20 15:00:00');
+    (1, 1, 1, 'IN_PROGRESS', 2, 1, FALSE, FALSE, FALSE, NULL);
 
 
 -- ---------------------------------------------------------------------
