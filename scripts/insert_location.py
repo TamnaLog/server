@@ -1,4 +1,4 @@
-"""한국관광공사 TourAPI 장소를 Azure MySQL LOCATION에 저장한다.
+"""한국관광공사 TourAPI 장소를 MySQL LOCATION에 저장한다.
 
 처리 순서:
 1. 한국관광공사 TourAPI에서 제주 지역 장소를 전부 조회한다.
@@ -7,11 +7,14 @@
 3. LOCATION에 인증 반경 100m로 장소를 저장한다.
 
 별도 옵션 없이 실행하면 .env의 TourAPI 설정과 .env.azure.database의
-Azure MySQL 설정을 사용한다. 스키마 및 목 데이터 SQL은 실행하지 않는다.
+Azure MySQL 설정을 사용한다. ``--local`` 옵션으로 실행하면 .env 또는
+컨테이너 환경변수의 로컬 MySQL 설정만 사용한다.
+스키마 및 목 데이터 SQL은 실행하지 않는다.
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -262,11 +265,23 @@ def verify_locations(connection: pymysql.Connection, locations: list[LocationRow
             )
 
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="TourAPI 장소를 LOCATION에 저장합니다.")
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help=".env.azure.database를 읽지 않고 로컬 MySQL 설정을 사용합니다.",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = _parse_args()
     # 공통 API 설정은 .env에서 읽고, 대상 DB 설정은 전달받은 env 파일로
     # 덮어쓴다. 이를 통해 TourAPI 키와 Azure 접속 정보를 별도 파일로 관리한다.
     config = load_environment(PROJECT_ROOT / ".env")
-    config.update(load_environment(AZURE_ENV_FILE))
+    if not args.local:
+        config.update(load_environment(AZURE_ENV_FILE))
     locations = fetch_locations(config)
     counts = {
         category: sum(row.category == category for row in locations)
@@ -277,11 +292,12 @@ def main() -> None:
     print(f"TourAPI 장소: 총 {len(locations)}건, {counts}")
     print(f"저장 반경: {LOCATION_RADIUS_METER}m")
 
-    host = required(config, "MYSQL_HOST")
-    if not host.endswith(".mysql.database.azure.com"):
-        raise ValueError(f"Azure MySQL 호스트가 아닙니다: {host}")
-    if config.get("MYSQL_SSL_ENABLED", "").lower() not in {"1", "true", "yes"}:
-        raise ValueError("Azure DB 구축은 MYSQL_SSL_ENABLED=true여야 합니다.")
+    if not args.local:
+        host = required(config, "MYSQL_HOST")
+        if not host.endswith(".mysql.database.azure.com"):
+            raise ValueError(f"Azure MySQL 호스트가 아닙니다: {host}")
+        if config.get("MYSQL_SSL_ENABLED", "").lower() not in {"1", "true", "yes"}:
+            raise ValueError("Azure DB 구축은 MYSQL_SSL_ENABLED=true여야 합니다.")
 
     connection = connect_database(config)
     try:

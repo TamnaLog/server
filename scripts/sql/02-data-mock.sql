@@ -118,21 +118,22 @@ VALUES
 -- ---------------------------------------------------------------------
 -- ---------------------------------------------------------------------
 -- STEP_COUNT : 걸음 수 6건 (사용자 1 이 5일치, 사용자 2 가 1일치)
--- saved_at 은 저장 시각이 아니라 기록 대상 날짜의 KST 자정이다.
--- 사용자별 날짜당 한 행만 존재한다. (user_id + saved_at 유니크)
+-- saved_at 은 저장 시각이 아니라 프론트가 걸음 수를 측정한 시각이다.
+-- 사용자별 측정 시각당 한 행만 존재한다. (user_id + saved_at 유니크)
+-- 목데이터는 하루를 마감한 시각(23:50)의 기록 한 건씩만 둔다.
 -- 목표 걸음 수는 기록이 아니라 사용자 설정값이라 USER.target_step 에 있다.
 -- ---------------------------------------------------------------------
 
 INSERT INTO `STEP_COUNT`
     (`id`, `user_id`, `saved_at`, `steps_count`)
 VALUES
-    (1, 1, '2026-08-18T00:00:00', 12480),
-    (2, 1, '2026-08-19T00:00:00', 9037),
-    (3, 1, '2026-08-20T00:00:00', 15220),
-    (4, 1, '2026-08-21T00:00:00', 7415),
-    (5, 1, '2026-08-22T00:00:00', 10863),
+    (1, 1, '2026-08-18T23:50:00', 12480),
+    (2, 1, '2026-08-19T23:50:00', 9037),
+    (3, 1, '2026-08-20T23:50:00', 15220),
+    (4, 1, '2026-08-21T23:50:00', 7415),
+    (5, 1, '2026-08-22T23:50:00', 10863),
 
-    (6, 2, '2026-08-22T00:00:00', 6120);
+    (6, 2, '2026-08-22T23:50:00', 6120);
 -- ---------------------------------------------------------------------
 
 
@@ -458,7 +459,7 @@ VALUES
 
 
 -- ---------------------------------------------------------------------
--- CULTURE_MISSION_PROGRESS : 홈 조회 예시용 진행 중 미션 1건
+-- CULTURE_MISSION_PROGRESS : 홈 조회 예시용 진행 중 미션 1건 + 엽서 생성 테스트용 완료 미션 1건
 -- ---------------------------------------------------------------------
 
 INSERT INTO `CULTURE_MISSION_PROGRESS`
@@ -467,7 +468,8 @@ INSERT INTO `CULTURE_MISSION_PROGRESS`
      `ar_character_reward_granted`, `point_reward_granted`, `coupon_reward_granted`,
      `completed_at`)
 VALUES
-    (1, 1, 1, 'IN_PROGRESS', 2, 1, FALSE, FALSE, FALSE, NULL);
+    (1, 1, 1, 'IN_PROGRESS', 2, 1, FALSE, FALSE, FALSE, NULL),
+    (2, 2, 1, 'COMPLETED',   3, 3, TRUE,  TRUE,  TRUE,  '2026-08-20 15:00:00');
 
 
 -- ---------------------------------------------------------------------
@@ -518,43 +520,43 @@ VALUES
 
 INSERT INTO `AR_CHARACTER`
     (`id`, `character_name`, `character_description`, `character_story_title`,
-     `acquire_condition`, `character_img_url`, `hashtags`)
+     `acquire_condition`, `character_img_url`, `character_color`, `hashtags`)
 VALUES
     (1, '바람 정령',
      '제주 바다의 바람과 파도에서 태어나 여행자의 발걸음을 가볍게 이끄는 작은 정령입니다.',
      '바람을 타고 온 제주 친구',
      '제주 곳곳을 여행하며 특별한 인연을 쌓으면 만날 수 있어요.',
-     'https://cdn.jamkkan-jeju.dev/ar/wind-spirit.png',
+     'https://cdn.jamkkan-jeju.dev/ar/wind-spirit.png', 'yellow',
      '["#제주바람", "#바다", "#자유로운여행"]'),
     (2, '누비',
      '제주의 숨은 풍경을 찾아 지도와 카메라를 들고 섬을 누비는 씩씩한 탐험가입니다.',
      '제주 구석구석을 누비는 탐험가',
      '제주 여행을 시작하고 나만의 여행 스타일을 설정하면 만날 수 있어요.',
-     'https://cdn.jamkkan-jeju.dev/ar/nubi.png',
+     'https://cdn.jamkkan-jeju.dev/ar/nubi.png', 'green',
      '["#로컬탐방", "#인생사진", "#제주여행"]'),
     (3, '점박이 물범',
      '제주 바다의 잔잔한 물결을 좋아하고 여행자가 발견한 아름다운 순간을 함께 기억하는 물범입니다.',
      '귤을 품은 바다 친구',
      '제주 바다와 가까운 장소에서 특별한 추억을 만들면 만날 수 있어요.',
-     'https://cdn.jamkkan-jeju.dev/ar/spotted-seal.png',
+     'https://cdn.jamkkan-jeju.dev/ar/spotted-seal.png', 'blue',
      '["#제주바다", "#물범", "#추억기록"]'),
     (4, '보물이',
      '오래된 보물상자 안에서 깨어나 제주 문화 이야기를 수집하는 호기심 많은 수호자입니다.',
      '제주 이야기가 담긴 보물상자',
      '문화 미션을 완료하고 제주 문화 퀴즈의 보상을 받으면 만날 수 있어요.',
-     'https://cdn.jamkkan-jeju.dev/ar/bomuli.png',
+     'https://cdn.jamkkan-jeju.dev/ar/bomuli.png', 'grey',
      '["#제주문화", "#문화퀴즈", "#보물상자"]'),
     (5, '감귤이',
      '친구들과 힘을 모을수록 더 환하게 웃는 제주 감귤나무의 든든한 열매 친구입니다.',
      '함께 키워 완성한 감귤나무',
      '협동 미션을 완료하고 일행과 함께 보상을 받으면 만날 수 있어요.',
-     'https://cdn.jamkkan-jeju.dev/ar/gamgyuli.png',
+     'https://cdn.jamkkan-jeju.dev/ar/gamgyuli.png', 'orange',
      '["#감귤", "#협동미션", "#함께여행"]'),
     (6, '돌담이',
      '제주의 검은 현무암 돌담 사이에 숨은 보물을 지키며 여행자의 발견을 기다리는 수호자입니다.',
      '돌담 너머에 숨겨진 제주 보물',
      '보물찾기 미션에서 모든 보물을 찾고 보상을 받으면 만날 수 있어요.',
-     'https://cdn.jamkkan-jeju.dev/ar/doldami.png',
+     'https://cdn.jamkkan-jeju.dev/ar/doldami.png', 'grey',
      '["#제주돌담", "#보물찾기", "#현무암"]');
 
 UPDATE `USER`

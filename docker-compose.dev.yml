@@ -10,8 +10,8 @@ services:
     volumes:
       - .:/app
     depends_on:
-      mysql:
-        condition: service_healthy
+      db-mock:
+        condition: service_completed_successfully
 
   mysql:
     image: mysql:8.4
@@ -24,14 +24,71 @@ services:
       - "3306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
-      # 최초 기동(= mysql-data 볼륨이 비어 있을 때)에만 파일명 순서대로 자동 실행된다.
-      # 01-schema.sql -> 02-data-mock.sql
-      - ./scripts/sql:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot_password"]
       interval: 10s
       timeout: 5s
       retries: 10
+
+  # 1. 테이블을 생성한다. 01-schema.sql은 기존 테이블을 DROP하므로 개발 DB를 초기화한다.
+  db-schema:
+    image: mysql:8.4
+    env_file:
+      - .env
+    volumes:
+      - ./scripts/sql:/scripts/sql:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        MYSQL_PWD="$${MYSQL_PASSWORD}"
+        mysql
+        --host="$${MYSQL_HOST}"
+        --port="$${MYSQL_PORT}"
+        --user="$${MYSQL_USER}"
+        --default-character-set=utf8mb4
+        "$${MYSQL_DATABASE}"
+        < /scripts/sql/01-schema.sql
+    restart: "no"
+
+  # 2. 생성된 LOCATION 테이블에 TourAPI 장소를 적재한다.
+  db-location:
+    build:
+      context: .
+    command: python scripts/insert_location.py --local
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    depends_on:
+      db-schema:
+        condition: service_completed_successfully
+    restart: "no"
+
+  # 3. LOCATION ID를 참조하는 나머지 목데이터를 적재한다.
+  db-mock:
+    image: mysql:8.4
+    env_file:
+      - .env
+    volumes:
+      - ./scripts/sql:/scripts/sql:ro
+    depends_on:
+      db-location:
+        condition: service_completed_successfully
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        MYSQL_PWD="$${MYSQL_PASSWORD}"
+        mysql
+        --host="$${MYSQL_HOST}"
+        --port="$${MYSQL_PORT}"
+        --user="$${MYSQL_USER}"
+        --default-character-set=utf8mb4
+        "$${MYSQL_DATABASE}"
+        < /scripts/sql/02-data-mock.sql
+    restart: "no"
 
 volumes:
   mysql-data:

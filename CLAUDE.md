@@ -51,6 +51,10 @@
     - `datetimes.py`: KST 기준 현재 시각(`now_kst()`)
   - `app/services/`: 외부 서비스 연동 (`kto.py`: TourAPI, `blob_storage.py`: Azure Blob 업로드,
     `openai_audio_title.py`: 방명록 오디오 제목 생성)
+    - `kto.py`는 응답을 워커 프로세스 안에 캐시한다. (성공 24시간 / 실패 5분, 최대 2000건)
+      장소 여러 곳의 대표 이미지는 `get_location_image_urls()`로 한 번에 조회한다.
+      동시 조회 + 총 시간 상한(3초)이 있어 TourAPI가 느려도 요청 하나가 길어지지 않는다.
+      테스트는 `conftest.py`의 `clear_kto_cache` 픽스처가 매번 캐시를 비운다.
   - 보상을 실제로 지급하는 규칙(지급 순서/개수)은 미션 유형마다 다르므로 도메인 안에 둔다.
     (예: `app/culture_mission/reward_granter.py`)
 - 테스트: 루트 `conftest.py` + `app/<domain>/tests/` (공통 규칙 테스트는 `app/core/tests/`)

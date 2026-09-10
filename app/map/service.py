@@ -53,6 +53,7 @@ from app.mission.schemas import MissionType
 from app.services.kto import (
     get_location_detail_image_urls,
     get_location_image_url,
+    get_location_image_urls,
     get_location_overview,
 )
 from app.treasure_mission.models import ArCharacter, TreasureMission
@@ -198,6 +199,10 @@ def _to_location_responses(
     )
     written_guestbooks = _find_written_mission_guestbooks(db, current_user_id, location_ids)
     guestbook_counts = _count_guestbooks_by_location(db, location_ids)
+    # 장소마다 TourAPI 를 순서대로 부르면 응답 시간이 장소 수만큼 쌓이므로 한 번에 조회한다.
+    image_urls = get_location_image_urls(
+        location.content_id for location in locations
+    )
 
     responses = []
     for location in locations:
@@ -232,7 +237,7 @@ def _to_location_responses(
                 ),
                 guestbooks_count=guestbook_counts.get(location.id, 0),
                 # 이미지 조회에 실패해도 지도 조회 전체를 실패시키지 않고 null 로 둔다.
-                representative_image_url=get_location_image_url(location.content_id),
+                representative_image_url=image_urls.get(location.content_id),
             )
         )
     return responses
@@ -567,7 +572,7 @@ def _recommend_nearby_missions(
 
     어떤 미션을 보여줄지는 추천 모듈이 정하고, 여기서는 응답 값만 만든다.
     """
-    missions = []
+    founds = []
     for recommended in mission_recommender.recommend_nearby_missions(db, current_user_id):
         found = mission_detail.build(
             db, current_user_id, recommended.mission_type, recommended.id
@@ -575,6 +580,13 @@ def _recommend_nearby_missions(
         if found is None:
             continue
 
+        founds.append(found)
+
+    # 미션마다 순서대로 부르지 않고 장소 대표 이미지를 한 번에 조회한다.
+    image_urls = get_location_image_urls(found.location_content_id for found in founds)
+
+    missions = []
+    for found in founds:
         missions.append(
             NearbyMissionResponse(
                 mission_id=found.mission_id,
@@ -585,9 +597,7 @@ def _recommend_nearby_missions(
                 reward_detail=found.reward_detail,
                 # 추천 미션은 각각 다른 장소라 미션마다 그 장소의 이름과 대표 이미지를 쓴다.
                 location_title=found.location_title,
-                representative_image_url=get_location_image_url(
-                    found.location_content_id
-                ),
+                representative_image_url=image_urls.get(found.location_content_id),
             )
         )
 

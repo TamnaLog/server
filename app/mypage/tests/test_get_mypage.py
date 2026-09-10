@@ -68,9 +68,13 @@ CHARACTER_STORY_TITLE = "제주 바다의 느긋한 안내자"
 CHARACTER_DESCRIPTION = "제주 해안가에 살던 물범입니다."
 CHARACTER_HASHTAGS = ["#제주바다", "#사진친구"]
 CHARACTER_ACQUIRE_CONDITION = "보물찾기를 완료하면 만날 수 있어요."
+CHARACTER_COLOR = "blue"
 
 OTHER_CHARACTER_ID = 2
 OTHER_CHARACTER_NAME = "귤나무 정령"
+
+# 도감에 노출하는 캐릭터 id 범위(1~6) 밖의 캐릭터
+OUT_OF_RANGE_CHARACTER_ID = 7
 
 ACQUIRED_AT = datetime(2026, 8, 21, 14, 20, 0)
 
@@ -96,6 +100,7 @@ def mypage_data(db_session: Session) -> None:
                 character_story_title=CHARACTER_STORY_TITLE,
                 acquire_condition=CHARACTER_ACQUIRE_CONDITION,
                 character_img_url=CHARACTER_IMG_URL,
+                character_color=CHARACTER_COLOR,
                 hashtags=CHARACTER_HASHTAGS,
             ),
             ArCharacter(
@@ -105,7 +110,18 @@ def mypage_data(db_session: Session) -> None:
                 character_story_title="제주 귤밭의 작은 수호자",
                 acquire_condition="협동 미션을 완료하면 만날 수 있어요.",
                 character_img_url="https://example.com/ar-characters/2.png",
+                # 색상이 없는 캐릭터도 있다. (character_color 는 nullable)
                 hashtags=["#귤나무"],
+            ),
+            ArCharacter(
+                id=OUT_OF_RANGE_CHARACTER_ID,
+                character_name="범위 밖 캐릭터",
+                character_description="설명",
+                character_story_title="이야기 제목",
+                acquire_condition="조건",
+                character_img_url="https://example.com/ar-characters/7.png",
+                character_color="grey",
+                hashtags=["#범위밖"],
             ),
             Location(
                 id=LOCATION_ID,
@@ -334,6 +350,7 @@ def test_프로필에_닉네임_여행유형_대표캐릭터를_반환한다(
             "id": CHARACTER_ID,
             "name": CHARACTER_NAME,
             "imageUrl": CHARACTER_IMG_URL,
+            "characterColor": CHARACTER_COLOR,
         },
     }
 
@@ -602,13 +619,71 @@ def test_세_유형이_모두_진행_중이면_모두_반환한다(
 # ---------------------------------------------------------------------
 
 
-def test_획득_여부와_관계없이_전체_캐릭터를_반환한다(
+def test_획득_여부와_관계없이_id_1_6_캐릭터를_id_오름차순으로_반환한다(
     client: TestClient, mypage_data: None
 ) -> None:
     assert [item["id"] for item in _get(client)["arCharacters"]] == [
         CHARACTER_ID,
         OTHER_CHARACTER_ID,
     ]
+
+
+def test_id가_1_6_밖인_캐릭터는_도감에_넣지_않는다(
+    client: TestClient, db_session: Session, mypage_data: None
+) -> None:
+    # 획득했고 보상 미션까지 설정돼 있어도 도감에는 넣지 않는다.
+    _add_acquired(db_session, ar_character_id=OUT_OF_RANGE_CHARACTER_ID)
+    mission = db_session.get(TreasureMission, TREASURE_MISSION_ID)
+    assert mission is not None
+    mission.reward_detail = {"ar_character_id": OUT_OF_RANGE_CHARACTER_ID, "point": 100}
+    db_session.commit()
+
+    body = _get(client)
+
+    assert OUT_OF_RANGE_CHARACTER_ID not in [item["id"] for item in body["arCharacters"]]
+    # 범위 밖 캐릭터를 보상으로 주는 미션도 도감의 다른 칸에 섞이지 않는다.
+    assert [item["id"] for item in _character(body)["acquiredMissions"]] == [
+        CULTURE_MISSION_ID
+    ]
+
+
+def test_id가_1_6_밖이어도_대표_캐릭터로는_반환한다(
+    client: TestClient, db_session: Session, mypage_data: None
+) -> None:
+    """도감의 id 제한은 대표 캐릭터에 적용하지 않는다."""
+    user = db_session.get(User, CURRENT_USER_ID)
+    assert user is not None
+    user.ar_character_id = OUT_OF_RANGE_CHARACTER_ID
+    db_session.commit()
+
+    body = _get(client)
+
+    assert body["profile"]["selectedArCharacter"]["id"] == OUT_OF_RANGE_CHARACTER_ID
+    assert OUT_OF_RANGE_CHARACTER_ID not in [item["id"] for item in body["arCharacters"]]
+
+
+def test_캐릭터_대표_색상을_대표_캐릭터와_도감에_모두_반환한다(
+    client: TestClient, mypage_data: None
+) -> None:
+    body = _get(client)
+
+    assert body["profile"]["selectedArCharacter"]["characterColor"] == CHARACTER_COLOR
+    assert _character(body)["characterColor"] == CHARACTER_COLOR
+
+
+def test_색상이_없는_캐릭터는_characterColor가_null이다(
+    client: TestClient, db_session: Session, mypage_data: None
+) -> None:
+    user = db_session.get(User, CURRENT_USER_ID)
+    assert user is not None
+    user.ar_character_id = OTHER_CHARACTER_ID
+    db_session.commit()
+
+    body = _get(client)
+
+    # 필드를 생략하지 않고 null 로 준다. (획득 여부와도 무관하다)
+    assert body["profile"]["selectedArCharacter"]["characterColor"] is None
+    assert _character(body, OTHER_CHARACTER_ID)["characterColor"] is None
 
 
 def test_획득한_캐릭터는_획득_날짜와_장소를_함께_반환한다(
@@ -620,6 +695,7 @@ def test_획득한_캐릭터는_획득_날짜와_장소를_함께_반환한다(
         "id": CHARACTER_ID,
         "name": CHARACTER_NAME,
         "imageUrl": CHARACTER_IMG_URL,
+        "characterColor": CHARACTER_COLOR,
         "isAcquired": True,
         "acquiredAt": "2026-08-21",
         "acquiredLocation": LOCATION_TITLE,
@@ -789,7 +865,8 @@ def test_캐릭터가_늘어도_쿼리_수가_늘지_않는다(
     _get(client)
     before = len(executed_queries)
 
-    for character_id in range(10, 20):
+    # 도감에 나오는 id 범위(1~6) 안에서 캐릭터를 늘린다.
+    for character_id in range(3, 7):
         db_session.add(
             ArCharacter(
                 id=character_id,
@@ -806,7 +883,7 @@ def test_캐릭터가_늘어도_쿼리_수가_늘지_않는다(
     executed_queries.clear()
     body = _get(client)
 
-    assert len(body["arCharacters"]) == 12
+    assert len(body["arCharacters"]) == 6
     assert len(executed_queries) == before
 
 

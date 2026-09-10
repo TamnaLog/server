@@ -10,7 +10,7 @@
 
 마이페이지 첫 화면을 구성하기 위해 사용자 프로필, 목표 걸음 수, 방문한 장소 수, 완료한 미션 수, 보유 포인트, 진행 중인 미션과 AR 캐릭터 도감 정보를 함께 반환한다.
 
-AR 캐릭터 도감은 사용자의 획득 여부와 관계없이 전체 캐릭터를 반환한다. 미획득 캐릭터도 이름, 실제 이미지, 캐릭터 이야기, 해시태그, 획득 조건과 연결된 미션 목록을 반환한다. `acquiredAt`은 미획득이면 null이고, `acquiredLocation`은 미획득이거나 획득 장소를 확인할 수 없으면 null이다.
+AR 캐릭터 도감은 사용자의 획득 여부와 관계없이 ID가 1~6인 캐릭터만 반환한다. 미획득 캐릭터도 이름, 실제 이미지, 대표 색상, 캐릭터 이야기, 해시태그, 획득 조건과 연결된 미션 목록을 반환한다. `acquiredAt`은 미획득이면 null이고, `acquiredLocation`은 미획득이거나 획득 장소를 확인할 수 없으면 null이다.
 
 이 API는 `Authorization: Bearer {accessToken}` 헤더가 필수이며, 액세스 토큰으로 현재 사용자를 식별한다.
 
@@ -41,16 +41,17 @@ Status Code : `200 OK`
 마이페이지 정보를 정상적으로 조회한 경우
 
 | 필드                                             | 타입     | 설명                                                                             |
-| ------------------------------------------------ | -------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ------------ |
+| ------------------------------------------------ | -------- | -------------------------------------------------------------------------------- |
 | `profile`                                        | object   | 사용자 프로필 정보                                                               |
-| `profile.nickname`                               | string   | null                                                                             | 사용자 닉네임. 설정하지 않았으면 null                                       |
-| `profile.travelStyle`                            | object   | null                                                                             | 사용자 여행 스타일. 진단된 여행 스타일이 없으면 null                        |
+| `profile.nickname`                               | string \| null | 사용자 닉네임. 설정하지 않았으면 null                                      |
+| `profile.travelStyle`                            | object \| null | 사용자 여행 스타일. 진단된 여행 스타일이 없으면 null                       |
 | `profile.travelStyle.userType`                   | string   | 사용자 여행 유형명. `USER_TRAVEL_STYLE.user_type`                                |
 | `profile.travelStyle.hashtags`                   | string[] | 사용자 여행 스타일 해시태그 목록. `USER_TRAVEL_STYLE.hashtags`                   |
-| `profile.selectedArCharacter`                    | object   | null                                                                             | 마이페이지에 노출할 대표 AR 캐릭터. 선택한 캐릭터가 없으면 null             |
+| `profile.selectedArCharacter`                    | object \| null | 마이페이지에 노출할 대표 AR 캐릭터. 선택한 캐릭터가 없으면 null                  |
 | `profile.selectedArCharacter.id`                 | integer  | AR 캐릭터 ID                                                                     |
 | `profile.selectedArCharacter.name`               | string   | AR 캐릭터 이름                                                                   |
 | `profile.selectedArCharacter.imageUrl`           | string   | AR 캐릭터 이미지 URL                                                             |
+| `profile.selectedArCharacter.characterColor`     | string \| null | AR 캐릭터 대표 색상. `AR_CHARACTER.character_color`이 없으면 null          |
 | `dailyStep`                                      | object   | 목표 걸음 수 정보                                                                |
 | `dailyStep.targetStepCount`                      | integer  | 목표 걸음 수                                                                     |
 | `summary`                                        | object   | 마이페이지 요약 수치                                                             |
@@ -59,24 +60,25 @@ Status Code : `200 OK`
 | `summary.point`                                  | integer  | 현재 사용자의 보유 포인트. `USER.point`                                          |
 | `progressMissions`                               | object[] | 현재 사용자의 진행 중인 미션 목록. 없으면 빈 배열                                |
 | `progressMissions[].missionId`                   | integer  | `missionType`에 해당하는 유형별 세부 미션 ID                                     |
-| `progressMissions[].missionType`                 | string   | 미션 유형. `CULTURE                                                              | TREASURE                                                                    | COOPERATIVE` |
+| `progressMissions[].missionType`                 | string   | 미션 유형. `CULTURE \| TREASURE \| COOPERATIVE`                                 |
 | `progressMissions[].missionTitle`                | string   | 진행 중인 미션 제목                                                              |
 | `progressMissions[].currentCount`                | integer  | 현재 진행 수. 문화는 현재 퀴즈 번호, 보물찾기는 발견한 보물 수, 협동은 현재 단계 |
 | `progressMissions[].totalCount`                  | integer  | 전체 진행 수. 문화는 전체 퀴즈 수, 보물찾기는 전체 보물 수, 협동은 전체 단계 수  |
-| `arCharacters`                                   | object[] | 획득 여부와 관계없이 반환하는 전체 AR 캐릭터 도감 목록                           |
-| `arCharacters[].id`                              | integer  | AR 캐릭터 ID                                                                     |
+| `arCharacters`                                   | object[] | 획득 여부와 관계없이 반환하는 ID 1~6의 AR 캐릭터 도감 목록                       |
+| `arCharacters[].id`                              | integer  | AR 캐릭터 ID. 1 이상 6 이하                                                      |
 | `arCharacters[].name`                            | string   | AR 캐릭터 이름. 미획득 캐릭터도 반환                                             |
 | `arCharacters[].imageUrl`                        | string   | AR 캐릭터 실제 이미지 URL. 미획득 캐릭터도 동일하게 반환                         |
+| `arCharacters[].characterColor`                  | string \| null | AR 캐릭터 대표 색상. `AR_CHARACTER.character_color`이 없으면 null          |
 | `arCharacters[].isAcquired`                      | boolean  | 현재 사용자의 캐릭터 획득 여부                                                   |
-| `arCharacters[].acquiredAt`                      | string   | null                                                                             | 캐릭터 획득 날짜. 미획득이면 null, 획득했으면 YYYY-MM-DD 형식               |
-| `arCharacters[].acquiredLocation`                | string   | null                                                                             | 캐릭터 획득 장소. 미획득이거나 연결된 미션에서 장소를 확인할 수 없으면 null |
+| `arCharacters[].acquiredAt`                      | string \| null | 캐릭터 획득 날짜. 미획득이면 null, 획득했으면 YYYY-MM-DD 형식              |
+| `arCharacters[].acquiredLocation`                | string \| null | 캐릭터 획득 장소. 미획득이거나 연결된 미션에서 장소를 확인할 수 없으면 null |
 | `arCharacters[].storyTitle`                      | string   | 캐릭터 이야기 제목. 미획득 캐릭터도 반환                                         |
 | `arCharacters[].storyContent`                    | string   | 캐릭터 이야기 내용. 미획득 캐릭터도 반환                                         |
 | `arCharacters[].hashtags`                        | string[] | 캐릭터 해시태그 목록. 미획득 캐릭터도 반환                                       |
 | `arCharacters[].acquireCondition`                | string   | 캐릭터 획득 조건                                                                 |
 | `arCharacters[].acquiredMissions`                | object[] | 캐릭터를 획득할 수 있는 미션 목록. 없으면 빈 배열, 최대 3개                      |
 | `arCharacters[].acquiredMissions[].id`           | integer  | `missionType`에 해당하는 유형별 세부 미션 ID                                     |
-| `arCharacters[].acquiredMissions[].missionType`  | string   | 미션 유형. `CULTURE                                                              | TREASURE                                                                    | COOPERATIVE` |
+| `arCharacters[].acquiredMissions[].missionType`  | string   | 미션 유형. `CULTURE \| TREASURE \| COOPERATIVE`                                 |
 | `arCharacters[].acquiredMissions[].missionTitle` | string   | 미션 제목                                                                        |
 
 ```json
@@ -90,7 +92,8 @@ Status Code : `200 OK`
     "selectedArCharacter": {
       "id": 2,
       "name": "로컬 탐험가",
-      "imageUrl": "https://example.com/characters/local-explorer.png"
+      "imageUrl": "https://example.com/characters/local-explorer.png",
+      "characterColor": "green"
     }
   },
   "dailyStep": {
@@ -115,6 +118,7 @@ Status Code : `200 OK`
       "id": 1,
       "name": "바람 정령",
       "imageUrl": "https://example.com/characters/wind-spirit.png",
+      "characterColor": "yellow",
       "isAcquired": true,
       "acquiredAt": "2026-08-20",
       "acquiredLocation": "새별오름",
@@ -134,6 +138,7 @@ Status Code : `200 OK`
       "id": 3,
       "name": "점박이 물범",
       "imageUrl": "https://example.com/characters/spotted-seal.png",
+      "characterColor": "blue",
       "isAcquired": true,
       "acquiredAt": "2026-08-21",
       "acquiredLocation": "섭지코지",
@@ -153,6 +158,7 @@ Status Code : `200 OK`
       "id": 4,
       "name": "귤나무 정령",
       "imageUrl": "https://example.com/characters/tangerine-tree-spirit.png",
+      "characterColor": "grey",
       "isAcquired": false,
       "acquiredAt": null,
       "acquiredLocation": null,
@@ -177,12 +183,21 @@ Status Code : `200 OK`
 - `progressMissions`는 진행 중인 미션이 없으면 빈 배열로 반환한다.
 - `progressMissions[].currentCount`는 문화 미션의 현재 퀴즈 번호, 보물찾기 미션의 발견한 보물 수, 협동 미션의 현재 단계를 사용한다.
 - `progressMissions[].totalCount`는 문화 미션의 전체 퀴즈 수, 보물찾기 미션의 전체 보물 수, 협동 미션의 전체 단계 수를 사용한다.
-- `arCharacters`는 현재 사용자의 획득 여부와 관계없이 전체 캐릭터를 반환한다. `USER.ar_character_id`에 배정되었지만 `ACQUIRED_AR_CHARACTER`에 없는 캐릭터는 대표 캐릭터로 반환될 수 있으며 도감의 `isAcquired`는 false다.
+- `arCharacters`는 현재 사용자의 획득 여부와 관계없이 `AR_CHARACTER.id`가 1~6인 캐릭터만 반환한다. `USER.ar_character_id`에 배정되었지만 `ACQUIRED_AR_CHARACTER`에 없는 캐릭터는 대표 캐릭터로 반환될 수 있으며 도감의 `isAcquired`는 false다.
 - 미획득 캐릭터도 실제 `imageUrl`을 반환하며, 실루엣·잠금 효과는 프론트가 `isAcquired = false`를 기준으로 적용한다.
-- 미획득 캐릭터도 `name`, `storyTitle`, `storyContent`, `hashtags`, `acquireCondition`, `acquiredMissions`를 획득 캐릭터와 동일하게 반환한다.
+- 미획득 캐릭터도 `name`, `imageUrl`, `characterColor`, `storyTitle`, `storyContent`, `hashtags`, `acquireCondition`, `acquiredMissions`를 획득 캐릭터와 동일하게 반환한다.
 - `acquiredAt`은 미획득이면 null이다. `acquiredLocation`은 미획득이거나 연결된 미션에서 장소를 확인할 수 없으면 null이다.
 - `arCharacters[].acquiredMissions`는 해당 캐릭터를 보상으로 설정한 미션을 공통 `MISSION.id ASC`로 정렬한 뒤 최대 3개 반환한다.
 - `progressMissions[].missionId`와 `arCharacters[].acquiredMissions[].id`는 공통 `MISSION.id`가 아니라 `missionType`에 해당하는 유형별 세부 미션 ID다.
+
+### 수정사항
+
+- `profile.selectedArCharacter`와 `arCharacters[]`에 `characterColor`를 추가한다. 값은 `AR_CHARACTER.character_color`이며 저장된 색상이 없으면 `null`이다.
+- `arCharacters` 도감 배열에 반환하는 캐릭터 ID는 1~6으로 제한한다.
+- `arCharacters`는 `AR_CHARACTER.id BETWEEN 1 AND 6` 조건을 만족하는 캐릭터만 `id ASC`로 반환한다.
+- ID가 1~6 밖인 캐릭터의 획득 기록이나 보상 미션이 존재하더라도 `arCharacters`에는 포함하지 않는다.
+- ID 1~6 제한은 `profile.selectedArCharacter`에는 적용하지 않는다. 대표 캐릭터는 기존대로 `USER.ar_character_id`가 참조하는 캐릭터를 반환한다.
+- 위 두 변경 외에 획득 여부, 획득 날짜·장소, 이야기, 해시태그, 획득 조건과 획득 가능 미션 구성 규칙은 기존과 동일하다.
 
 ---
 

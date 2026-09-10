@@ -77,6 +77,7 @@ class SelectedArCharacterResponse(CamelModel):
     id: int
     name: str
     image_url: str
+    character_color: str | None = None
 
 
 class ProfileResponse(CamelModel):
@@ -126,13 +127,14 @@ class AcquiredMissionResponse(CamelModel):
 class ArCharacterCollectionResponse(CamelModel):
     """도감에 보여줄 AR 캐릭터 한 건.
 
-    획득 여부와 관계없이 이름·이미지·이야기·해시태그·획득 조건을 모두 준다.
+    획득 여부와 관계없이 이름·이미지·색상·이야기·해시태그·획득 조건을 모두 준다.
     실루엣 처리는 프론트가 `is_acquired` 로 판단한다.
     """
 
     id: int
     name: str
     image_url: str
+    character_color: str | None = None
     is_acquired: bool = False
     acquired_at: date | None = None
     acquired_location: str | None = None

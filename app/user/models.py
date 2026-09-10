@@ -170,8 +170,9 @@ class StepCount(Base):
     목표 걸음 수(`target_step`)는 기록마다 다른 값이 아니라 사용자 설정값이라
     `USER` 가 가진다.
 
-    `saved_at` 은 저장 시각이 아니라 **기록 대상 날짜의 KST 자정**이다.
-    사용자별 날짜당 한 행만 두려고 `(user_id, saved_at)` 에 유니크 제약을 건다.
+    `saved_at` 은 서버가 저장한 시각이 아니라 **프론트가 걸음 수를 측정한 시각**이다.
+    같은 시각으로 다시 보내면 행을 추가하지 않고 갱신하려고
+    `(user_id, saved_at)` 에 유니크 제약을 건다.
     """
 
     __tablename__ = "STEP_COUNT"
