@@ -30,7 +30,7 @@ DROP TABLE IF EXISTS `CULTURE_MISSION`;
 DROP TABLE IF EXISTS `GPS`;
 DROP TABLE IF EXISTS `VISITED_LOCATION`;
 DROP TABLE IF EXISTS `MISSION`;
-DROP TABLE IF EXISTS `LOCATION`;
+-- DROP TABLE IF EXISTS `LOCATION`;
 DROP TABLE IF EXISTS `STEP_COUNT`;
 DROP TABLE IF EXISTS `USER_SETTING`;
 DROP TABLE IF EXISTS `USER`;
@@ -108,21 +108,21 @@ CREATE TABLE `STEP_COUNT` (
 -- 장소 / 미션
 -- ---------------------------------------------------------------------
 
-CREATE TABLE `LOCATION` (
-    `id`                BIGINT       NOT NULL AUTO_INCREMENT,
-    `content_id`        BIGINT       NOT NULL                COMMENT 'TourAPI contentId',
-    `location_title`    VARCHAR(100) NOT NULL,
-    `location_address`  VARCHAR(255) NOT NULL,
-    `location_category` VARCHAR(20)  NOT NULL,
-    `radius`            INT          NOT NULL                COMMENT '인증 반경(m)',
-    `mx`                DOUBLE       NOT NULL                COMMENT '경도(longitude)',
-    `my`                DOUBLE       NOT NULL                COMMENT '위도(latitude)',
-    `created_at`        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `updated_at`        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_location__content_id` (`content_id`),
-    KEY `idx_location__coord` (`mx`, `my`)
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '장소';
+-- CREATE TABLE `LOCATION` (
+--     `id`                BIGINT       NOT NULL AUTO_INCREMENT,
+--     `content_id`        BIGINT       NOT NULL                COMMENT 'TourAPI contentId',
+--     `location_title`    VARCHAR(100) NOT NULL,
+--     `location_address`  VARCHAR(255) NOT NULL,
+--     `location_category` VARCHAR(20)  NOT NULL,
+--     `radius`            INT          NOT NULL                COMMENT '인증 반경(m)',
+--     `mx`                DOUBLE       NOT NULL                COMMENT '경도(longitude)',
+--     `my`                DOUBLE       NOT NULL                COMMENT '위도(latitude)',
+--     `created_at`        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+--     `updated_at`        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+--     PRIMARY KEY (`id`),
+--     UNIQUE KEY `uk_location__content_id` (`content_id`),
+--     KEY `idx_location__coord` (`mx`, `my`)
+-- ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '장소';
 
 CREATE TABLE `MISSION` (
     `id`            BIGINT       NOT NULL AUTO_INCREMENT,
