@@ -56,6 +56,11 @@ jobs:
             --name "${{ env.WEBAPP_NAME }}" \
             --settings WEBSITES_PORT=8000
 
+          az webapp log config \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --name "${{ env.WEBAPP_NAME }}" \
+            --docker-container-logging filesystem
+
           az webapp restart \
             --resource-group "${{ env.RESOURCE_GROUP }}" \
             --name "${{ env.WEBAPP_NAME }}"
