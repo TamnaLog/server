@@ -14,7 +14,7 @@ from app.onboarding.schemas import OnboardingSaveRequest
 
 
 # **나중에 할게요**를 선택한 사용자에게 배정하는 기본 캐릭터
-DEFAULT_AR_CHARACTER_NAME = "돌멍이"
+DEFAULT_AR_CHARACTER_NAME = "돌담이"
 
 
 def assign_travel_style(db: Session, request: OnboardingSaveRequest) -> UserTravelStyle:
