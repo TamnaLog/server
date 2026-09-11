@@ -21,7 +21,8 @@
 - `transportation`은 주 이동 수단이며 `WALK`, `BUS`, `CAR`, `BICYCLE` 중 선택된 값을 전달한다.
 - `travelStyle`은 자투리 시간 여행 방식이며 `RIGHT_HERE`, `NEAR_AROUND`, `NEAR_DESTINATION` 중 선택된 값을 전달한다.
 - **나중에 할게요**를 선택한 경우 요청 Body는 빈 객체 `{}`로 전달한다.
-- **나중에 할게요**를 선택하면 사용자 스타일은 `null`로 남겨두고 기본 캐릭터인 돌멍이를 반환한다.
+- **나중에 할게요**를 선택하면 사용자 스타일은 `null`로 남겨둔다.
+- 온보딩 진행 여부와 관계없이 AR 캐릭터는 온보딩 전용 캐릭터(id 7~12) 중 하나를 랜덤으로 배정한다.
 - 로그인 구현 전에는 현재 사용자를 항상 id=1로 간주한다.
 
 ---
@@ -89,9 +90,9 @@ Status Code : 201
   "user": {
     "id": 1,
     "arCharacter": {
-      "id": 1,
-      "name": "자청비 모티브 탐험가",
-      "imageUrl": "https://example.com/images/characters/jacheongbi.png"
+      "id": 7,
+      "name": "제주 사진작가",
+      "imageUrl": "https://jamkkanjejustorage.blob.core.windows.net/jamkkanjeju/character_image/001.png"
     },
     "userTravelStyle": {
       "id": 1,
@@ -110,9 +111,9 @@ Status Code : 201
   "user": {
     "id": 1,
     "arCharacter": {
-      "id": 11,
-      "name": "돌멍이",
-      "imageUrl": "https://example.com/images/characters/dolmungii.png"
+      "id": 8,
+      "name": "로컬 탐험가",
+      "imageUrl": "https://jamkkanjejustorage.blob.core.windows.net/jamkkanjeju/character_image/002.png"
     },
     "userTravelStyle": null
   }

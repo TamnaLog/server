@@ -17,8 +17,8 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.common import mission_completion
 from app.cooperative_mission.models import CooperativeMission
-from app.map import mission_completion
 from app.mission.schemas import MissionType
 from app.treasure_mission.models import TreasureMission
 

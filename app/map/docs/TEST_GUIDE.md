@@ -507,7 +507,7 @@ TourAPI 상세 설명은 `stub_overview` 픽스처(autouse)가 가로채고, 호
 | `app/map/viewport.py` | 조회 영역(회전한 화면) 판정 |
 | `app/map/mission_recommender.py` | 장소 상세의 근처 추천 미션 (임시 랜덤) |
 | `app/map/search_classifier.py` | 검색 결과의 추천 장소 / 미션 장소 선별 |
-| `app/map/mission_completion.py` | 사용자별 미션 완료 판정 (홈 조회 `isCompleted`와 공용) |
+| `app/common/mission_completion.py` | 사용자별 미션 완료 판정 (지도 홈 `isCompleted` / 홈 추천 미션과 공용) |
 | `app/map/location_missions.py` | 장소별 세부 미션 일괄 조회 (홈 조회·검색 공용) |
 
 검색 응답의 대표 이미지는 서비스가 아니라 `search_classifier`가 조회하므로,

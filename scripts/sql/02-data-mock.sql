@@ -58,15 +58,24 @@ SET FOREIGN_KEY_CHECKS = 1;
 
 INSERT INTO `USER_TRAVEL_STYLE` (`id`, `user_type`, `type_description`, `hashtags`)
 VALUES
-    (1, '새로운 순간을 담는 기록 탐험가',
-     '새로운 장소를 발견하고 사진과 포토스팟으로 순간을 남기는 걸 좋아하는 타입이에요.',
-     '["#인생사진", "#로컬 탐방", "#자연", "#혼자 여행"]'),
-    (2, '동네 깊숙이 걷는 로컬 탐험가',
-     '유명한 관광지보다 골목, 시장, 작은 카페처럼 현지의 분위기가 느껴지는 장소를 좋아하는 타입이에요.',
-     '["#로컬 탐방", "#골목 산책", "#시장 구경", "#느린 여행"]'),
-    (3, '바람 따라 움직이는 자연 산책가',
-     '오름과 숲길, 바다처럼 자연 속에서 천천히 걷고 쉬는 시간을 좋아하는 타입이에요.',
-     '["#자연", "#오름", "#바다", "#걷기 여행"]');
+    (1, '제주 사진작가',
+     '제주의 빛과 색을 카메라에 담으며 여행지마다 특별한 순간을 발견하는 PHOTO 여행 유형입니다.',
+     '["#PHOTO", "#인생사진", "#제주풍경"]'),
+    (2, '로컬 탐험가',
+     '관광 안내서에 없는 골목과 시장을 누비며 제주 사람들의 일상과 숨은 이야기를 찾는 LOCAL 여행 유형입니다.',
+     '["#LOCAL", "#로컬탐방", "#제주골목"]'),
+    (3, '자연 애호가',
+     '오름과 숲, 바다의 작은 변화에도 귀 기울이며 제주의 자연을 소중히 즐기는 NATURE 여행 유형입니다.',
+     '["#NATURE", "#오름", "#제주자연"]'),
+    (4, '문화 탐방가',
+     '제주의 신화와 역사, 오래된 생활문화에 담긴 이야기를 찾아다니는 CULTURE 여행 유형입니다.',
+     '["#CULTURE", "#제주역사", "#문화탐방"]'),
+    (5, '카페 수집가',
+     '제주의 개성 있는 카페를 찾아 향긋한 음료와 창밖 풍경을 여행 기록으로 모으는 CAFE 여행 유형입니다.',
+     '["#CAFE", "#제주카페", "#감성여행"]'),
+    (6, '올레길 산책가',
+     '천천히 걸으며 돌담과 바닷길의 풍경을 살피고 발걸음마다 새로운 제주를 발견하는 WALKING 여행 유형입니다.',
+     '["#WALKING", "#올레길", "#걷기여행"]');
 
 
 -- ---------------------------------------------------------------------
@@ -124,21 +133,21 @@ VALUES
 -- 목표 걸음 수는 기록이 아니라 사용자 설정값이라 USER.target_step 에 있다.
 -- ---------------------------------------------------------------------
 
-INSERT INTO `STEP_COUNT`
-    (`id`, `user_id`, `saved_at`, `steps_count`)
-VALUES
-    (1, 1, '2026-08-18T23:50:00', 12480),
-    (2, 1, '2026-08-19T23:50:00', 9037),
-    (3, 1, '2026-08-20T23:50:00', 15220),
-    (4, 1, '2026-08-21T23:50:00', 7415),
-    (5, 1, '2026-08-22T23:50:00', 10863),
+-- INSERT INTO `STEP_COUNT`
+--     (`id`, `user_id`, `saved_at`, `steps_count`)
+-- VALUES
+--     (1, 1, '2026-08-18T23:50:00', 12480),
+--     (2, 1, '2026-08-19T23:50:00', 9037),
+--     (3, 1, '2026-08-20T23:50:00', 15220),
+--     (4, 1, '2026-08-21T23:50:00', 7415),
+--     (5, 1, '2026-08-22T23:50:00', 10863),
 
-    (6, 2, '2026-08-22T23:50:00', 6120);
+--     (6, 2, '2026-08-22T23:50:00', 6120);
 -- ---------------------------------------------------------------------
 
 
 -- ---------------------------------------------------------------------
--- VISITED_LOCATION : 사용자별 일반 방명록 3건과 동일한 장소·방문 날짜 (총 18건)
+-- VISITED_LOCATION : 사용자 1의 일반 방명록과 연결된 장소 방문 이력 9건
 -- ---------------------------------------------------------------------
 
 INSERT INTO `VISITED_LOCATION`
@@ -147,21 +156,12 @@ VALUES
     (1, 1, 452, '2026-08-18T11:00:00'),
     (2, 1, 545, '2026-08-19T11:00:00'),
     (3, 1, 68, '2026-08-20T11:00:00'),
-    (4, 2, 441, '2026-08-18T11:00:00'),
-    (5, 2, 266, '2026-08-19T11:00:00'),
-    (6, 2, 160, '2026-08-20T11:00:00'),
-    (7, 3, 161, '2026-08-18T11:00:00'),
-    (8, 3, 142, '2026-08-19T11:00:00'),
-    (9, 3, 184, '2026-08-20T11:00:00'),
-    (10, 4, 115, '2026-08-18T11:00:00'),
-    (11, 4, 692, '2026-08-19T11:00:00'),
-    (12, 4, 460, '2026-08-20T11:00:00'),
-    (13, 5, 607, '2026-08-18T11:00:00'),
-    (14, 5, 444, '2026-08-19T11:00:00'),
-    (15, 5, 456, '2026-08-20T11:00:00'),
-    (16, 6, 346, '2026-08-18T11:00:00'),
-    (17, 6, 454, '2026-08-19T11:00:00'),
-    (18, 6, 488, '2026-08-20T11:00:00');
+    (4, 1, 441, '2026-08-18T11:00:00'),
+    (5, 1, 266, '2026-08-19T11:00:00'),
+    (6, 1, 160, '2026-08-20T11:00:00'),
+    (7, 1, 161, '2026-08-18T11:00:00'),
+    (8, 1, 142, '2026-08-19T11:00:00'),
+    (9, 1, 184, '2026-08-20T11:00:00');
 
 
 -- ---------------------------------------------------------------------
@@ -395,7 +395,7 @@ VALUES
 INSERT INTO `COOPERATIVE_MISSION`
     (`id`, `mission_id`, `location_id`, `reward_detail`)
 VALUES
-(1,  2, 452,  '{"ar_character_id": 5, "point": 100, "coupon_location": "도라지식당", "coupon_price": 1000}'),
+    (1,  2, 452,  '{"ar_character_id": 5, "point": 100, "coupon_location": "도라지식당", "coupon_price": 1000}'),
     (2,  2, 545,  '{"ar_character_id": 5, "point": 120, "coupon_location": "성산해촌", "coupon_price": 1500}'),
     (3,  2, 68,  '{"ar_character_id": 5, "point": 150, "coupon_location": "돔베돈", "coupon_price": 2000}'),
     (4,  2, 441,  '{"ar_character_id": 5, "point": 180, "coupon_location": "금강민물장어", "coupon_price": 2500}'),
@@ -405,7 +405,7 @@ VALUES
     (8,  2, 142,  '{"ar_character_id": 5, "point": 130, "coupon_location": "오조해녀의집", "coupon_price": 2000}'),
     (9,  2, 184,  '{"ar_character_id": 5, "point": 160, "coupon_location": "제주뚝배기", "coupon_price": 2500}'),
     (10, 2, 115, '{"ar_character_id": 5, "point": 190, "coupon_location": "진미명가", "coupon_price": 3000}'),
-    (11, 2, 692, '{"ar_character_id": 5, "point": 210, "coupon_location": "삼대국수회관", "coupon_price": 3500}'),
+    (11, 2, 592, '{"ar_character_id": 5, "point": 210, "coupon_location": "삼대국수회관", "coupon_price": 3500}'),
     (12, 2, 460, '{"ar_character_id": 5, "point": 240, "coupon_location": "어장군", "coupon_price": 4000}');
 
 
@@ -459,7 +459,7 @@ VALUES
 
 
 -- ---------------------------------------------------------------------
--- CULTURE_MISSION_PROGRESS : 홈 조회 예시용 진행 중 미션 1건
+-- CULTURE_MISSION_PROGRESS : 사용자 1의 진행 중 1건 + 완료 1건
 -- ---------------------------------------------------------------------
 
 INSERT INTO `CULTURE_MISSION_PROGRESS`
@@ -468,33 +468,34 @@ INSERT INTO `CULTURE_MISSION_PROGRESS`
      `ar_character_reward_granted`, `point_reward_granted`, `coupon_reward_granted`,
      `completed_at`)
 VALUES
-    (1, 1, 1, 'IN_PROGRESS', 2, 1, FALSE, FALSE, FALSE, NULL);
+    (1, 1, 1, 'IN_PROGRESS', 2, 1, FALSE, FALSE, FALSE, NULL),
+    (2, 2, 1, 'COMPLETED',   3, 2, TRUE,  TRUE,  FALSE, '2026-08-21 14:20:00');
+
+
+-- -- ---------------------------------------------------------------------
+-- -- COOPERATIVE_MISSION_PROGRESS : 홈 조회 예시용 진행 중 미션 1건
+-- -- 현재 사용자는 참여자 테이블을 통해 진행 중인 협동 미션과 연결된다.
+-- -- ---------------------------------------------------------------------
+
+-- INSERT INTO `COOPERATIVE_MISSION_PROGRESS`
+--     (`id`, `cooperative_mission_id`, `current_step`, `mission_status`,
+--      `team_token`,
+--      `ar_character_reward_granted`, `point_reward_granted`, `coupon_reward_granted`,
+--      `completed_at`, `deleted_at`)
+-- VALUES
+--     (1, 1, 2, 'IN_PROGRESS', 'mock-team-token-1', FALSE, FALSE, FALSE, NULL, NULL);
+
+-- INSERT INTO `COOPERATIVE_MISSION_PARTICIPANT`
+--     (`id`, `cooperative_mission_progress_id`, `user_id`,
+--      `participant_status`, `participant_role`, `joined_at`, `deleted_at`)
+-- VALUES
+--     (1, 1, 1, 'ACCEPTED', 'HOST',   '2026-08-20 10:00:00', NULL),
+--     (2, 1, 2, 'ACCEPTED', 'MEMBER', '2026-08-20 10:05:00', NULL),
+--     (3, 1, 3, 'PENDING',  'MEMBER', NULL,                  NULL);
 
 
 -- ---------------------------------------------------------------------
--- COOPERATIVE_MISSION_PROGRESS : 홈 조회 예시용 진행 중 미션 1건
--- 현재 사용자는 참여자 테이블을 통해 진행 중인 협동 미션과 연결된다.
--- ---------------------------------------------------------------------
-
-INSERT INTO `COOPERATIVE_MISSION_PROGRESS`
-    (`id`, `cooperative_mission_id`, `current_step`, `mission_status`,
-     `team_token`,
-     `ar_character_reward_granted`, `point_reward_granted`, `coupon_reward_granted`,
-     `completed_at`, `deleted_at`)
-VALUES
-    (1, 1, 2, 'IN_PROGRESS', 'mock-team-token-1', FALSE, FALSE, FALSE, NULL, NULL);
-
-INSERT INTO `COOPERATIVE_MISSION_PARTICIPANT`
-    (`id`, `cooperative_mission_progress_id`, `user_id`,
-     `participant_status`, `participant_role`, `joined_at`, `deleted_at`)
-VALUES
-    (1, 1, 1, 'ACCEPTED', 'HOST',   '2026-08-20 10:00:00', NULL),
-    (2, 1, 2, 'ACCEPTED', 'MEMBER', '2026-08-20 10:05:00', NULL),
-    (3, 1, 3, 'PENDING',  'MEMBER', NULL,                  NULL);
-
-
--- ---------------------------------------------------------------------
--- TREASURE_MISSION_PROGRESS : 홈 조회 예시용 진행 중 미션 1건
+-- TREASURE_MISSION_PROGRESS : 사용자 1의 진행 중 1건 + 완료 1건
 -- ---------------------------------------------------------------------
 
 -- current_step : 1 | 2 | 3 (3 = 완료)
@@ -510,11 +511,17 @@ VALUES
         {"index": 2, "mx": 126.5544, "my": 33.2462},
         {"index": 3, "mx": 126.5551, "my": 33.2468}
     ]',
-    '[1, 2]', 2, 'IN_PROGRESS', FALSE, FALSE, FALSE, NULL);
+    '[1, 2]', 2, 'IN_PROGRESS', FALSE, FALSE, FALSE, NULL),
+    (2, 2, 1, '[
+        {"index": 1, "mx": 126.5310, "my": 33.5010},
+        {"index": 2, "mx": 126.5318, "my": 33.5004},
+        {"index": 3, "mx": 126.5324, "my": 33.4998}
+    ]',
+    '[1, 2, 3]', 3, 'COMPLETED', TRUE, TRUE, TRUE, '2026-08-22 16:30:00');
 
 
 -- ---------------------------------------------------------------------
--- AR_CHARACTER : 캐릭터 도감 6종
+-- AR_CHARACTER : 캐릭터 도감 12종
 -- ---------------------------------------------------------------------
 
 INSERT INTO `AR_CHARACTER`
@@ -525,38 +532,74 @@ VALUES
      '제주 바다의 바람과 파도에서 태어나 여행자의 발걸음을 가볍게 이끄는 작은 정령입니다.',
      '바람을 타고 온 제주 친구',
      '제주 곳곳을 여행하며 특별한 인연을 쌓으면 만날 수 있어요.',
-     'https://cdn.jamkkan-jeju.dev/ar/wind-spirit.png', 'yellow',
+     'https://jamkkanjejustorage.blob.core.windows.net/jamkkanjeju/character_image/wind_spirit.png', 'yellow',
      '["#제주바람", "#바다", "#자유로운여행"]'),
     (2, '누비',
      '제주의 숨은 풍경을 찾아 지도와 카메라를 들고 섬을 누비는 씩씩한 탐험가입니다.',
      '제주 구석구석을 누비는 탐험가',
      '제주 여행을 시작하고 나만의 여행 스타일을 설정하면 만날 수 있어요.',
-     'https://cdn.jamkkan-jeju.dev/ar/nubi.png', 'green',
+     'https://jamkkanjejustorage.blob.core.windows.net/jamkkanjeju/character_image/nubi.png', 'green',
      '["#로컬탐방", "#인생사진", "#제주여행"]'),
     (3, '점박이 물범',
      '제주 바다의 잔잔한 물결을 좋아하고 여행자가 발견한 아름다운 순간을 함께 기억하는 물범입니다.',
      '귤을 품은 바다 친구',
      '제주 바다와 가까운 장소에서 특별한 추억을 만들면 만날 수 있어요.',
-     'https://cdn.jamkkan-jeju.dev/ar/spotted-seal.png', 'blue',
+     'https://jamkkanjejustorage.blob.core.windows.net/jamkkanjeju/character_image/spotted_seal.png', 'blue',
      '["#제주바다", "#물범", "#추억기록"]'),
     (4, '보물이',
      '오래된 보물상자 안에서 깨어나 제주 문화 이야기를 수집하는 호기심 많은 수호자입니다.',
      '제주 이야기가 담긴 보물상자',
      '문화 미션을 완료하고 제주 문화 퀴즈의 보상을 받으면 만날 수 있어요.',
-     'https://cdn.jamkkan-jeju.dev/ar/bomuli.png', 'grey',
+     'https://jamkkanjejustorage.blob.core.windows.net/jamkkanjeju/character_image/bomuli.png', 'grey',
      '["#제주문화", "#문화퀴즈", "#보물상자"]'),
     (5, '감귤이',
      '친구들과 힘을 모을수록 더 환하게 웃는 제주 감귤나무의 든든한 열매 친구입니다.',
      '함께 키워 완성한 감귤나무',
      '협동 미션을 완료하고 일행과 함께 보상을 받으면 만날 수 있어요.',
-     'https://cdn.jamkkan-jeju.dev/ar/gamgyuli.png', 'orange',
+     'https://jamkkanjejustorage.blob.core.windows.net/jamkkanjeju/character_image/gamgyuli.png', 'orange',
      '["#감귤", "#협동미션", "#함께여행"]'),
     (6, '돌담이',
      '제주의 검은 현무암 돌담 사이에 숨은 보물을 지키며 여행자의 발견을 기다리는 수호자입니다.',
      '돌담 너머에 숨겨진 제주 보물',
      '보물찾기 미션에서 모든 보물을 찾고 보상을 받으면 만날 수 있어요.',
-     'https://cdn.jamkkan-jeju.dev/ar/doldami.png', 'grey',
-     '["#제주돌담", "#보물찾기", "#현무암"]');
+     'https://jamkkanjejustorage.blob.core.windows.net/jamkkanjeju/character_image/doldami.png', 'grey',
+     '["#제주돌담", "#보물찾기", "#현무암"]'),
+    (7, '제주 사진작가',
+     '제주의 빛과 색을 카메라에 담으며 여행지마다 특별한 순간을 발견하는 감성 사진작가입니다.',
+     '제주의 순간을 담는 사진가',
+     'PHOTO 여행 취향으로 제주에서 인생 사진을 기록하면 만날 수 있어요.',
+     'https://jamkkanjejustorage.blob.core.windows.net/jamkkanjeju/character_image/001.png', 'skyblue',
+     '["#PHOTO", "#인생사진", "#제주풍경"]'),
+    (8, '로컬 탐험가',
+     '관광 안내서에 없는 골목과 시장을 누비며 제주 사람들의 일상과 숨은 이야기를 찾아내는 탐험가입니다.',
+     '골목 끝에서 만난 진짜 제주',
+     'LOCAL 여행 취향으로 제주 마을과 전통시장을 탐방하면 만날 수 있어요.',
+     'https://jamkkanjejustorage.blob.core.windows.net/jamkkanjeju/character_image/002.png', 'orange',
+     '["#LOCAL", "#로컬탐방", "#제주골목"]'),
+    (9, '자연 애호가',
+     '오름과 숲, 바다의 작은 변화에도 귀 기울이며 제주의 자연을 소중히 돌보는 여행자입니다.',
+     '바람과 숲이 들려준 이야기',
+     'NATURE 여행 취향으로 제주의 오름과 숲길을 여행하면 만날 수 있어요.',
+     'https://jamkkanjejustorage.blob.core.windows.net/jamkkanjeju/character_image/003.png', 'green',
+     '["#NATURE", "#오름", "#제주자연"]'),
+    (10, '문화 탐방가',
+     '제주의 신화와 역사, 오래된 생활문화를 공부하며 장소마다 담긴 이야기를 전하는 탐방가입니다.',
+     '시간을 건너 만난 제주 이야기',
+     'CULTURE 여행 취향으로 제주 문화와 역사 미션을 체험하면 만날 수 있어요.',
+     'https://jamkkanjejustorage.blob.core.windows.net/jamkkanjeju/character_image/004.png', 'purple',
+     '["#CULTURE", "#제주역사", "#문화탐방"]'),
+    (11, '카페 수집가',
+     '제주의 개성 있는 카페를 찾아다니며 향긋한 음료와 창밖 풍경을 여행 기록으로 모으는 수집가입니다.',
+     '한 잔에 담아낸 제주 풍경',
+     'CAFE 여행 취향으로 제주 카페에서 여유로운 시간을 보내면 만날 수 있어요.',
+     'https://jamkkanjejustorage.blob.core.windows.net/jamkkanjeju/character_image/005.png', 'brown',
+     '["#CAFE", "#제주카페", "#감성여행"]'),
+    (12, '올레길 산책가',
+     '천천히 걸으며 돌담과 바닷길의 풍경을 살피고 발걸음마다 새로운 제주를 발견하는 산책가입니다.',
+     '한 걸음씩 가까워진 제주',
+     'WALKING 여행 취향으로 제주 올레길과 골목길을 걸으면 만날 수 있어요.',
+     'https://jamkkanjejustorage.blob.core.windows.net/jamkkanjeju/character_image/006.png', 'yellowgreen',
+     '["#WALKING", "#올레길", "#걷기여행"]');
 
 UPDATE `USER`
 SET `ar_character_id` = CASE `id`
@@ -568,6 +611,18 @@ SET `ar_character_id` = CASE `id`
     WHEN 6 THEN 3
 END
 WHERE `id` IN (1, 2, 3, 4, 5, 6);
+
+
+-- ---------------------------------------------------------------------
+-- ACQUIRED_AR_CHARACTER : 사용자 1이 완료 미션 보상으로 획득한 캐릭터
+-- acquired_mission_id는 유형별 세부 미션 id가 아니라 공통 MISSION.id다.
+-- ---------------------------------------------------------------------
+
+INSERT INTO `ACQUIRED_AR_CHARACTER`
+    (`id`, `ar_character_id`, `user_id`, `acquired_mission_id`, `created_at`)
+VALUES
+    (1, 2, 1, 1, '2026-08-21 14:20:00'),
+    (2, 9, 1, 3, '2026-08-22 16:30:00');
 
 
 -- ---------------------------------------------------------------------

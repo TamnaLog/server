@@ -19,8 +19,8 @@ def save_onboarding_info(
     """사용자 온보딩 정보 저장.
 
     - 온보딩을 진행한 경우: 선택값을 저장하고 여행 유형/AR 캐릭터를 배정한다.
-    - **나중에 할게요**를 선택한 경우: 선택값과 여행 유형은 `null`로 두고
-      기본 캐릭터(돌멍이)를 배정한다.
+    - **나중에 할게요**를 선택한 경우: 선택값과 여행 유형은 `null`로 둔다.
+    - 두 경우 모두 온보딩 전용 AR 캐릭터(id 7~12) 중 하나를 랜덤으로 배정한다.
     """
     user = _get_user(db, current_user_id)
 
@@ -29,13 +29,13 @@ def save_onboarding_info(
         user.transportation = None
         user.travel_style = None
         travel_style: UserTravelStyle | None = None
-        ar_character = onboarding_matcher.get_default_ar_character(db)
     else:
         user.expectation = [value.value for value in request.categories]
         user.transportation = [value.value for value in request.transportation]
         user.travel_style = [value.value for value in request.travel_style]
         travel_style = onboarding_matcher.assign_travel_style(db, request)
-        ar_character = onboarding_matcher.assign_ar_character(db, request)
+
+    ar_character = onboarding_matcher.assign_ar_character(db, request)
 
     user.user_travel_style_id = travel_style.id if travel_style else None
     user.ar_character_id = ar_character.id

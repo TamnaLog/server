@@ -131,7 +131,7 @@ def _pick_mission(
     TODO: 참여 가능 조건 확정 시 선별 기준 교체.
           지금은 현재 사용자의 완료 여부와 관계없이 미션이 있으면 전부 내보낸다.
           앞으로 "이미 완료한 미션 제외" 같은 조건이 붙으면 이 함수에서 거르고,
-          완료 여부는 `app/map/mission_completion.py` 의 판정을 그대로 쓰면 된다.
+          완료 여부는 `app/common/mission_completion.py` 의 판정을 그대로 쓰면 된다.
     """
     candidates = [
         (mission, mission_type)
