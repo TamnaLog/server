@@ -34,6 +34,8 @@
 - API 요청/응답은 offset 없는 ISO 8601 date-time 형식을 사용한다.
 - 별도의 timezone 변환 없이 입력 값을 KST로 취급한다.
 - DB에는 timezone 없는 `DATETIME`으로 저장한다.
+- `created_at`/`updated_at`의 서버 기본값 `CURRENT_TIMESTAMP`도 KST로 저장되도록,
+  MySQL 연결마다 세션 타임존을 `+09:00`으로 설정한다. (`use_kst_session_time_zone()` in `app/core/database.py`)
 
 ### 1.5 API Base Convention
 - 기본 API prefix는 `/api/v1`이다.
