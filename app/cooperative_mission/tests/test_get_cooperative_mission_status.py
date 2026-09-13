@@ -39,6 +39,12 @@ LOCATION_IMAGE_URL = "https://example.com/locations/gwaeon.jpg"
 LOCATION_MX = 126.5707
 LOCATION_MY = 33.4507
 
+# 완료한 미션의 장소와 다른 값인지 확인할 추천 전용 장소
+OTHER_LOCATION_ID = 2
+OTHER_LOCATION_TITLE = "협재 해수욕장"
+OTHER_LOCATION_MX = 126.2396
+OTHER_LOCATION_MY = 33.3937
+
 # 다음 장소까지의 직선거리를 계산할 사용자 현재 위치
 USER_LATITUDE = 33.4996
 USER_LONGITUDE = 126.5312
@@ -297,6 +303,7 @@ def test_1단계는_참가자_정보만_반환하고_나머지는_null이다(
         "missionTitle": MISSION_TITLE,
         "missionProgressStatus": "IN_PROGRESS",
         "currentStep": 1,
+        "completedLocation": None,
         "currentParticipant": {
             "participantId": HOST_PARTICIPANT_ID,
             "participantRole": "HOST",
@@ -390,7 +397,8 @@ def test_2단계는_역할_카드_전체와_역할_진행도를_반환한다(
     ]
     assert body["totalRoleCount"] == 1
     assert body["completedRoleCount"] == 0
-    # 2·3단계에서는 보상과 다음 장소를 내려주지 않는다.
+    # 2·3단계에서는 완료 장소와 보상, 다음 장소를 내려주지 않는다.
+    assert body["completedLocation"] is None
     assert body["reward"] is None
     assert body["nextLocation"] is None
 
@@ -466,6 +474,11 @@ def test_4단계는_참가자_역할_정보를_null로_두고_보상과_다음_�
     assert body["roleProgresses"] is None
     assert body["completedRoleCount"] is None
     assert body["totalRoleCount"] is None
+    # 방금 완료한 협동 미션이 진행된 장소
+    assert body["completedLocation"] == {
+        "locationId": LOCATION_ID,
+        "locationTitle": LOCATION_TITLE,
+    }
     # 완료 역할 3개 → AR 캐릭터 + 포인트
     assert body["reward"] == {
         "arCharacter": {
@@ -487,6 +500,42 @@ def test_4단계는_참가자_역할_정보를_null로_두고_보상과_다음_�
         # 이 장소에 연결된 세부 미션은 이 협동 미션뿐이다.
         "mission": {"id": COOPERATIVE_MISSION_ID, "missionType": "COOPERATIVE"},
     }
+
+
+def test_completedLocation은_추천_장소가_아니라_완료한_미션의_장소다(
+    client: TestClient,
+    db_session: Session,
+    status_data: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 추천 장소를 미션 장소와 다른 곳으로 고정해 두 필드가 섞이지 않는지 확인한다.
+    db_session.add(
+        Location(
+            id=OTHER_LOCATION_ID,
+            content_id=126280,
+            location_title=OTHER_LOCATION_TITLE,
+            location_address="제주특별자치도 제주시 한림읍 협재리",
+            location_category="해수욕장",
+            radius=400,
+            mx=OTHER_LOCATION_MX,
+            my=OTHER_LOCATION_MY,
+        )
+    )
+    db_session.commit()
+    monkeypatch.setattr(
+        next_location, "_pick_location", lambda db: db.get(Location, OTHER_LOCATION_ID)
+    )
+    _add_completed_roles(db_session, 3)
+    _complete(db_session)
+
+    body = _get(client)
+
+    assert body["completedLocation"] == {
+        "locationId": LOCATION_ID,
+        "locationTitle": LOCATION_TITLE,
+    }
+    assert body["nextLocation"]["id"] == OTHER_LOCATION_ID
+    assert body["nextLocation"]["locationTitle"] == OTHER_LOCATION_TITLE
 
 
 @pytest.mark.parametrize(
@@ -602,18 +651,24 @@ def test_완료_역할이_없으면_보상_항목이_모두_null이다(
 
 
 def test_추천할_장소가_없으면_nextLocation은_null이다(
-    client: TestClient, db_session: Session, status_data: None
+    client: TestClient,
+    db_session: Session,
+    status_data: None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _add_completed_roles(db_session, 3)
     _complete(db_session)
-    db_session.query(Location).delete()
-    db_session.commit()
+    # 미션이 참조하는 장소는 FK(RESTRICT) 때문에 지울 수 없어서, 추천할 장소가 하나도
+    # 없는 상황만 따로 만든다.
+    monkeypatch.setattr(next_location, "_pick_location", lambda db: None)
 
     body = _get(client)
 
     # 추천할 장소가 없어도 완료 상태 조회 자체는 성공한다. (보상은 정상 지급)
     assert body["nextLocation"] is None
     assert body["reward"]["point"] == REWARD_POINT
+    # 완료 장소는 추천 로직과 무관하게 그대로 내려준다.
+    assert body["completedLocation"]["locationId"] == LOCATION_ID
 
 
 # ---------------------------------------------------------------------

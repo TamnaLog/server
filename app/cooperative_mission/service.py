@@ -28,6 +28,7 @@ from app.cooperative_mission.models import (
     ParticipantStatus,
 )
 from app.cooperative_mission.schemas import (
+    CompletedLocationResponse,
     CooperativeMissionLeaveResponse,
     CooperativeMissionProgressSaveRequest,
     CooperativeRoleAssignmentSaveRequest,
@@ -625,7 +626,7 @@ def get_cooperative_mission_status(
 
     - 1단계: 참가자 목록과 내 참여 상태 (수락/거절 결과 확인)
     - 2·3단계: 역할 카드와 역할 진행도, 인증 집계
-    - 4단계: 보상과 다음 장소 (참가자/역할 정보는 내려주지 않는다)
+    - 4단계: 완료 장소와 보상, 다음 장소 (참가자/역할 정보는 내려주지 않는다)
 
     1~3단계 조회는 데이터를 바꾸지 않는다. 4단계는 아직 정산 전이면 보상을 지급한다.
 
@@ -723,11 +724,18 @@ def _to_completed_status(
     latitude: float,
     longitude: float,
 ) -> CooperativeMissionStatusResponse:
-    """완료 화면 응답을 만든다. 참가자/역할 정보 대신 보상과 다음 장소를 채운다.
+    """완료 화면 응답을 만든다. 참가자/역할 정보 대신 완료 장소와 보상, 다음 장소를 채운다.
+
+    완료 장소(`completed_location`)는 방금 끝낸 협동 미션이 진행된 장소로,
+    프론트가 이어서 여는 방명록 작성 화면에서 쓴다. 추천 장소(`next_location`)와 다른 값이다.
 
     다음 장소는 문화/보물 미션 완료와 같은 공통 로직을 쓰고,
     사용자 좌표까지 넘겨 `distanceMeter` 를 포함한 응답을 만든다.
     """
+    response.completed_location = CompletedLocationResponse(
+        location_id=cooperative_mission.location.id,
+        location_title=cooperative_mission.location.location_title,
+    )
     response.reward = reward_granter.settle_cooperative_mission_reward(
         db,
         progress=progress,
