@@ -17,7 +17,7 @@
 
 `roleCards`와 `roleProgresses`는 역할 배정 및 수행 화면에서 사용하는 `currentStep: 2 | 3`일 때만 반환한다. `currentStep: 1 | 4`이면 두 필드 모두 `null`로 반환한다. 2단계에서는 공통 역할 카드 6종 전체와 현재까지 저장된 역할 배정을 반환하며, 방장이 역할 카드 하나를 배정할 때마다 다음 polling 응답의 `roleProgresses`에 즉시 반영한다. 모든 역할 카드를 배정할 필요는 없으며 일부 역할 카드는 미배정으로 남길 수 있다. 하나의 역할 카드는 최대 한 명에게만 배정할 수 있고, 한 참가자는 서로 다른 여러 역할 카드를 배정받을 수 있다. 2단계에서 아직 저장된 역할 배정이 없으면 `roleProgresses`는 빈 배열을 반환한다.
 
-`currentStep: 1 | 2 | 3`에서는 `reward`와 `nextLocation`을 `null`로 반환한다. 저장된 역할 진행도가 모두 인증 완료되어 `currentStep: 4`, `missionProgressStatus: COMPLETED`가 되면 참가자, 역할 카드, 역할 진행도 및 역할 집계 필드는 `null`로 반환하고 보상과 다음 추천 장소를 반환한다. `reward`의 AR 캐릭터, 포인트, 쿠폰은 각각 지급 결과에 따라 `null`일 수 있다.
+`currentStep: 1 | 2 | 3`에서는 `completedLocation`, `reward`, `nextLocation`을 `null`로 반환한다. 저장된 역할 진행도가 모두 인증 완료되어 `currentStep: 4`, `missionProgressStatus: COMPLETED`가 되면 참가자, 역할 카드, 역할 진행도 및 역할 집계 필드는 `null`로 반환하고, 완료한 협동 미션의 장소와 보상 및 다음 추천 장소를 반환한다. `reward`의 AR 캐릭터, 포인트, 쿠폰은 각각 지급 결과에 따라 `null`일 수 있다.
 
 Query의 사용자 좌표는 4단계에서 추천된 다음 장소까지의 직선거리를 계산하는 데 사용하며, 거리는 `nextLocation.distanceMeter`에 미터 단위로 반환한다. 1~3단계에서는 좌표를 사용하지 않지만 폴링 요청마다 동일하게 전달한다.
 
@@ -67,6 +67,9 @@ Status Code : 200
 | `missionTitle` | string | 협동 미션 제목 |
 | `missionProgressStatus` | string | 협동 미션 진행 상태. `IN_PROGRESS \| COMPLETED` |
 | `currentStep` | number | 현재 단계. `1: 초대, 2: 역할 카드 배정, 3: 미션 수행, 4: 미션 완료` |
+| `completedLocation` | object \| null | 완료한 협동 미션의 장소. 1~3단계에서는 `null`, 4단계에서만 객체로 반환 |
+| `completedLocation.locationId` | number | 완료한 협동 미션이 진행된 `LOCATION.id` |
+| `completedLocation.locationTitle` | string | 완료한 협동 미션이 진행된 장소명 |
 | `currentParticipant` | object \| null | Bearer 토큰으로 식별한 현재 사용자의 참가자 정보. 4단계이면 `null` |
 | `currentParticipant.participantId` | number | 현재 사용자의 참가자 id |
 | `currentParticipant.participantRole` | string | 현재 사용자의 역할. `HOST \| MEMBER` |
@@ -118,6 +121,7 @@ Status Code : 200
   "missionTitle": "함께 키우는 귤나무",
   "missionProgressStatus": "IN_PROGRESS",
   "currentStep": 1,
+  "completedLocation": null,
   "currentParticipant": {
     "participantId": 1,
     "participantRole": "HOST",
@@ -163,6 +167,7 @@ Status Code : 200
   "missionTitle": "함께 키우는 귤나무",
   "missionProgressStatus": "IN_PROGRESS",
   "currentStep": 2,
+  "completedLocation": null,
   "currentParticipant": {
     "participantId": 1,
     "participantRole": "HOST",
@@ -258,6 +263,7 @@ Status Code : 200
   "missionTitle": "함께 키우는 귤나무",
   "missionProgressStatus": "IN_PROGRESS",
   "currentStep": 3,
+  "completedLocation": null,
   "currentParticipant": {
     "participantId": 2,
     "participantRole": "MEMBER",
@@ -360,6 +366,10 @@ Status Code : 200
   "missionTitle": "함께 키우는 귤나무",
   "missionProgressStatus": "COMPLETED",
   "currentStep": 4,
+  "completedLocation": {
+    "locationId": 68,
+    "locationTitle": "제주레저힐링축제"
+  },
   "currentParticipant": null,
   "participants": null,
   "roleCards": null,
@@ -385,6 +395,8 @@ Status Code : 200
 ```
 
 4단계의 `reward.arCharacter`, `reward.point`, `reward.coupon`은 각각 `null`일 수 있다.
+
+`completedLocation`은 방금 완료한 협동 미션의 장소이며 `nextLocation`과 다른 값이다. 프론트는 `completedLocation.locationId`를 장소 방명록 작성 요청의 `locationId`로 사용하고, `completedLocation.locationTitle`을 방명록 작성 화면에 표시한다.
 
 다음 장소에 연결된 미션이 없으면 `nextLocation.mission`은 `null`로 반환한다.
 

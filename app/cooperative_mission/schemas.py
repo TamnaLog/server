@@ -24,6 +24,7 @@ __all__ = [
     "CooperativeMissionStartResponse",
     "CooperativeMissionLeaveResponse",
     "CooperativeMissionStatusResponse",
+    "CompletedLocationResponse",
     "CurrentParticipantResponse",
     "GrantedRewardResponse",
     "JoinCooperativeMissionRequest",
@@ -105,6 +106,16 @@ class CurrentParticipantResponse(CamelModel):
     participant_status: ParticipantStatus
 
 
+class CompletedLocationResponse(CamelModel):
+    """방금 완료한 협동 미션이 진행된 장소.
+
+    완료 후 방명록 작성 화면이 쓰는 값이라 추천 장소(`next_location`)와 구분한다.
+    """
+
+    location_id: int
+    location_title: str
+
+
 class CooperativeMissionStatusResponse(CamelModel):
     """GET /api/v1/cooperative-missions/{cooperativeMissionProgressId}/progress 정상 응답.
 
@@ -115,7 +126,7 @@ class CooperativeMissionStatusResponse(CamelModel):
     | `current_participant` / `participants` | 값 | 값 | `null` |
     | `role_cards` | `null` | 값 | `null` |
     | `role_progresses` / 역할 집계 | `null` | 값(없으면 빈 배열/0) | `null` |
-    | `reward` / `next_location` | `null` | `null` | 값 |
+    | `completed_location` / `reward` / `next_location` | `null` | `null` | 값 |
 
     4단계의 `next_location` 은 Query 로 받은 사용자 좌표 기준 직선거리(`distance_meter`)를 포함한다.
     """
@@ -125,6 +136,7 @@ class CooperativeMissionStatusResponse(CamelModel):
     mission_title: str
     mission_progress_status: MissionStatus
     current_step: int
+    completed_location: CompletedLocationResponse | None = None
     current_participant: CurrentParticipantResponse | None = None
     participants: list[ParticipantResponse] | None = None
     role_cards: list[RoleCardResponse] | None = None

@@ -20,7 +20,10 @@
 | `currentParticipant` / `participants` | 값 | 값 | `null` |
 | `roleCards` | `null` | 값 | `null` |
 | `roleProgresses` / 역할 집계 | `null` | 값(없으면 빈 배열·0) | `null` |
-| `reward` / `nextLocation` | `null` | `null` | 값 |
+| `completedLocation` / `reward` / `nextLocation` | `null` | `null` | 값 |
+
+4단계에서만 내려가는 값 중 `completedLocation` 은 **방금 끝낸 미션의 장소**, `nextLocation` 은
+**다음에 갈 추천 장소**로 서로 다른 값이다. 테스트에서도 이 둘을 다른 장소로 만들어 구분한다.
 
 특히 **키를 생략하지 않고 `null` 로 내려주는지**를 본다. 프론트가 폴링하며 같은 구조를 기대하기 때문이다.
 1단계 응답은 전체 body 를 통째로 비교해서 이 규칙이 깨지지 않는지 확인한다.
@@ -59,11 +62,11 @@
 - 아직 배정이 없으면 `roleProgresses` 는 **`null` 이 아니라 빈 배열**, 집계는 둘 다 `0`.
 - `totalRoleCount` 는 생성된 역할 수, `completedRoleCount` 는 그중 인증 완료 수다.
   (배정하지 않은 역할 카드는 집계에 넣지 않는다)
-- 2·3단계에서는 `reward` / `nextLocation` 이 `null` 이다.
+- 2·3단계에서는 `completedLocation` / `reward` / `nextLocation` 이 `null` 이다.
 
 ### 3. 4단계 (완료)
 
-- 참가자·역할 정보는 모두 `null` 이고 `reward` / `nextLocation` 만 채운다.
+- 참가자·역할 정보는 모두 `null` 이고 `completedLocation` / `reward` / `nextLocation` 만 채운다.
 - 완료 역할 수별 보상 등급 7가지(0~6)를 각각 확인한다.
 - `ACCEPTED` 참가자 전원의 `USER.point` 와 `ACQUIRED_AR_CHARACTER` 가 갱신된다.
 - `PENDING` 참가자에게는 지급하지 않는다.
@@ -72,6 +75,10 @@
 - `nextLocation.distanceMeter` 는 Query 좌표와 추천 장소 좌표로 계산한 직선거리(m)와 같다.
   (공통 `distance.calculate_distance_meter()` 결과와 비교한다)
 - 추천할 장소가 하나도 없으면 `nextLocation` 만 `null` 이고 보상 정산은 정상 처리된다.
+  (미션이 참조하는 장소는 FK 때문에 지울 수 없어서 추천 로직만 "고를 장소 없음"으로 바꿔 확인한다)
+- `completedLocation` 은 **완료한 협동 미션의 장소**(`COOPERATIVE_MISSION.location_id`)다.
+  프론트가 이어서 여는 방명록 작성 화면에 쓰는 값이라 추천 장소와 섞이면 안 된다.
+  그래서 추천 장소를 미션 장소와 **다른 곳으로 고정**해 두 필드가 각각 제 값인지 확인한다.
 
 ### 4. 404
 

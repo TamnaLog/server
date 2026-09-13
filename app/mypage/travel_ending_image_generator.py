@@ -276,14 +276,39 @@ def _post_image_edit(
         response.raise_for_status()
         return response.json()
     except httpx.HTTPStatusError as error:
-        # 응답 본문에 요청 내용이 섞여 나올 수 있어 로그에는 상태 코드만 남긴다.
+        # OpenAI 가 돌려준 사유만 남긴다. 우리가 보낸 프롬프트/이미지는 로그에 넣지 않는다.
         logger.warning(
-            "OpenAI 이미지 생성이 실패했습니다: status=%s", error.response.status_code
+            "OpenAI 이미지 생성이 실패했습니다: status=%s, reason=%s",
+            error.response.status_code,
+            _to_error_reason(error.response),
         )
         raise TravelEndingImageError("OpenAI 이미지 생성 실패") from error
     except httpx.HTTPError as error:
-        logger.warning("OpenAI 이미지 생성이 실패했습니다: error=%s", type(error).__name__)
+        # 시간 초과인지 연결 실패인지 구분되어야 원인을 좁힐 수 있다.
+        logger.warning(
+            "OpenAI 이미지 생성이 실패했습니다: error=%s, detail=%s",
+            type(error).__name__,
+            error,
+        )
         raise TravelEndingImageError("OpenAI 이미지 생성 실패") from error
+
+
+# 로그에 남길 OpenAI 오류 메시지 최대 길이
+MAX_ERROR_REASON_LENGTH = 300
+
+
+def _to_error_reason(response: httpx.Response) -> str:
+    """OpenAI 오류 응답에서 사유만 꺼낸다. 형식이 다르면 본문 앞부분을 쓴다."""
+    try:
+        error = response.json().get("error")
+    except ValueError:
+        error = None
+
+    reason = error.get("message") if isinstance(error, dict) else None
+    if not isinstance(reason, str) or not reason:
+        reason = response.text
+
+    return reason[:MAX_ERROR_REASON_LENGTH]
 
 
 def _to_png(response: dict) -> bytes:
