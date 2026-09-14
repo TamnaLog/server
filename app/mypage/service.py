@@ -1090,12 +1090,14 @@ def update_user_info(
     선택값이 바뀌면 여행 유형과 대표 캐릭터도 다시 배정한다. 배정 규칙은 온보딩과 같아야 하므로
     마이페이지에 옮겨 적지 않고 `app/onboarding/onboarding_matcher.py` 를 그대로 쓴다.
     (지금은 임시 랜덤 배정이라 같은 값으로 다시 저장해도 결과가 달라질 수 있다)
+    단, `categories`(`USER.expectation`)가 이전과 같으면 대표 캐릭터는 다시 뽑지 않는다.
 
     선택 배열은 요청값을 그대로 저장한다. 빈 배열도 `NULL` 로 바꾸지 않고 빈 배열로 둔다.
 
     필드 갱신과 재배정은 한 트랜잭션이고, 중간에 실패하면 전부 롤백된다.
     """
     user = _get_user(db, current_user_id)
+    expectation_changed = _is_expectation_changed(user, request)
 
     user.nickname = request.nickname
     user.expectation = [category.value for category in request.categories]
@@ -1103,8 +1105,20 @@ def update_user_info(
     user.travel_style = [value.value for value in request.travel_style]
     user.target_step = request.target_step_count
 
-    _reassign(db, user, request)
+    _reassign(db, user, request, reassign_ar_character=expectation_changed)
     db.commit()
+
+
+def _is_expectation_changed(user: User, request: UserProfileUpdateRequest) -> bool:
+    """요청한 `categories` 가 저장된 `USER.expectation` 과 다른지 판단한다.
+
+    선택 순서는 의미가 없으므로 집합으로 비교한다. (중복은 요청 검증에서 이미 막는다)
+    `NULL`(설정 전)은 어떤 요청값과도 다르게 본다.
+    """
+    if user.expectation is None:
+        return True
+    requested = {category.value for category in request.categories}
+    return set(user.expectation) != requested
 
 
 def _get_user(db: Session, current_user_id: int) -> User:
@@ -1118,11 +1132,21 @@ def _get_user(db: Session, current_user_id: int) -> User:
     return user
 
 
-def _reassign(db: Session, user: User, request: UserProfileUpdateRequest) -> None:
+def _reassign(
+    db: Session,
+    user: User,
+    request: UserProfileUpdateRequest,
+    *,
+    reassign_ar_character: bool,
+) -> None:
     """바뀐 선택값으로 여행 유형과 대표 캐릭터를 다시 배정한다.
 
-    세 선택 배열이 모두 비어 있으면 온보딩 건너뛰기와 같게 여행 유형은 비우고
-    기본 캐릭터를 배정한다. 일부만 비어 있으면 빈 배열을 포함한 전체 선택값으로 배정한다.
+    세 선택 배열이 모두 비어 있으면 온보딩 건너뛰기와 같게 여행 유형은 비운다.
+    일부만 비어 있으면 빈 배열을 포함한 전체 선택값으로 배정한다.
+    대표 캐릭터는 온보딩과 같이 건너뛰기 여부와 관계없이 온보딩 전용 캐릭터(id 7~12) 중에서 배정한다.
+
+    `reassign_ar_character` 가 거짓이면(`categories` 가 이전과 같으면) 대표 캐릭터는
+    다시 뽑지 않고 기존 값을 그대로 둔다.
 
     대표 캐릭터만 바꾸고 `ACQUIRED_AR_CHARACTER` 는 만들지도 지우지도 않는다.
     (도감의 획득 이력은 이 API 로 달라지지 않는다)
@@ -1136,11 +1160,14 @@ def _reassign(db: Session, user: User, request: UserProfileUpdateRequest) -> Non
 
     if onboarding_request.is_skipped:
         user.user_travel_style_id = None
-        ar_character = onboarding_matcher.get_default_ar_character(db)
     else:
         user.user_travel_style_id = onboarding_matcher.assign_travel_style(
             db, onboarding_request
         ).id
-        ar_character = onboarding_matcher.assign_ar_character(db, onboarding_request)
 
+    if not reassign_ar_character:
+        return
+
+    # 온보딩과 같이 건너뛰기 여부와 관계없이 온보딩 전용 캐릭터(id 7~12) 중 하나를 배정한다.
+    ar_character = onboarding_matcher.assign_ar_character(db, onboarding_request)
     user.ar_character_id = ar_character.id
