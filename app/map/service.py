@@ -18,6 +18,7 @@ from app.map import (
     mission_completion,
     mission_detail,
     mission_recommender,
+    received_coupons,
     search_classifier,
 )
 from app.map.location_missions import LocationMission
@@ -41,6 +42,7 @@ from app.map.schemas import (
     MapModalTargetType,
     NearbyMissionResponse,
     MapRoadGuestbookResponse,
+    MapReceivedCouponResponse,
     MapSearchQuery,
     MapSearchResponse,
     RoadGuestbookModalResponse,
@@ -199,6 +201,11 @@ def _to_location_responses(
     )
     written_guestbooks = _find_written_mission_guestbooks(db, current_user_id, location_ids)
     guestbook_counts = _count_guestbooks_by_location(db, location_ids)
+    received_coupon_prices = received_coupons.find_received_coupon_prices_by_location(
+        db,
+        current_user_id,
+        [location.location_title for location in locations],
+    )
     # 장소마다 TourAPI 를 순서대로 부르면 응답 시간이 장소 수만큼 쌓이므로 한 번에 조회한다.
     image_urls = get_location_image_urls(
         location.content_id for location in locations
@@ -238,6 +245,18 @@ def _to_location_responses(
                 guestbooks_count=guestbook_counts.get(location.id, 0),
                 # 이미지 조회에 실패해도 지도 조회 전체를 실패시키지 않고 null 로 둔다.
                 representative_image_url=image_urls.get(location.content_id),
+                received_coupons=(
+                    [
+                        MapReceivedCouponResponse(
+                            coupon_price=coupon_price,
+                            location_address=location.location_address,
+                        )
+                        for coupon_price in received_coupon_prices.get(
+                            location.location_title, []
+                        )
+                    ]
+                    or None
+                ),
             )
         )
     return responses

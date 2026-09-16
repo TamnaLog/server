@@ -99,6 +99,13 @@ class MapMissionResponse(CamelModel):
     has_written_guestbook: bool | None = None
 
 
+class MapReceivedCouponResponse(CamelModel):
+    """현재 사용자가 받아서 이 장소에서 사용할 수 있는 쿠폰."""
+
+    coupon_price: int
+    location_address: str
+
+
 class MapLocationResponse(MapPointResponse):
     """지도에 표시할 장소 상세 정보.
 
@@ -115,6 +122,7 @@ class MapLocationResponse(MapPointResponse):
     cooperative_mission: MapMissionResponse | None = None
     guestbooks_count: int = 0
     representative_image_url: str | None = None
+    received_coupons: list[MapReceivedCouponResponse] | None = None
 
 
 class MapRoadGuestbookResponse(MapPointResponse):

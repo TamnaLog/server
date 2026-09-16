@@ -18,7 +18,7 @@
 
 `isClustered=true`인 경우에는 클러스터링에 필요한 LOCATION 또는 길바닥 방명록 ID와 좌표를 반환하고, LOCATION에는 연결된 세부 미션의 `missionId`와 보물찾기인지 협동 미션인지 구분하는 `missionType`을 함께 반환한다.
 
-`isClustered=false`인 경우에는 지도에서 항목 클릭 또는 모달 조회가 가능하도록 필요한 상세 정보를 반환한다.
+`isClustered=false`인 경우에는 지도에서 항목 클릭 또는 모달 조회가 가능하도록 필요한 상세 정보를 반환한다. 또한 현재 사용자가 받은 쿠폰 중 쿠폰 사용처가 해당 장소명과 정확히 일치하는 쿠폰을 `receivedCoupons`로 반환한다.
 
 ---
 
@@ -68,7 +68,7 @@ Status Code : `200 OK`
 **isClustered = false**
 
 | 자료형  | 변수명                                        | 설명                                                                |
-| ------- | --------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------- |
+| ------- | --------------------------------------------- | ------------------------------------------------------------------- |
 | array   | `locations`                                   | 조회 영역 안의 LOCATION 목록. 미션과 방명록이 없는 장소도 포함      |
 | integer | `locations[].id`                              | LOCATION ID                                                         |
 | string  | `locations[].locationTitle`                   | 장소 이름                                                           |
@@ -76,24 +76,27 @@ Status Code : `200 OK`
 | number  | `locations[].longitude`                       | 장소 경도                                                           |
 | integer | `locations[].distanceMeter`                   | 현재 사용자 위치에서 장소까지의 직선거리(m)                         |
 | integer | `locations[].durationMinutes`                 | 현재 사용자 위치에서 장소까지의 예상 이동 시간(분)                  |
-| object  | null                                          | `locations[].treasureMission`                                       | 해당 장소의 보물찾기 미션 정보. 없으면 null                   |
+| object \| null | `locations[].treasureMission`                                       | 해당 장소의 보물찾기 미션 정보. 없으면 null                   |
 | integer | `locations[].treasureMission.id`              | 보물찾기 미션 ID. `TREASURE_MISSION.id`                             |
 | string  | `locations[].treasureMission.missionTitle`    | 보물찾기 미션 제목                                                  |
 | boolean | `locations[].treasureMission.isCompleted`     | 현재 사용자의 보물찾기 미션 완료 여부                               |
-| boolean | null                                          | `locations[].treasureMission.hasWrittenGuestbook`                   | 완료한 미션을 참조하는 방명록 작성 여부. 미션 미완료이면 null |
-| object  | null                                          | `locations[].cooperativeMission`                                    | 해당 장소의 협동 미션 정보. 없으면 null                       |
+| boolean \| null | `locations[].treasureMission.hasWrittenGuestbook`                   | 완료한 미션을 참조하는 방명록 작성 여부. 미션 미완료이면 null |
+| object \| null | `locations[].cooperativeMission`                                    | 해당 장소의 협동 미션 정보. 없으면 null                       |
 | integer | `locations[].cooperativeMission.id`           | 협동 미션 ID. `COOPERATIVE_MISSION.id`                              |
 | string  | `locations[].cooperativeMission.missionTitle` | 협동 미션 제목                                                      |
 | boolean | `locations[].cooperativeMission.isCompleted`  | 현재 사용자의 협동 미션 완료 여부                                   |
-| boolean | null                                          | `locations[].cooperativeMission.hasWrittenGuestbook`                | 완료한 미션을 참조하는 방명록 작성 여부. 미션 미완료이면 null |
+| boolean \| null | `locations[].cooperativeMission.hasWrittenGuestbook`                | 완료한 미션을 참조하는 방명록 작성 여부. 미션 미완료이면 null |
 | integer | `locations[].guestbooksCount`                 | 해당 장소에 존재하는 방명록 개수. 없으면 0                          |
-| string  | null                                          | `locations[].representativeImageUrl`                                | TourAPI 장소 대표 이미지 URL. 이미지가 없으면 null            |
+| string \| null | `locations[].representativeImageUrl`                                | TourAPI 장소 대표 이미지 URL. 이미지가 없으면 null            |
+| array \| null | `locations[].receivedCoupons`                                       | 현재 사용자가 받아 이 장소에서 사용할 수 있는 쿠폰 목록. 없으면 null |
+| integer | `locations[].receivedCoupons[].couponPrice`   | 쿠폰 금액                                                           |
+| string  | `locations[].receivedCoupons[].locationAddress` | 쿠폰 사용 장소의 주소. `LOCATION.location_address`                |
 | array   | `roadGuestbooks`                              | 특정 LOCATION에 속하지 않고 작성 위치에 표시되는 길바닥 방명록 목록 |
 | integer | `roadGuestbooks[].id`                         | 길바닥 방명록 ID                                                    |
 | number  | `roadGuestbooks[].latitude`                   | 길바닥 방명록 위도                                                  |
 | number  | `roadGuestbooks[].longitude`                  | 길바닥 방명록 경도                                                  |
 | string  | `roadGuestbooks[].locationAlias`              | 길바닥 방명록에 표시할 위치 별칭                                    |
-| string  | null                                          | `roadGuestbooks[].representativeGuestbookImageUrl`                  | 길바닥 방명록 이미지 배열의 첫 번째 URL. 이미지가 없으면 null |
+| string \| null | `roadGuestbooks[].representativeGuestbookImageUrl`                  | 길바닥 방명록 이미지 배열의 첫 번째 URL. 이미지가 없으면 null |
 
 ```json
 {
@@ -113,7 +116,13 @@ Status Code : `200 OK`
       },
       "cooperativeMission": null,
       "guestbooksCount": 2,
-      "representativeImageUrl": "<https://example.com/guestbooks/45/1.jpg>"
+      "representativeImageUrl": "<https://example.com/guestbooks/45/1.jpg>",
+      "receivedCoupons": [
+        {
+          "couponPrice": 1000,
+          "locationAddress": "제주특별자치도 제주시 예시로 44"
+        }
+      ]
     }
   ],
   "roadGuestbooks": [
@@ -138,17 +147,21 @@ Status Code : `200 OK`
 - 장소에 방명록이 없으면 `guestbooksCount`를 `0`으로, `representativeImageUrl`을 `null`로 반환한다.
 - 한 장소에 방명록과 미션이 함께 존재하는 경우도 포함해서 반환한다.
 - 미션도 방명록도 없는 장소도 제외하지 않는다. 두 미션은 `null`, `guestbooksCount`는 `0`으로 반환한다.
+- `receivedCoupons`는 문화·보물찾기·협동 미션에서 현재 사용자에게 실제 지급된 쿠폰을 모두 대상으로 한다.
+- 쿠폰의 `couponLocation`과 `LOCATION.location_title`이 완전히 같은 경우에만 해당 장소에 연결한다.
+- 해당 장소에서 사용할 수 있는 수령 쿠폰이 없으면 `receivedCoupons`를 생략하지 않고 `null`로 반환한다.
+- 서로 다른 미션에서 같은 장소의 쿠폰을 받았다면 배열에 각각 반환한다. 같은 세부 미션의 반복 진행 이력은 한 건으로 중복 제거한다.
 
 **isClustered = true**
 
 | 자료형  | 변수명                       | 설명                                                                      |
-| ------- | ---------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | -------------------------------- |
+| ------- | ---------------------------- | ------------------------------------------------------------------------- |
 | array   | `locations`                  | 조회 영역 안의 LOCATION 클러스터링 목록. 미션과 방명록이 없는 장소도 포함 |
 | integer | `locations[].id`             | LOCATION ID. 미션 ID가 아님                                               |
 | number  | `locations[].latitude`       | 장소 위도                                                                 |
 | number  | `locations[].longitude`      | 장소 경도                                                                 |
-| integer | null                         | `locations[].missionId`                                                   | 장소에 연결된 세부 미션 ID. `TREASURE_MISSION.id` 또는 `COOPERATIVE_MISSION.id`. 미션이 없으면 null |
-| string  | null                         | `locations[].missionType`                                                 | 장소에 연결된 미션 유형. `TREASURE                                                                  | COOPERATIVE`. 미션이 없으면 null |
+| integer \| null | `locations[].missionId`                                                   | 장소에 연결된 세부 미션 ID. `TREASURE_MISSION.id` 또는 `COOPERATIVE_MISSION.id`. 미션이 없으면 null |
+| string \| null | `locations[].missionType`                                                 | 장소에 연결된 미션 유형. `TREASURE \| COOPERATIVE`. 미션이 없으면 null |
 | array   | `roadGuestbooks`             | 조회 영역 안의 길바닥 방명록 클러스터링 목록                              |
 | integer | `roadGuestbooks[].id`        | 길바닥 방명록 ID                                                          |
 | number  | `roadGuestbooks[].latitude`  | 길바닥 방명록 위도                                                        |
@@ -195,7 +208,7 @@ Status Code : `200 OK`
 - 하나의 LOCATION에는 보물찾기 또는 협동 미션이 최대 하나만 존재한다고 전제한다.
 - 장소에 보물찾기 미션이 있으면 `missionId`와 `missionType = TREASURE`, 협동 미션이 있으면 `missionId`와 `missionType = COOPERATIVE`를 반환한다. 미션이 없으면 두 필드를 모두 `null`로 반환한다.
 - `roadGuestbooks[].id`는 길바닥 방명록 ID이다.
-- `isClustered=true`에서는 장소 이름, 거리·예상 시간, 미션 상세 정보, 방명록 수, 이미지 및 길바닥 방명록 상세 정보를 반환하지 않는다.
+- `isClustered=true`에서는 장소 이름, 거리·예상 시간, 미션 상세 정보, 방명록 수, 이미지, `receivedCoupons` 및 길바닥 방명록 상세 정보를 조회하거나 반환하지 않는다.
 
 ---
 
@@ -215,7 +228,7 @@ Status Code : `200 OK`
 
 이 API는 `Authorization: Bearer {accessToken}` 헤더가 필수이며, 백엔드는 액세스 토큰으로 현재 사용자를 식별하고 실제 사용자 존재 여부를 검증한다. 현재 사용자 정보는 장소 모달의 방문 여부를 판정하는 데 사용한다.
 
-조회 대상은 `LOCATION | ROAD_GUESTBOOK`만 지원하며, 선택한 대상의 ID와 사용자의 현재 GPS 좌표를 Query로 전송한다.
+조회 대상은 `LOCATION \| ROAD_GUESTBOOK`만 지원하며, 선택한 대상의 ID와 사용자의 현재 GPS 좌표를 Query로 전송한다.
 
 `LOCATION`을 조회하면 장소 기본 정보, TourAPI 장소 대표 이미지, 현재 사용자의 방문 여부와 해당 장소를 참조하는 최신 방명록을 작성자 AR 캐릭터 이미지와 함께 최대 3개 반환하고, `ROAD_GUESTBOOK`을 조회하면 해당 길바닥 방명록의 상세 콘텐츠를 반환한다.
 
@@ -474,20 +487,20 @@ GET /api/v1/map/locations/39?userLatitude=33.4524&userLongitude=126.9248
 Status Code : `200 OK`
 
 | 자료형   | 변수명                                                 | 설명                                                                                |
-| -------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| -------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------- |
 | string   | `locationTitle`                                        | 장소 이름. `LOCATION.location_title`                                                |
 | string   | `locationCategory`                                     | 장소 분류. `LOCATION.location_category`                                             |
 | integer  | `distanceMeter`                                        | 현재 사용자 위치와 장소 사이의 직선거리(m)                                          |
 | integer  | `durationMinutes`                                      | 현재 사용자 위치에서 장소까지의 예상 이동 시간(분)                                  |
 | string   | `locationAddress`                                      | 장소 주소. `LOCATION.location_address`                                              |
 | boolean  | `isVisited`                                            | 현재 사용자의 해당 장소 방문 여부. 방문 기록이 한 건 이상 있으면 true, 없으면 false |
-| string   | null                                                   | `locationDescription`                                                               | TourAPI `detailCommon2.overview`에서 HTML 태그·엔티티와 불필요한 공백을 정리한 일반 문자열. 값이 없거나 조회하지 못하면 null |
-| string[] | null                                                   | `locationImageUrls`                                                                 | TourAPI `detailImage2.originimgurl` 상세 이미지 URL 목록. 최대 5장이고 이미지가 없거나 조회하지 못하면 null                  |
+| string \| null | `locationDescription`                                                               | TourAPI `detailCommon2.overview`에서 HTML 태그·엔티티와 불필요한 공백을 정리한 일반 문자열. 값이 없거나 조회하지 못하면 null |
+| string[] \| null | `locationImageUrls`                                                                 | TourAPI `detailImage2.originimgurl` 상세 이미지 URL 목록. 최대 5장이고 이미지가 없거나 조회하지 못하면 null                  |
 | array    | `nearbyMissions`                                       | 근처에서 할 수 있는 임시 추천 미션 목록. 최대 3개이며 없으면 빈 배열                |
 | integer  | `nearbyMissions[].missionId`                           | `missionType`에 해당하는 유형별 세부 미션 ID                                        |
-| string   | `nearbyMissions[].missionType`                         | 미션 유형. `TREASURE                                                                | COOPERATIVE`                                                                                                                 |
+| string   | `nearbyMissions[].missionType`                         | 미션 유형. `TREASURE \| COOPERATIVE`                                                                                                                 |
 | string   | `nearbyMissions[].missionTitle`                        | 미션 제목                                                                           |
-| string   | null                                                   | `nearbyMissions[].description`                                                      | 미션 설명. 없으면 null                                                                                                       |
+| string \| null | `nearbyMissions[].description`                                                      | 미션 설명. 없으면 null                                                                                                       |
 | boolean  | `nearbyMissions[].isCompleted`                         | 현재 사용자의 해당 미션 완료 여부                                                   |
 | object   | `nearbyMissions[].rewardDetail`                        | 해당 미션의 전체 보상 정보와 보상별 수령 여부                                       |
 | object   | `nearbyMissions[].rewardDetail.arCharacter`            | AR 캐릭터 보상 정보                                                                 |
@@ -503,21 +516,21 @@ Status Code : `200 OK`
 | integer  | `nearbyMissions[].rewardDetail.coupon.couponPrice`     | 쿠폰 금액                                                                           |
 | boolean  | `nearbyMissions[].rewardDetail.coupon.isReceived`      | 현재 사용자의 쿠폰 보상 수령 여부                                                   |
 | string   | `nearbyMissions[].locationTitle`                       | 해당 미션이 진행되는 장소 이름. `LOCATION.location_title`                           |
-| string   | null                                                   | `nearbyMissions[].representativeImageUrl`                                           | 해당 미션 장소의 TourAPI `firstimage`. 이미지가 없거나 조회하지 못하면 null                                                  |
+| string \| null | `nearbyMissions[].representativeImageUrl`                                           | 해당 미션 장소의 TourAPI `firstimage`. 이미지가 없거나 조회하지 못하면 null                                                  |
 | array    | `guestbooks`                                           | 해당 장소를 참조하는 삭제되지 않은 전체 방명록 목록. 없으면 빈 배열                 |
 | integer  | `guestbooks[].id`                                      | 방명록 ID                                                                           |
-| string   | null                                                   | `guestbooks[].missionTitle`                                                         | 방명록이 참조하는 미션 제목. 참조하는 미션이 없으면 null                                                                     |
-| string   | null                                                   | `guestbooks[].representativeImageUrl`                                               | 방명록 이미지 배열의 첫 번째 이미지 URL. 이미지가 없으면 null                                                                |
+| string \| null | `guestbooks[].missionTitle`                                                         | 방명록이 참조하는 미션 제목. 참조하는 미션이 없으면 null                                                                     |
+| string \| null | `guestbooks[].representativeImageUrl`                                               | 방명록 이미지 배열의 첫 번째 이미지 URL. 이미지가 없으면 null                                                                |
 | integer  | `guestbooks[].userId`                                  | 방명록 작성자 사용자 ID                                                             |
 | string   | `guestbooks[].userNickname`                            | 방명록 작성자 닉네임                                                                |
-| string   | null                                                   | `guestbooks[].characterImgUrl`                                                      | 방명록 작성자에게 배정된 AR 캐릭터 이미지 URL. 배정된 캐릭터가 없으면 null                                                   |
+| string \| null | `guestbooks[].characterImgUrl`                                                      | 방명록 작성자에게 배정된 AR 캐릭터 이미지 URL. 배정된 캐릭터가 없으면 null                                                   |
 | string   | `guestbooks[].visitedAt`                               | 방문·작성일. `GUESTBOOK.visited_at` 기준, `YYYY-MM-DD` 형식                         |
-| string   | null                                                   | `guestbooks[].contentWriting`                                                       | 방명록 글 내용. 없으면 null                                                                                                  |
-| object   | null                                                   | `locationMission`                                                                   | 해당 장소에 직접 연결된 단일 미션 정보. 없으면 null                                                                          |
+| string \| null | `guestbooks[].contentWriting`                                                       | 방명록 글 내용. 없으면 null                                                                                                  |
+| object \| null | `locationMission`                                                                   | 해당 장소에 직접 연결된 단일 미션 정보. 없으면 null                                                                          |
 | integer  | `locationMission.missionId`                            | `missionType`에 해당하는 유형별 세부 미션 ID                                        |
-| string   | `locationMission.missionType`                          | 미션 유형. `TREASURE                                                                | COOPERATIVE`                                                                                                                 |
+| string   | `locationMission.missionType`                          | 미션 유형. `TREASURE \| COOPERATIVE`                                                                                                                 |
 | string   | `locationMission.missionTitle`                         | 미션 제목                                                                           |
-| string   | null                                                   | `locationMission.description`                                                       | 미션 설명. 없으면 null                                                                                                       |
+| string \| null | `locationMission.description`                                                       | 미션 설명. 없으면 null                                                                                                       |
 | boolean  | `locationMission.isCompleted`                          | 현재 사용자의 해당 미션 완료 여부                                                   |
 | object   | `locationMission.rewardDetail`                         | 해당 미션의 전체 보상 정보와 보상별 수령 여부                                       |
 | object   | `locationMission.rewardDetail.arCharacter`             | AR 캐릭터 보상 정보                                                                 |
@@ -716,20 +729,20 @@ GET /api/v1/map/search?keyword=성&userLatitude=33.4524&userLongitude=126.9248
 Status Code : `200 OK`
 
 | 자료형  | 변수명                                    | 설명                                                                          |
-| ------- | ----------------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| ------- | ----------------------------------------- | ----------------------------------------------------------------------------- |
 | array   | `recommendedLocations`                    | 장소 이름에 검색어가 포함되고 연결된 미션이 없는 장소 전체 목록               |
 | integer | `recommendedLocations[].locationId`       | LOCATION ID                                                                   |
 | string  | `recommendedLocations[].locationTitle`    | 장소 이름                                                                     |
 | string  | `recommendedLocations[].locationCategory` | 장소 카테고리. `LOCATION.location_category`                                   |
-| string  | null                                      | `recommendedLocations[].representativeImageUrl`                               | TourAPI `firstimage` URL. 이미지가 없거나 조회하지 못하면 null |
+| string \| null | `recommendedLocations[].representativeImageUrl`                               | TourAPI `firstimage` URL. 이미지가 없거나 조회하지 못하면 null |
 | integer | `recommendedLocations[].distanceMeter`    | 현재 사용자 위치에서 장소까지의 직선거리(m)                                   |
 | array   | `missionLocations`                        | 장소 이름에 검색어가 포함되고 보물찾기 또는 협동 미션이 연결된 장소 전체 목록 |
 | integer | `missionLocations[].locationId`           | LOCATION ID                                                                   |
 | integer | `missionLocations[].missionId`            | `missionType`에 해당하는 유형별 세부 미션 ID                                  |
-| string  | `missionLocations[].missionType`          | 미션 유형. `TREASURE                                                          | COOPERATIVE`                                                   |
+| string  | `missionLocations[].missionType`          | 미션 유형. `TREASURE \| COOPERATIVE`                                                   |
 | string  | `missionLocations[].locationTitle`        | 미션이 연결된 장소 이름                                                       |
 | string  | `missionLocations[].missionTitle`         | 세부 미션이 참조하는 공통 미션 제목                                           |
-| string  | null                                      | `missionLocations[].representativeImageUrl`                                   | TourAPI `firstimage` URL. 이미지가 없거나 조회하지 못하면 null |
+| string \| null | `missionLocations[].representativeImageUrl`                                   | TourAPI `firstimage` URL. 이미지가 없거나 조회하지 못하면 null |
 | integer | `missionLocations[].distanceMeter`        | 현재 사용자 위치에서 미션 장소까지의 직선거리(m)                              |
 
 ```json

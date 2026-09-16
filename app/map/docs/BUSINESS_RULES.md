@@ -167,7 +167,27 @@ AND GUESTBOOK.deleted_at IS NULL
 
 TourAPI 이미지 조회는 기존 KTO 서비스 모듈을 사용하며 지도 서비스에 HTTP 호출 코드를 중복 구현하지 않는다.
 
-## 7. 길바닥 방명록 조회
+## 7. 사용자가 받은 쿠폰
+
+`isClustered = false`일 때 현재 사용자가 문화·보물찾기·협동 미션에서 실제로 받은 쿠폰을 조회하고, 쿠폰 사용처와 이름이 같은 지도 장소에 `receivedCoupons`를 추가한다. 쿠폰은 별도 테이블이 없으므로 각 세부 미션의 `reward_detail`과 진행도의 `coupon_reward_granted`를 조합한다.
+
+| 미션 유형 | 쿠폰 정보 | 지급 여부와 사용자 조건 |
+| --- | --- | --- |
+| 문화 | `CULTURE_MISSION.reward_detail` | `CULTURE_MISSION_PROGRESS.user_id = current_user_id`이고 `coupon_reward_granted = TRUE` |
+| 보물찾기 | `TREASURE_MISSION.reward_detail` | `TREASURE_MISSION_PROGRESS.user_id = current_user_id`이고 `coupon_reward_granted = TRUE` |
+| 협동 | `COOPERATIVE_MISSION.reward_detail` | 삭제되지 않은 진행도의 `coupon_reward_granted = TRUE`이고, 현재 사용자의 삭제되지 않은 `ACCEPTED` 참가 행이 존재 |
+
+- `reward_detail.coupon_location`과 화면 안 `LOCATION.location_title`이 완전히 같은 경우에만 그 장소의 쿠폰으로 연결한다. 부분 일치나 유사어 검색은 하지 않는다.
+- 쿠폰 장소 주소는 이미 조회한 `LOCATION.location_address`를 사용하며, 쿠폰 장소를 찾기 위한 추가 LOCATION 조회는 하지 않는다.
+- 각 원소에는 `couponPrice = reward_detail.coupon_price`, `locationAddress = LOCATION.location_address`만 반환한다. 장소 ID, 장소명과 대표 이미지는 같은 `locations[]` 객체의 기존 필드를 사용한다.
+- 사용할 수 있는 수령 쿠폰이 하나 이상이면 `receivedCoupons` 배열로 반환하고, 없으면 필드를 생략하지 않고 `null`로 반환한다.
+- 같은 유형별 세부 미션의 반복 진행 이력이 여러 행이어도 쿠폰은 한 건만 반환한다.
+- 서로 다른 세부 미션에서 같은 장소의 쿠폰을 받았다면 각각 별도 배열 원소로 반환한다.
+- 배열은 미션 유형 문자열, 유형별 세부 미션 ID 오름차순으로 정렬한다.
+
+성능을 위해 세 미션 유형 조회는 `UNION ALL`로 묶어 DB 왕복을 한 번만 수행하고, 각 쿼리에서 화면 안 장소명에 해당하는 `coupon_location`만 조회한다. 조회 결과는 장소명 기준 맵으로 만든 뒤 장소 응답 조합 과정에서 붙여 N+1 조회를 만들지 않는다.
+
+## 8. 길바닥 방명록 조회
 
 조회 영역 안에 좌표가 존재하면서 소프트 딜리트되지 않은 `ROAD_GUESTBOOK`을 조회한다.
 
@@ -191,7 +211,7 @@ ROAD_GUESTBOOK.deleted_at IS NULL
 - 이미지가 한 장 이상 있으면 배열의 첫 번째 URL을 그대로 반환한다.
 - 이 API에서는 이미지를 새로 업로드하거나 Blob URL을 변경하지 않는다.
 
-## 8. `isClustered = false` 응답
+## 9. `isClustered = false` 응답
 
 클러스터링되지 않은 지도에서는 마커 표시와 후속 모달 조회에 필요한 상세 정보를 반환한다.
 
@@ -213,7 +233,13 @@ ROAD_GUESTBOOK.deleted_at IS NULL
       },
       "cooperativeMission": null,
       "guestbooksCount": 2,
-      "representativeImageUrl": "https://example.com/locations/101.jpg"
+      "representativeImageUrl": "https://example.com/locations/101.jpg",
+      "receivedCoupons": [
+        {
+          "couponPrice": 1000,
+          "locationAddress": "제주특별자치도 제주시 예시로 44"
+        }
+      ]
     }
   ],
   "roadGuestbooks": [
@@ -237,7 +263,7 @@ ROAD_GUESTBOOK.deleted_at IS NULL
 
 한 장소가 여러 조건을 동시에 만족하면 프론트가 해당 장소를 여러 카테고리에 포함할 수 있다.
 
-## 9. `isClustered = true` 응답
+## 10. `isClustered = true` 응답
 
 클러스터링 상태에서는 대량 데이터 전송을 줄이기 위해 장소와 길바닥 방명록의 식별자와 좌표만 반환한다. 장소에는 프론트가 보물찾기와 협동 미션을 구분할 수 있도록 연결된 세부 미션의 ID와 유형도 함께 반환한다.
 
@@ -291,12 +317,13 @@ ROAD_GUESTBOOK.deleted_at IS NULL
 - 공통 미션 정보와 제목, 완료 여부 및 미션 방명록 작성 여부
 - 장소 방명록 개수
 - TourAPI 대표 이미지
+- 현재 사용자가 받은 쿠폰
 - 길바닥 방명록 위치 별칭
 - 길바닥 방명록 대표 이미지
 
 `isClustered = true`일 때는 각 LOCATION에 연결된 보물찾기 또는 협동 미션의 세부 ID와 유형만 일괄 조회한다. 공통 `MISSION` 정보, 사용자 진행도, 미션 방명록 작성 여부는 조회하지 않는다. 거리·시간 계산, 방명록 개수 집계와 TourAPI 이미지 조회도 생략한다. 백엔드는 데이터를 클러스터 단위로 합치거나 개수를 계산하지 않고 식별자와 원본 좌표 목록을 반환하며, 실제 클러스터 구성과 표시 개수 계산은 프론트가 담당한다.
 
-## 10. 처리 순서
+## 11. 처리 순서
 
 1. Query 필드의 누락 여부, 타입과 지도 꼭짓점 및 사용자 좌표 범위를 검증한다.
 2. 네 꼭짓점 좌표로 지도 조회 영역을 구성한다.
@@ -307,13 +334,14 @@ ROAD_GUESTBOOK.deleted_at IS NULL
 7. 현재 사용자의 유형별 미션 완료 여부를 일괄 조회한다.
 8. 완료한 미션에 대해서만 현재 사용자의 미션 방명록 작성 여부를 일괄 조회한다.
 9. 각 장소를 참조하는 삭제되지 않은 방명록 개수를 계산한다.
-10. 각 장소의 TourAPI `firstimage`를 조회한다.
-11. 각 길바닥 방명록의 첫 번째 이미지 URL을 선택한다.
-12. 상세 응답을 조합하여 `200 OK`를 반환한다.
+10. 세 미션 유형의 수령 쿠폰을 `UNION ALL` 한 번으로 조회하고 화면 안 장소명 기준으로 묶는다.
+11. 각 장소의 TourAPI `firstimage`를 조회한다.
+12. 각 길바닥 방명록의 첫 번째 이미지 URL을 선택한다.
+13. 상세 응답을 조합하여 `200 OK`를 반환한다.
 
-장소별 반복 조회로 N+1 문제가 발생하지 않도록 미션, 사용자 완료 이력, 미션 방명록 작성 여부와 방명록 개수는 가능한 한 일괄 조회한다. TourAPI 이미지 조회도 기존 서비스의 캐시 또는 일괄 처리 기능을 사용할 수 있으면 이를 우선한다.
+장소별 반복 조회로 N+1 문제가 발생하지 않도록 미션, 사용자 완료 이력, 미션 방명록 작성 여부, 방명록 개수와 수령 쿠폰은 일괄 조회한다. TourAPI 이미지 조회도 기존 서비스의 캐시 또는 일괄 처리 기능을 사용할 수 있으면 이를 우선한다.
 
-## 11. 정상 응답
+## 12. 정상 응답
 
 조회가 정상적으로 완료되면 콘텐츠 존재 여부와 관계없이 `200 OK`를 반환한다.
 
@@ -327,7 +355,7 @@ ROAD_GUESTBOOK.deleted_at IS NULL
 }
 ```
 
-## 12. 오류 처리
+## 13. 오류 처리
 
 ### 400 `INVALID_REQUEST`
 

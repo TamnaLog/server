@@ -18,6 +18,7 @@ from app.cooperative_mission.models import (
     ParticipantRole,
     ParticipantStatus,
 )
+from app.culture_mission.models import CultureMission, CultureMissionProgress
 from app.guestbook.models import Guestbook, RoadGuestbook
 from app.map import service
 from app.map.models import Location
@@ -281,6 +282,7 @@ def _add_treasure_progress(
     *,
     user_id: int = CURRENT_USER_ID,
     mission_status: MissionStatus = MissionStatus.COMPLETED,
+    coupon_reward_granted: bool = False,
 ) -> None:
     db_session.add(
         TreasureMissionProgress(
@@ -290,6 +292,7 @@ def _add_treasure_progress(
             current_found_item_idx=[1],
             current_step=3,
             mission_status=mission_status.value,
+            coupon_reward_granted=coupon_reward_granted,
         )
     )
     db_session.commit()
@@ -301,6 +304,7 @@ def _add_cooperative_progress(
     user_id: int = CURRENT_USER_ID,
     mission_status: MissionStatus = MissionStatus.COMPLETED,
     participant_status: ParticipantStatus = ParticipantStatus.ACCEPTED,
+    coupon_reward_granted: bool = False,
     progress_deleted_at: datetime | None = None,
     participant_deleted_at: datetime | None = None,
 ) -> None:
@@ -310,6 +314,7 @@ def _add_cooperative_progress(
         mission_status=mission_status.value,
         team_token=f"mock-team-token-{user_id}-{mission_status.value}",
         completed_at=datetime(2026, 8, 21, 12, 0, 0),
+        coupon_reward_granted=coupon_reward_granted,
         deleted_at=progress_deleted_at,
     )
     db_session.add(progress)
@@ -419,7 +424,154 @@ def test_화면_안의_장소를_상세_정보와_함께_반환한다(
         "cooperativeMission": None,
         "guestbooksCount": 2,
         "representativeImageUrl": REPRESENTATIVE_IMAGE_URL,
+        "receivedCoupons": None,
     }
+
+
+def test_받은_쿠폰을_사용할_장소에_금액과_주소를_반환한다(
+    client: TestClient, db_session: Session, map_data: None
+) -> None:
+    mission = db_session.get(TreasureMission, TREASURE_MISSION_ID)
+    assert mission is not None
+    mission.reward_detail = {
+        "point": 100,
+        "coupon_location": MISSION_LOCATION_TITLE,
+        "coupon_price": 1000,
+    }
+    db_session.commit()
+    _add_treasure_progress(db_session, coupon_reward_granted=True)
+
+    location = _location(_get(client), MISSION_LOCATION_ID)
+
+    assert location["receivedCoupons"] == [
+        {
+            "couponPrice": 1000,
+            "locationAddress": "제주특별자치도",
+        }
+    ]
+
+
+def test_다른_사용자가_받은_쿠폰은_반환하지_않는다(
+    client: TestClient, db_session: Session, map_data: None
+) -> None:
+    mission = db_session.get(TreasureMission, TREASURE_MISSION_ID)
+    assert mission is not None
+    mission.reward_detail = {
+        "coupon_location": MISSION_LOCATION_TITLE,
+        "coupon_price": 1000,
+    }
+    db_session.commit()
+    _add_treasure_progress(
+        db_session, user_id=OTHER_USER_ID, coupon_reward_granted=True
+    )
+
+    assert _location(_get(client), MISSION_LOCATION_ID)["receivedCoupons"] is None
+
+
+def test_같은_미션의_쿠폰_수령_이력이_여러_개여도_한_건만_반환한다(
+    client: TestClient, db_session: Session, map_data: None
+) -> None:
+    mission = db_session.get(TreasureMission, TREASURE_MISSION_ID)
+    assert mission is not None
+    mission.reward_detail = {
+        "coupon_location": MISSION_LOCATION_TITLE,
+        "coupon_price": 1000,
+    }
+    db_session.commit()
+    _add_treasure_progress(db_session, coupon_reward_granted=True)
+    _add_treasure_progress(db_session, coupon_reward_granted=True)
+
+    coupons = _location(_get(client), MISSION_LOCATION_ID)["receivedCoupons"]
+
+    assert coupons == [
+        {"couponPrice": 1000, "locationAddress": "제주특별자치도"}
+    ]
+
+
+def test_쿠폰_사용처와_장소명이_다르면_쿠폰을_연결하지_않는다(
+    client: TestClient, db_session: Session, map_data: None
+) -> None:
+    mission = db_session.get(TreasureMission, TREASURE_MISSION_ID)
+    assert mission is not None
+    mission.reward_detail = {
+        "coupon_location": "화면에 없는 다른 장소",
+        "coupon_price": 1000,
+    }
+    db_session.commit()
+    _add_treasure_progress(db_session, coupon_reward_granted=True)
+
+    assert _location(_get(client), MISSION_LOCATION_ID)["receivedCoupons"] is None
+
+
+def test_문화_보물찾기_협동에서_받은_쿠폰을_모두_반환한다(
+    client: TestClient, db_session: Session, map_data: None
+) -> None:
+    treasure = db_session.get(TreasureMission, TREASURE_MISSION_ID)
+    cooperative = db_session.get(CooperativeMission, COOPERATIVE_MISSION_ID)
+    assert treasure is not None
+    assert cooperative is not None
+    treasure.reward_detail = {
+        "coupon_location": MISSION_LOCATION_TITLE,
+        "coupon_price": 1000,
+    }
+    cooperative.reward_detail = {
+        "coupon_location": MISSION_LOCATION_TITLE,
+        "coupon_price": 2000,
+    }
+    db_session.add(
+        Mission(
+            id=3,
+            mission_type="CULTURE",
+            mission_title="제주 문화 퀴즈",
+            description="설명",
+            step_detail=[{"step": 1, "step_title": "퀴즈", "description": "설명"}],
+        )
+    )
+    db_session.flush()
+    db_session.add(
+        CultureMission(
+            id=501,
+            mission_id=3,
+            quiz_total_count=1,
+            quiz_detail=[
+                {
+                    "quiz_index": 1,
+                    "img_url": None,
+                    "question": "문제",
+                    "options": ["정답"],
+                    "answer": "정답",
+                    "hint": "힌트",
+                    "explanation": "해설",
+                }
+            ],
+            reward_detail={
+                "coupon_location": MISSION_LOCATION_TITLE,
+                "coupon_price": 3000,
+            },
+        )
+    )
+    db_session.flush()
+    db_session.add(
+        CultureMissionProgress(
+            culture_mission_id=501,
+            user_id=CURRENT_USER_ID,
+            mission_status=MissionStatus.COMPLETED.value,
+            current_quiz_index=1,
+            correct_number=1,
+            coupon_reward_granted=True,
+        )
+    )
+    db_session.commit()
+    _add_treasure_progress(db_session, coupon_reward_granted=True)
+    _add_cooperative_progress(db_session, coupon_reward_granted=True)
+
+    coupons = _location(_get(client), MISSION_LOCATION_ID)["receivedCoupons"]
+
+    assert coupons == [
+        {"couponPrice": 2000, "locationAddress": "제주특별자치도"},
+        {"couponPrice": 3000, "locationAddress": "제주특별자치도"},
+        {"couponPrice": 1000, "locationAddress": "제주특별자치도"},
+    ]
 
 
 def test_거리와_예상_시간은_공통_모듈_결과와_같다(
@@ -888,6 +1040,23 @@ def test_클러스터링이면_TourAPI를_호출하지_않는다(
     _get(client, is_clustered=True)
 
     assert stub_location_image == []
+
+
+def test_클러스터링이면_받은_쿠폰을_조회하지_않는다(
+    client: TestClient,
+    map_data: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_if_called(*_: object, **__: object) -> dict:
+        raise AssertionError("클러스터링 응답에서 쿠폰을 조회하면 안 됩니다.")
+
+    monkeypatch.setattr(
+        service.received_coupons,
+        "find_received_coupon_prices_by_location",
+        fail_if_called,
+    )
+
+    _get(client, is_clustered=True)
 
 
 def test_클러스터링이_아니면_장소마다_TourAPI를_호출한다(
