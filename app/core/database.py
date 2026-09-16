@@ -1,7 +1,7 @@
 from collections.abc import Generator
 from typing import Any
 
-from sqlalchemy import BigInteger, Integer, create_engine, text
+from sqlalchemy import BigInteger, Engine, Integer, create_engine, event, text
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.sql.expression import ColumnElement
@@ -57,6 +57,33 @@ def mysql_table_args(comment: str) -> dict[str, str]:
     }
 
 
+# MySQL 연결 세션의 타임존. `created_at`/`updated_at` 의 서버 기본값
+# `CURRENT_TIMESTAMP` 는 연결 세션의 `time_zone` 을 따르므로, 서버(컨테이너)가 UTC 로
+# 동작해도 이 값을 KST 로 맞춰두면 DB 에 한국시간으로 저장된다.
+# KST 는 서머타임이 없어 고정 오프셋으로 지정해도 정확하다. (app/common/datetimes.py 와 같은 기준)
+MYSQL_SESSION_TIME_ZONE = "+09:00"
+
+
+def _set_kst_session_time_zone(dbapi_connection: Any, connection_record: Any) -> None:
+    """새로 맺은 MySQL 연결의 세션 타임존을 KST 로 설정한다."""
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("SET time_zone = %s", (MYSQL_SESSION_TIME_ZONE,))
+    finally:
+        cursor.close()
+
+
+def use_kst_session_time_zone(target_engine: Engine) -> None:
+    """엔진이 새로 연결을 열 때마다 세션 타임존을 KST 로 맞춘다.
+
+    커넥션 풀에서 연결을 새로 만들 때(재연결 포함)마다 실행된다.
+    MySQL 전용 구문이라 테스트용 SQLite 엔진에는 걸지 않는다.
+    """
+    if target_engine.dialect.name != "mysql":
+        return
+    event.listen(target_engine, "connect", _set_kst_session_time_zone)
+
+
 settings = get_settings()
 
 engine = create_engine(
@@ -65,6 +92,7 @@ engine = create_engine(
     pool_pre_ping=True,
     pool_recycle=3600,
 )
+use_kst_session_time_zone(engine)
 
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 

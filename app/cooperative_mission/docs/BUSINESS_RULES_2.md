@@ -35,8 +35,9 @@ Query의 사용자 좌표는 4단계 응답의 다음 장소까지 직선거리�
 4. 현재 사용자의 참가자 row로 `currentParticipant`를 구성한다.
 5. 진행도의 `current_step`에 따라 필요한 데이터만 조회한다.
 6. 4단계이면 보상 지급 여부를 확인하고 필요한 경우 보상 지급 로직을 실행한다.
-7. 4단계이면 `common`의 다음 장소 추천 로직을 현재 사용자 기준으로 실행하고, Query의 좌표로 추천 장소까지의 직선거리를 계산한다.
-8. 단계별 응답 구조를 조합하여 `200 OK`를 반환한다.
+7. 4단계이면 협동 미션의 `location_id`로 완료 장소를 조회하여 `completedLocation`을 구성한다.
+8. 4단계이면 `common`의 다음 장소 추천 로직을 현재 사용자 기준으로 실행하고, Query의 좌표로 추천 장소까지의 직선거리를 계산한다.
+9. 단계별 응답 구조를 조합하여 `200 OK`를 반환한다.
 
 ## 4. 진행도와 참가자 검증
 
@@ -200,6 +201,7 @@ completedRoleCount = progress_status가 COMPLETED인 역할 진행도 row 수
 - `roleProgresses`: `null`
 - `completedRoleCount`: `null`
 - `totalRoleCount`: `null`
+- `completedLocation`: 완료한 협동 미션이 진행된 장소의 `locationId`, `locationTitle`
 - `reward`: 현재 사용자에게 제공할 보상 정보
 - `nextLocation`: 현재 사용자에게 추천할 다음 장소 정보. Query의 사용자 위치에서의 직선거리 `distanceMeter`를 포함한다
 
@@ -282,6 +284,7 @@ coupon_reward_granted = TRUE
 | 필드 | 1단계 | 2단계 | 3단계 | 4단계 |
 | --- | --- | --- | --- | --- |
 | 공통 미션 정보 | 값 | 값 | 값 | 값 |
+| `completedLocation` | `null` | `null` | `null` | 값 |
 | `currentParticipant` | 값 | 값 | 값 | `null` |
 | `participants` | 값 | 값 | 값 | `null` |
 | `roleCards` | `null` | 값 | 값 | `null` |
@@ -290,7 +293,17 @@ coupon_reward_granted = TRUE
 | `reward` | `null` | `null` | `null` | 값 |
 | `nextLocation` | `null` | `null` | `null` | 값 |
 
-## 18. 오류 처리
+## 18. 수정사항
+
+### 완료 장소 정보 반환
+
+- 1~3단계 응답에서는 `completedLocation: null`을 반환한다.
+- 4단계 완료 응답에서는 `COOPERATIVE_MISSION.location_id`가 참조하는 `LOCATION`을 조회한다.
+- 조회한 `LOCATION.id`와 `LOCATION.location_title`을 각각 `completedLocation.locationId`, `completedLocation.locationTitle`로 반환한다.
+- `completedLocation`은 방금 완료한 협동 미션의 장소이고, `nextLocation`은 완료 후 추천하는 다음 장소이므로 서로 혼용하지 않는다.
+- 프론트는 `completedLocation.locationId`를 방명록 작성 요청의 `locationId`로 전달하고 `completedLocation.locationTitle`을 방명록 작성 화면의 고정 장소명으로 사용한다.
+
+## 19. 오류 처리
 
 ### 400 `INVALID_REQUEST`
 

@@ -164,8 +164,9 @@ def save_gps(db: Session, current_user_id: int, request: GpsSaveRequest) -> None
     GPS 한 건과 그 좌표에서 나온 방문 기록은 한 트랜잭션으로 저장하고,
     하나라도 실패하면 전부 롤백한다.
 
-    지금은 진입/이탈이나 체류 시간을 보지 않으므로, 반경 안에 머무는 동안
-    요청할 때마다 방문 기록이 쌓인다. (판정 규칙은 `visit_detector` 가 담당한다)
+    같은 장소를 다시 판정받아도 **사용자·장소당 방문 기록은 한 건만** 남긴다.
+    이미 기록이 있으면 새로 넣지 않고 기존 기록의 `visited_at` 도 건드리지 않는다.
+    (판정 규칙은 `visit_detector` 가 담당한다)
     """
     db.add(
         Gps(
@@ -177,7 +178,7 @@ def save_gps(db: Session, current_user_id: int, request: GpsSaveRequest) -> None
         )
     )
 
-    for location_id in _find_visited_location_ids(db, request):
+    for location_id in _find_new_visited_location_ids(db, current_user_id, request):
         db.add(
             VisitedLocation(
                 user_id=current_user_id,
@@ -189,10 +190,39 @@ def save_gps(db: Session, current_user_id: int, request: GpsSaveRequest) -> None
     db.commit()
 
 
+def _find_new_visited_location_ids(
+    db: Session, current_user_id: int, request: GpsSaveRequest
+) -> list[int]:
+    """이번 좌표로 방문 판정을 받은 장소 중 **아직 기록이 없는** 장소 id 목록.
+
+    `(user_id, location_id)` 중복을 막는 지점이다. DB 유니크 제약 없이 여기서만 거르므로,
+    같은 사용자의 요청이 동시에 들어오면 같은 장소가 두 번 들어갈 수 있다.
+    (그 경우까지 막으려면 `VISITED_LOCATION` 에 유니크 제약이 필요하다)
+    """
+    visited_location_ids = _find_visited_location_ids(db, request)
+    if not visited_location_ids:
+        return []
+
+    already_visited = set(
+        db.scalars(
+            select(VisitedLocation.location_id).where(
+                VisitedLocation.user_id == current_user_id,
+                VisitedLocation.location_id.in_(visited_location_ids),
+            )
+        ).all()
+    )
+    return [
+        location_id
+        for location_id in visited_location_ids
+        if location_id not in already_visited
+    ]
+
+
 def _find_visited_location_ids(db: Session, request: GpsSaveRequest) -> list[int]:
     """요청 좌표로 방문한 장소를 찾는다.
 
     판정 자체는 `visit_detector` 가 하고, 여기서는 장소를 읽어 넘겨주기만 한다.
+    판정이 `LOCATION.radius` 를 쓰지 않고 공통 반경을 쓰므로 반경은 넘기지 않는다.
     장소 수가 많아지면 이 조회에 좌표 범위 필터(또는 공간 질의)를 먼저 걸어야 한다.
     """
     locations = db.scalars(select(Location).order_by(Location.id)).all()
@@ -201,12 +231,7 @@ def _find_visited_location_ids(db: Session, request: GpsSaveRequest) -> list[int
         longitude=request.longitude,
         locations=[
             # LOCATION 은 my = 위도, mx = 경도로 저장돼 있다.
-            LocationArea(
-                id=location.id,
-                latitude=location.my,
-                longitude=location.mx,
-                radius_meter=location.radius,
-            )
+            LocationArea(id=location.id, latitude=location.my, longitude=location.mx)
             for location in locations
         ],
     )

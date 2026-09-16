@@ -34,6 +34,8 @@
 - API 요청/응답은 offset 없는 ISO 8601 date-time 형식을 사용한다.
 - 별도의 timezone 변환 없이 입력 값을 KST로 취급한다.
 - DB에는 timezone 없는 `DATETIME`으로 저장한다.
+- `created_at`/`updated_at`의 서버 기본값 `CURRENT_TIMESTAMP`도 KST로 저장되도록,
+  MySQL 연결마다 세션 타임존을 `+09:00`으로 설정한다. (`use_kst_session_time_zone()` in `app/core/database.py`)
 
 ### 1.5 API Base Convention
 - 기본 API prefix는 `/api/v1`이다.
@@ -49,6 +51,7 @@
     - `rewards.py`: 미션 보상(`reward_detail`) 응답 스키마 + 조합 로직 (문화/협동/보물 공용)
     - `next_location.py`: 미션 완료 후 다음 장소 추천 응답 스키마 + 추천 로직
     - `datetimes.py`: KST 기준 현재 시각(`now_kst()`)
+    - `mission_completion.py`: 사용자별 미션 완료 판정 (지도 `isCompleted`/추천 미션 공용)
   - `app/services/`: 외부 서비스 연동 (`kto.py`: TourAPI, `blob_storage.py`: Azure Blob 업로드,
     `openai_audio_title.py`: 방명록 오디오 제목 생성)
     - `kto.py`는 응답을 워커 프로세스 안에 캐시한다. (성공 24시간 / 실패 5분, 최대 2000건)

@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.onboarding.onboarding_matcher import DEFAULT_AR_CHARACTER_NAME
+from app.onboarding.onboarding_matcher import ONBOARDING_AR_CHARACTER_IDS
 from app.treasure_mission.models import AcquiredArCharacter, ArCharacter
 from app.user.models import User, UserTravelStyle
 from conftest import CURRENT_USER_ID, access_token_hash, auth_headers
@@ -21,8 +21,8 @@ ENDPOINT = "/api/v1/users/me/profile"
 OTHER_USER_ID = 2
 
 TRAVEL_STYLE_IDS = (1, 2, 3)
-CHARACTER_IDS = (1, 2, 3)
-DEFAULT_CHARACTER_ID = 3
+# 재배정은 온보딩 전용 캐릭터(id 7~12) 중에서만 한다.
+CHARACTER_IDS = ONBOARDING_AR_CHARACTER_IDS[:3]
 
 BEFORE_NICKNAME = "몽글몽글파도"
 BEFORE_TARGET_STEP = 10000
@@ -36,7 +36,7 @@ NEW_TARGET_STEP = 12000
 
 @pytest.fixture
 def profile_data(db_session: Session) -> None:
-    """사용자 2명 + 여행 유형 3개 + 캐릭터 3개(기본 캐릭터 포함)."""
+    """사용자 2명 + 여행 유형 3개 + 온보딩 전용 캐릭터 3개."""
     db_session.add_all(
         [
             UserTravelStyle(
@@ -52,11 +52,7 @@ def profile_data(db_session: Session) -> None:
         [
             ArCharacter(
                 id=character_id,
-                character_name=(
-                    DEFAULT_AR_CHARACTER_NAME
-                    if character_id == DEFAULT_CHARACTER_ID
-                    else f"캐릭터 {character_id}"
-                ),
+                character_name=f"캐릭터 {character_id}",
                 character_description="설명",
                 character_story_title="이야기 제목",
                 acquire_condition="조건",
@@ -225,15 +221,38 @@ def test_여행_유형과_대표_캐릭터를_다시_배정한다(
     assert user.ar_character_id in CHARACTER_IDS
 
 
-def test_선택_배열이_모두_비면_여행_유형을_비우고_기본_캐릭터를_배정한다(
+def test_categories가_이전과_같으면_대표_캐릭터를_다시_뽑지_않는다(
+    client: TestClient, db_session: Session, profile_data: None
+) -> None:
+    # 픽스처 사용자의 expectation 은 ["CULTURE"] 다. 다른 필드만 바꾼다.
+    for _ in range(10):
+        _put(client, categories=["CULTURE"])
+
+        assert _user(db_session).ar_character_id == CHARACTER_IDS[0]
+
+
+def test_categories는_순서가_달라도_같은_값으로_본다(
+    client: TestClient, db_session: Session, profile_data: None
+) -> None:
+    user = _user(db_session)
+    user.expectation = ["PHOTO", "LOCAL"]
+    db_session.commit()
+
+    for _ in range(10):
+        _put(client, categories=["LOCAL", "PHOTO"])
+
+        assert _user(db_session).ar_character_id == CHARACTER_IDS[0]
+
+
+def test_선택_배열이_모두_비면_여행_유형을_비우고_온보딩_전용_캐릭터를_배정한다(
     client: TestClient, db_session: Session, profile_data: None
 ) -> None:
     _put(client, categories=[], transportation=[], travelStyle=[])
 
     user = _user(db_session)
-    # 온보딩 건너뛰기와 같은 처리다.
+    # 온보딩 건너뛰기와 같은 처리다. 기본 캐릭터가 아니라 온보딩 전용 캐릭터 중 랜덤이다.
     assert user.user_travel_style_id is None
-    assert user.ar_character_id == DEFAULT_CHARACTER_ID
+    assert user.ar_character_id in CHARACTER_IDS
 
 
 def test_일부만_비면_일반_매칭을_한다(

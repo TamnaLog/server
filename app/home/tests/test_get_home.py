@@ -45,9 +45,16 @@ CULTURE_MISSION_ID = 11
 COOPERATIVE_MISSION_ID = 21
 TREASURE_MISSION_ID = 31
 
+# 추천 후보를 늘릴 때 쓰는 id
+SECOND_CULTURE_MISSION_ID = 12
+NEAR_COOPERATIVE_MISSION_ID = 22
+NEAR_TREASURE_MISSION_ID = 32
+
 # 장소 id
 SEONGSAN_LOCATION_ID = 1
 SAEBYEOL_LOCATION_ID = 2
+# 사용자 요청 위치와 같은 좌표의 장소 (가장 가까운 미션 검증용)
+NEAR_LOCATION_ID = 3
 
 OTHER_USER_ID = 2
 
@@ -87,7 +94,8 @@ def _mission(mission_id: int, mission_type: str, title: str, step_count: int) ->
 def home_data(db_session: Session) -> None:
     """홈 조회에 필요한 장소 / 미션 / 사용자 목업 데이터.
 
-    미션은 유형별로 1건씩만 둔다. (추천이 랜덤이라 3건이면 항상 세 건 모두 추천된다)
+    미션은 유형별로 1건씩만 둔다. (추천 후보가 하나뿐이면 선정 결과가 정해진다)
+    추천 후보를 늘려야 하는 테스트는 `_add_near_missions()` 로 미션을 더 넣는다.
     진행도와 방명록은 각 테스트에서 필요한 만큼 따로 추가한다.
     """
     db_session.add_all(
@@ -169,6 +177,96 @@ def home_data(db_session: Session) -> None:
     db_session.commit()
 
 
+def _add_near_missions(db_session: Session) -> None:
+    """사용자 요청 위치와 같은 좌표의 장소에 협동 / 보물 찾기 미션을 한 건씩 추가한다.
+
+    기본 목업의 미션(새별 오름 / 성산일출봉)보다 항상 가까우므로,
+    "가장 가까운 미션을 고른다"를 거리 계산 없이 검증할 수 있다.
+    """
+    db_session.add(
+        Location(
+            id=NEAR_LOCATION_ID,
+            content_id=126501,
+            location_title="제주목 관아",
+            location_address="제주특별자치도 제주시 관덕로 25",
+            location_category="역사",
+            radius=200,
+            mx=USER_LONGITUDE,
+            my=USER_LATITUDE,
+        )
+    )
+    db_session.flush()
+    db_session.add_all(
+        [
+            CooperativeMission(
+                id=NEAR_COOPERATIVE_MISSION_ID,
+                mission_id=COOPERATIVE_TYPE_ID,
+                location_id=NEAR_LOCATION_ID,
+                reward_detail=REWARD_DETAIL,
+            ),
+            TreasureMission(
+                id=NEAR_TREASURE_MISSION_ID,
+                mission_id=TREASURE_TYPE_ID,
+                location_id=NEAR_LOCATION_ID,
+                item_total_count=5,
+                reward_detail=REWARD_DETAIL,
+            ),
+        ]
+    )
+    db_session.commit()
+
+
+def _complete_cooperative_mission(
+    db_session: Session,
+    cooperative_mission_id: int,
+    progress_id: int,
+    user_id: int = CURRENT_USER_ID,
+) -> None:
+    """협동 미션을 해당 사용자가 완료한 이력으로 만든다."""
+    db_session.add(
+        CooperativeMissionProgress(
+            id=progress_id,
+            cooperative_mission_id=cooperative_mission_id,
+            current_step=4,
+            mission_status=MissionStatus.COMPLETED.value,
+            team_token=f"team-token-{progress_id}",
+        )
+    )
+    db_session.flush()
+    db_session.add(
+        CooperativeMissionParticipant(
+            id=progress_id,
+            cooperative_mission_progress_id=progress_id,
+            user_id=user_id,
+            participant_status=ParticipantStatus.ACCEPTED.value,
+            participant_role=ParticipantRole.HOST.value,
+            joined_at=datetime(2026, 8, 20, 10, 0, 0),
+        )
+    )
+    db_session.commit()
+
+
+def _complete_treasure_mission(
+    db_session: Session,
+    treasure_mission_id: int,
+    progress_id: int,
+    user_id: int = CURRENT_USER_ID,
+) -> None:
+    """보물 찾기 미션을 해당 사용자가 완료한 이력으로 만든다."""
+    db_session.add(
+        TreasureMissionProgress(
+            id=progress_id,
+            treasure_mission_id=treasure_mission_id,
+            user_id=user_id,
+            item_detail=TREASURE_ITEM_DETAIL,
+            current_found_item_idx=[1, 2],
+            current_step=3,
+            mission_status=MissionStatus.COMPLETED.value,
+        )
+    )
+    db_session.commit()
+
+
 def _request_home(client: TestClient) -> dict:
     response = client.get(
         ENDPOINT, params={"latitude": USER_LATITUDE, "longitude": USER_LONGITUDE}
@@ -245,23 +343,113 @@ def test_추천_미션의_유형과_이름은_공통_미션_정보를_따른다(
     assert by_type["TREASURE"]["missionTitle"] == "보물 찾기"
 
 
-def test_추천_미션은_DB에_존재하는_미션_중에서_중복_없이_선정된다(
+def test_추천_미션은_문화_협동_보물_유형을_한_건씩_반환한다(
     client: TestClient, db_session: Session, home_data: None
 ) -> None:
-    # 추천 로직이 랜덤이므로 값 자체가 아니라 DB에 있는 미션인지로 검증한다.
-    saved = (
-        {("CULTURE", row.id) for row in db_session.query(CultureMission).all()}
-        | {("COOPERATIVE", row.id) for row in db_session.query(CooperativeMission).all()}
-        | {("TREASURE", row.id) for row in db_session.query(TreasureMission).all()}
-    )
+    # 유형별 후보가 여러 건이어도 유형마다 한 건씩만 추천한다.
+    _add_near_missions(db_session)
 
-    recommended = [
-        (mission["missionType"], mission["missionId"])
-        for mission in _request_home(client)["missionRecommend"]
+    body = _request_home(client)
+
+    assert [mission["missionType"] for mission in body["missionRecommend"]] == [
+        "CULTURE",
+        "COOPERATIVE",
+        "TREASURE",
     ]
 
-    assert len(set(recommended)) == len(recommended)
-    assert set(recommended) <= saved
+
+def test_추천_문화_미션은_DB의_문화_미션_중_하나로_선정된다(
+    client: TestClient, db_session: Session, home_data: None
+) -> None:
+    # 문화 미션은 장소가 없어 랜덤으로 고르므로 값 자체가 아니라 DB에 있는 미션인지로 검증한다.
+    db_session.add(
+        CultureMission(
+            id=SECOND_CULTURE_MISSION_ID,
+            mission_id=CULTURE_TYPE_ID,
+            quiz_total_count=5,
+            quiz_detail=[],
+            reward_detail=REWARD_DETAIL,
+        )
+    )
+    db_session.commit()
+    saved = {row.id for row in db_session.query(CultureMission).all()}
+
+    for _ in range(10):
+        by_type = {
+            mission["missionType"]: mission
+            for mission in _request_home(client)["missionRecommend"]
+        }
+        assert by_type["CULTURE"]["missionId"] in saved
+
+
+def test_협동과_보물찾기는_장소가_가장_가까운_미션을_추천한다(
+    client: TestClient, db_session: Session, home_data: None
+) -> None:
+    _add_near_missions(db_session)
+
+    body = _request_home(client)
+    by_type = {mission["missionType"]: mission for mission in body["missionRecommend"]}
+
+    assert by_type["COOPERATIVE"]["missionId"] == NEAR_COOPERATIVE_MISSION_ID
+    assert by_type["TREASURE"]["missionId"] == NEAR_TREASURE_MISSION_ID
+    assert by_type["COOPERATIVE"]["distanceMeter"] == 0
+    assert by_type["TREASURE"]["distanceMeter"] == 0
+
+
+def test_이미_완료한_협동_미션은_추천하지_않는다(
+    client: TestClient, db_session: Session, home_data: None
+) -> None:
+    # 가장 가까운 협동 미션을 완료해 두면 그다음으로 가까운 미션이 추천된다.
+    _add_near_missions(db_session)
+    _complete_cooperative_mission(db_session, NEAR_COOPERATIVE_MISSION_ID, progress_id=1)
+
+    body = _request_home(client)
+    by_type = {mission["missionType"]: mission for mission in body["missionRecommend"]}
+
+    assert by_type["COOPERATIVE"]["missionId"] == COOPERATIVE_MISSION_ID
+
+
+def test_이미_완료한_보물찾기_미션은_추천하지_않는다(
+    client: TestClient, db_session: Session, home_data: None
+) -> None:
+    _add_near_missions(db_session)
+    _complete_treasure_mission(db_session, NEAR_TREASURE_MISSION_ID, progress_id=1)
+
+    body = _request_home(client)
+    by_type = {mission["missionType"]: mission for mission in body["missionRecommend"]}
+
+    assert by_type["TREASURE"]["missionId"] == TREASURE_MISSION_ID
+
+
+def test_다른_사용자의_완료_이력은_추천에서_제외하지_않는다(
+    client: TestClient, db_session: Session, home_data: None
+) -> None:
+    # 완료 이력은 현재 사용자 기준으로만 판단한다.
+    _add_near_missions(db_session)
+    _complete_treasure_mission(
+        db_session, NEAR_TREASURE_MISSION_ID, progress_id=1, user_id=OTHER_USER_ID
+    )
+    _complete_cooperative_mission(
+        db_session, NEAR_COOPERATIVE_MISSION_ID, progress_id=1, user_id=OTHER_USER_ID
+    )
+
+    body = _request_home(client)
+    by_type = {mission["missionType"]: mission for mission in body["missionRecommend"]}
+
+    assert by_type["TREASURE"]["missionId"] == NEAR_TREASURE_MISSION_ID
+    assert by_type["COOPERATIVE"]["missionId"] == NEAR_COOPERATIVE_MISSION_ID
+
+
+def test_추천할_후보가_없는_유형은_추천_목록에서_제외한다(
+    client: TestClient, db_session: Session, home_data: None
+) -> None:
+    # 협동/보물 찾기 미션을 모두 완료하면 문화 미션만 추천된다.
+    _complete_cooperative_mission(db_session, COOPERATIVE_MISSION_ID, progress_id=1)
+    _complete_treasure_mission(db_session, TREASURE_MISSION_ID, progress_id=1)
+
+    body = _request_home(client)
+
+    assert [mission["missionType"] for mission in body["missionRecommend"]] == ["CULTURE"]
 
 
 def test_장소가_있는_추천_미션은_좌표와_거리_예상_소요_시간을_반환한다(

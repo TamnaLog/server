@@ -20,15 +20,17 @@ ENDPOINT = "/api/v1/users/me/gps"
 
 OTHER_USER_ID = 2
 
-# 성산일출봉(반경 300m)과 그 반경 안에 겹쳐 있는 장소
+# 성산일출봉과 거기서 약 2km 떨어진 장소. (둘 다 판정 반경 5km 안이다)
 LOCATION_ID = 39
 LOCATION_LATITUDE = 33.4582
 LOCATION_LONGITUDE = 126.9331
 LOCATION_RADIUS = 300
 
-OVERLAPPED_LOCATION_ID = 40
+NEARBY_LOCATION_ID = 40
+# 이 위도에서 경도 1도는 약 92,768m 라 약 2km 떨어진 지점이다.
+NEARBY_LONGITUDE = LOCATION_LONGITUDE + 2_000 / 92_768
 
-# 위 장소들과 멀리 떨어진 장소
+# 위 장소들과 5km 넘게 떨어진 장소 (약 42km)
 FAR_LOCATION_ID = 41
 FAR_LATITUDE = 33.2500
 FAR_LONGITUDE = 126.5600
@@ -39,7 +41,10 @@ RECORDED_DATETIME = datetime(2026, 9, 3, 14, 30, 0)
 
 @pytest.fixture
 def gps_data(db_session: Session) -> None:
-    """사용자 2명 + 장소 3곳. (겹치는 장소 2곳 + 멀리 있는 장소 1곳)"""
+    """사용자 2명 + 장소 3곳. (5km 안의 장소 2곳 + 멀리 있는 장소 1곳)
+
+    `radius` 는 판정에 쓰이지 않지만 컬럼이 NOT NULL 이라 값은 채워 둔다.
+    """
     db_session.add_all(
         [
             User(
@@ -65,15 +70,15 @@ def gps_data(db_session: Session) -> None:
                 my=LOCATION_LATITUDE,
             ),
             Location(
-                id=OVERLAPPED_LOCATION_ID,
+                id=NEARBY_LOCATION_ID,
                 content_id=126509,
                 location_title="성산 포구",
                 location_address="제주특별자치도 서귀포시 성산읍",
                 location_category="해변",
-                radius=500,
-                # 위 장소와 아주 가까워 반경이 겹친다.
-                mx=LOCATION_LONGITUDE + 0.0005,
-                my=LOCATION_LATITUDE + 0.0005,
+                # 장소별 반경이 300m 라도 5km 안이면 방문이다.
+                radius=300,
+                mx=NEARBY_LONGITUDE,
+                my=LOCATION_LATITUDE,
             ),
             Location(
                 id=FAR_LOCATION_ID,
@@ -176,7 +181,7 @@ def test_같은_좌표를_여러_번_보내면_기록이_쌓인다(
 # ---------------------------------------------------------------------
 
 
-def test_반경_안이면_방문_기록을_함께_남긴다(
+def test_5km_안이면_방문_기록을_함께_남긴다(
     client: TestClient, db_session: Session, gps_data: None
 ) -> None:
     _post(client, latitude=LOCATION_LATITUDE, longitude=LOCATION_LONGITUDE)
@@ -184,7 +189,7 @@ def test_반경_안이면_방문_기록을_함께_남긴다(
     visits = _visits(db_session)
     assert [visit.location_id for visit in visits] == [
         LOCATION_ID,
-        OVERLAPPED_LOCATION_ID,
+        NEARBY_LOCATION_ID,
     ]
     assert visits[0].user_id == CURRENT_USER_ID
 
@@ -201,10 +206,10 @@ def test_방문_시각은_GPS와_같은_recordedAt이다(
     assert _gps_records(db_session)[0].saved_at == RECORDED_DATETIME
 
 
-def test_반경_밖이면_GPS만_저장하고_방문은_남기지_않는다(
+def test_5km_밖이면_GPS만_저장하고_방문은_남기지_않는다(
     client: TestClient, db_session: Session, gps_data: None
 ) -> None:
-    # 어느 장소의 반경에도 들지 않는 좌표
+    # 어느 장소에서도 5km 넘게 떨어진 좌표
     response = _post(client, latitude=33.9000, longitude=126.2000)
 
     assert response.status_code == 204
@@ -212,13 +217,25 @@ def test_반경_밖이면_GPS만_저장하고_방문은_남기지_않는다(
     assert _visits(db_session) == []
 
 
-def test_반경이_겹치면_걸린_장소를_모두_기록한다(
+def test_5km_안의_장소를_모두_기록한다(
     client: TestClient, db_session: Session, gps_data: None
 ) -> None:
     _post(client)
 
     # 가장 가까운 한 곳만 고르지 않는다.
     assert len(_visits(db_session)) == 2
+
+
+def test_장소별_radius_밖이어도_5km_안이면_방문으로_기록한다(
+    client: TestClient, db_session: Session, gps_data: None
+) -> None:
+    # 두 장소의 radius 는 300m 인데 서로 2km 떨어져 있다.
+    _post(client, latitude=LOCATION_LATITUDE, longitude=NEARBY_LONGITUDE)
+
+    assert [visit.location_id for visit in _visits(db_session)] == [
+        LOCATION_ID,
+        NEARBY_LOCATION_ID,
+    ]
 
 
 def test_멀리_있는_장소는_방문으로_잡지_않는다(
@@ -237,15 +254,59 @@ def test_다른_장소로_이동하면_그_장소가_기록된다(
     assert [visit.location_id for visit in _visits(db_session)] == [FAR_LOCATION_ID]
 
 
-def test_반경_안에_머물면_요청마다_방문_기록이_쌓인다(
+def test_같은_장소를_다시_판정받아도_방문_기록은_한_건이다(
     client: TestClient, db_session: Session, gps_data: None
 ) -> None:
     _post(client, recorded_at="2026-09-03T14:30:00")
     _post(client, recorded_at="2026-09-03T14:35:00")
 
-    # 진입/이탈이나 체류 시간을 보지 않으므로 중복 제거를 하지 않는다.
-    assert len(_visits(db_session)) == 4
+    # 판정 반경 안에 머물러 두 번 다 걸리지만, (사용자, 장소)당 한 건만 남는다.
+    assert [visit.location_id for visit in _visits(db_session)] == [
+        LOCATION_ID,
+        NEARBY_LOCATION_ID,
+    ]
+    # GPS 는 중복 제거 대상이 아니라 요청마다 쌓인다.
     assert len(_gps_records(db_session)) == 2
+
+
+def test_이미_방문한_장소의_visited_at은_바뀌지_않는다(
+    client: TestClient, db_session: Session, gps_data: None
+) -> None:
+    _post(client, recorded_at="2026-09-03T14:30:00")
+
+    _post(client, recorded_at="2026-09-04T09:00:00")
+
+    # 기존 기록을 갱신하지도 않는다. 처음 방문한 시각 그대로다.
+    for visit in _visits(db_session):
+        assert visit.visited_at == RECORDED_DATETIME
+
+
+def test_이미_방문한_장소는_건너뛰고_새_장소만_기록한다(
+    client: TestClient, db_session: Session, gps_data: None
+) -> None:
+    # 먼저 멀리 있는 장소만 방문해 둔다.
+    _post(client, latitude=FAR_LATITUDE, longitude=FAR_LONGITUDE)
+
+    _post(client)
+
+    assert [visit.location_id for visit in _visits(db_session)] == [
+        FAR_LOCATION_ID,
+        LOCATION_ID,
+        NEARBY_LOCATION_ID,
+    ]
+
+
+def test_다른_사용자의_방문_이력은_중복_판정에_영향을_주지_않는다(
+    client: TestClient, db_session: Session, gps_data: None
+) -> None:
+    _post(client, user_id=OTHER_USER_ID)
+
+    _post(client, user_id=CURRENT_USER_ID)
+
+    # 중복 기준은 (사용자, 장소)라 사용자마다 따로 남는다.
+    visits = _visits(db_session)
+    assert {visit.user_id for visit in visits} == {OTHER_USER_ID, CURRENT_USER_ID}
+    assert len(visits) == 4
 
 
 def test_방문_기록도_토큰의_사용자로_남는다(

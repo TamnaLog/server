@@ -41,7 +41,7 @@ def get_home(db: Session, current_user_id: int, latitude: float, longitude: floa
     거리/예상 소요 시간은 요청으로 받은 사용자 위치를 기준으로 계산한다.
     """
     return HomeResponse(
-        mission_recommend=_build_mission_recommend(db, latitude, longitude),
+        mission_recommend=_build_mission_recommend(db, current_user_id, latitude, longitude),
         progress_mission=_build_progress_mission(db, current_user_id, latitude, longitude),
         guestbook_count=guestbook_counter.count_guestbooks(db),
         character_img_url=_get_character_img_url(db, current_user_id),
@@ -54,12 +54,14 @@ def get_home(db: Session, current_user_id: int, latitude: float, longitude: floa
 
 
 def _build_mission_recommend(
-    db: Session, latitude: float, longitude: float
+    db: Session, current_user_id: int, latitude: float, longitude: float
 ) -> list[RecommendedMission]:
-    """추천 미션 목록을 만든다."""
+    """추천 미션 목록을 만든다. (문화/협동/보물 찾기 각 1건)"""
     return [
         _to_recommended_mission(candidate, latitude, longitude)
-        for candidate in mission_recommender.recommend_missions(db)
+        for candidate in mission_recommender.recommend_missions(
+            db, current_user_id, latitude, longitude
+        )
     ]
 
 

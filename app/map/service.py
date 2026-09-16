@@ -8,14 +8,13 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.common import distance, rewards
+from app.common import distance, mission_completion, rewards
 from app.common.rewards import GrantedRewards
 from app.cooperative_mission.models import CooperativeMission
 from app.core.errors import InvalidRequestError, NotFoundError
 from app.guestbook.models import Guestbook, RoadGuestbook
 from app.map import (
     location_missions,
-    mission_completion,
     mission_detail,
     mission_recommender,
     received_coupons,

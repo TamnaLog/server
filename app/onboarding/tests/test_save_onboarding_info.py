@@ -8,13 +8,13 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.onboarding.models import ArCharacter, User, UserTravelStyle
-from app.onboarding.onboarding_matcher import DEFAULT_AR_CHARACTER_NAME
+from app.onboarding.onboarding_matcher import ONBOARDING_AR_CHARACTER_IDS
 from conftest import CURRENT_USER_ID, access_token_hash
 
 
 ENDPOINT = "/api/v1/users/me"
 
-DEFAULT_CHARACTER_ID = 11
+ONBOARDING_CHARACTER_IDS = {7, 12}
 
 
 @pytest.fixture
@@ -36,21 +36,30 @@ def onboarding_data(db_session: Session) -> None:
             ),
             ArCharacter(
                 id=1,
-                character_name="자청비 모티브 탐험가",
-                character_description="기록 탐험가 캐릭터입니다.",
+                character_name="바람 정령",
+                character_description="온보딩 랜덤 후보에서 제외되는 기존 캐릭터입니다.",
+                character_story_title="바람을 타고 온 제주 친구",
+                acquire_condition="미션 보상으로 만날 수 있어요.",
+                character_img_url="https://example.com/images/characters/wind_spirit.png",
+                hashtags=["#제주바람"],
+            ),
+            ArCharacter(
+                id=7,
+                character_name="제주 사진작가",
+                character_description="제주의 순간을 기록하는 사진작가입니다.",
                 character_story_title="이야기 제목",
-                acquire_condition="온보딩에서 기록형 여행 스타일을 선택하면 만날 수 있어요.",
-                character_img_url="https://example.com/images/characters/jacheongbi.png",
+                acquire_condition="PHOTO 여행 취향으로 만날 수 있어요.",
+                character_img_url="https://example.com/images/characters/001.png",
                 hashtags=["#인생사진"],
             ),
             ArCharacter(
-                id=DEFAULT_CHARACTER_ID,
-                character_name=DEFAULT_AR_CHARACTER_NAME,
-                character_description="기본 캐릭터입니다.",
+                id=12,
+                character_name="올레길 산책가",
+                character_description="제주를 천천히 걷는 산책가입니다.",
                 character_story_title="이야기 제목",
-                acquire_condition="온보딩에서 나중에 할게요를 선택하면 만날 수 있어요.",
-                character_img_url="https://example.com/images/characters/dolmungii.png",
-                hashtags=["#기본캐릭터"],
+                acquire_condition="WALKING 여행 취향으로 만날 수 있어요.",
+                character_img_url="https://example.com/images/characters/006.png",
+                hashtags=["#걷기여행"],
             ),
             User(
                 id=CURRENT_USER_ID,
@@ -98,10 +107,10 @@ def test_배정_결과는_DB에_존재하는_값_중_하나다(
 
     user = response.json()["user"]
     assert user["userTravelStyle"]["id"] in {1, 2}
-    assert user["arCharacter"]["id"] in {1, DEFAULT_CHARACTER_ID}
+    assert user["arCharacter"]["id"] in ONBOARDING_CHARACTER_IDS
 
 
-def test_나중에_할게요를_선택하면_여행_유형은_null이고_기본_캐릭터를_반환한다(
+def test_나중에_할게요를_선택해도_온보딩_캐릭터를_랜덤_배정한다(
     client: TestClient, db_session: Session, onboarding_data: None
 ) -> None:
     response = client.patch(ENDPOINT, json={})
@@ -109,8 +118,7 @@ def test_나중에_할게요를_선택하면_여행_유형은_null이고_기본_
     assert response.status_code == 201
     user = response.json()["user"]
     assert user["userTravelStyle"] is None
-    assert user["arCharacter"]["id"] == DEFAULT_CHARACTER_ID
-    assert user["arCharacter"]["name"] == DEFAULT_AR_CHARACTER_NAME
+    assert user["arCharacter"]["id"] in ONBOARDING_CHARACTER_IDS
 
     saved = db_session.get(User, CURRENT_USER_ID)
     assert saved is not None
@@ -119,7 +127,7 @@ def test_나중에_할게요를_선택하면_여행_유형은_null이고_기본_
     assert saved.transportation is None
     assert saved.travel_style is None
     assert saved.user_travel_style_id is None
-    assert saved.ar_character_id == DEFAULT_CHARACTER_ID
+    assert saved.ar_character_id == user["arCharacter"]["id"]
 
 
 def test_토큰의_사용자가_없으면_401_UNAUTHORIZED_USER로_응답한다(
@@ -131,13 +139,13 @@ def test_토큰의_사용자가_없으면_401_UNAUTHORIZED_USER로_응답한다(
                 id=1, user_type="기록 탐험가", type_description="설명", hashtags=["#인생사진"]
             ),
             ArCharacter(
-                id=DEFAULT_CHARACTER_ID,
-                character_name=DEFAULT_AR_CHARACTER_NAME,
-                character_description="기본 캐릭터입니다.",
+                id=ONBOARDING_AR_CHARACTER_IDS[0],
+                character_name="제주 사진작가",
+                character_description="온보딩 캐릭터입니다.",
                 character_story_title="이야기 제목",
-                acquire_condition="온보딩에서 나중에 할게요를 선택하면 만날 수 있어요.",
-                character_img_url="https://example.com/images/characters/dolmungii.png",
-                hashtags=["#기본캐릭터"],
+                acquire_condition="PHOTO 여행 취향으로 만날 수 있어요.",
+                character_img_url="https://example.com/images/characters/001.png",
+                hashtags=["#PHOTO"],
             ),
         ]
     )
