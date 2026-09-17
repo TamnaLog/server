@@ -45,6 +45,12 @@ OTHER_LOCATION_TITLE = "협재 해수욕장"
 OTHER_LOCATION_MX = 126.2396
 OTHER_LOCATION_MY = 33.3937
 
+# 사용자 위치(제주시청 근처)에서 미션 장소보다 가까운 추천 전용 장소
+NEAR_LOCATION_ID = 3
+NEAR_LOCATION_TITLE = "제주 목관아"
+NEAR_LOCATION_MX = 126.5220
+NEAR_LOCATION_MY = 33.5130
+
 # 다음 장소까지의 직선거리를 계산할 사용자 현재 위치
 USER_LATITUDE = 33.4996
 USER_LONGITUDE = 126.5312
@@ -260,12 +266,37 @@ def _add_completed_roles(db_session: Session, count: int) -> None:
         )
 
 
-def _get(client: TestClient, user_id: int = CURRENT_USER_ID) -> dict:
+def _get(
+    client: TestClient,
+    user_id: int = CURRENT_USER_ID,
+    params: dict[str, float] | None = None,
+) -> dict:
     response = client.get(
-        _endpoint(), params=_location_query(), headers=auth_headers(user_id)
+        _endpoint(),
+        params=params if params is not None else _location_query(),
+        headers=auth_headers(user_id),
     )
     assert response.status_code == 200
     return response.json()
+
+
+def _add_location(
+    db_session: Session, location_id: int, title: str, mx: float, my: float
+) -> None:
+    """추천 후보가 될 장소를 추가한다."""
+    db_session.add(
+        Location(
+            id=location_id,
+            content_id=200000 + location_id,
+            location_title=title,
+            location_address="제주특별자치도 제주시",
+            location_category="관광지",
+            radius=400,
+            mx=mx,
+            my=my,
+        )
+    )
+    db_session.commit()
 
 
 def _user_point(db_session: Session, user_id: int) -> int:
@@ -461,6 +492,9 @@ def test_3단계_역할_집계는_인증_완료_수와_생성된_역할_수를_�
 def test_4단계는_참가자_역할_정보를_null로_두고_보상과_다음_장소를_반환한다(
     client: TestClient, db_session: Session, status_data: None
 ) -> None:
+    _add_location(
+        db_session, OTHER_LOCATION_ID, OTHER_LOCATION_TITLE, OTHER_LOCATION_MX, OTHER_LOCATION_MY
+    )
     _add_completed_roles(db_session, 3)
     _complete(db_session)
 
@@ -489,41 +523,76 @@ def test_4단계는_참가자_역할_정보를_null로_두고_보상과_다음_�
         "point": REWARD_POINT,
         "coupon": None,
     }
+    # 방금 미션을 한 장소는 제외하므로 남은 장소 중 가장 가까운 곳이 추천된다.
     assert body["nextLocation"] == {
-        "id": LOCATION_ID,
-        "locationTitle": LOCATION_TITLE,
+        "id": OTHER_LOCATION_ID,
+        "locationTitle": OTHER_LOCATION_TITLE,
         "locationImageUrl": LOCATION_IMAGE_URL,
         # Query 로 받은 사용자 위치에서 추천 장소까지의 직선거리(m)
         "distanceMeter": distance.calculate_distance_meter(
-            USER_LATITUDE, USER_LONGITUDE, LOCATION_MY, LOCATION_MX
+            USER_LATITUDE, USER_LONGITUDE, OTHER_LOCATION_MY, OTHER_LOCATION_MX
         ),
-        # 이 장소에 연결된 세부 미션은 이 협동 미션뿐이다.
-        "mission": {"id": COOPERATIVE_MISSION_ID, "missionType": "COOPERATIVE"},
+        # 추천 장소에 연결된 세부 미션이 없으면 null 이다.
+        "mission": None,
+    }
+
+
+def test_다음_장소는_미션_장소를_제외하고_사용자_위치에서_가장_가까운_장소다(
+    client: TestClient, db_session: Session, status_data: None
+) -> None:
+    _add_location(
+        db_session, OTHER_LOCATION_ID, OTHER_LOCATION_TITLE, OTHER_LOCATION_MX, OTHER_LOCATION_MY
+    )
+    _add_location(
+        db_session, NEAR_LOCATION_ID, NEAR_LOCATION_TITLE, NEAR_LOCATION_MX, NEAR_LOCATION_MY
+    )
+    _add_completed_roles(db_session, 3)
+    _complete(db_session)
+
+    # 사용자가 미션 장소에 서 있어도 그 장소는 다시 추천하지 않는다.
+    at_mission_location = {"latitude": LOCATION_MY, "longitude": LOCATION_MX}
+    body = _get(client, params=at_mission_location)
+
+    # 미션 장소에서 목관아(약 8km)가 협재(약 31km)보다 가깝다.
+    assert body["nextLocation"]["id"] == NEAR_LOCATION_ID
+    assert body["nextLocation"]["distanceMeter"] == distance.calculate_distance_meter(
+        LOCATION_MY, LOCATION_MX, NEAR_LOCATION_MY, NEAR_LOCATION_MX
+    )
+
+
+def test_다음_장소에_연결된_미션이_있으면_함께_반환한다(
+    client: TestClient, db_session: Session, status_data: None
+) -> None:
+    _add_location(
+        db_session, NEAR_LOCATION_ID, NEAR_LOCATION_TITLE, NEAR_LOCATION_MX, NEAR_LOCATION_MY
+    )
+    db_session.add(
+        CooperativeMission(
+            id=COOPERATIVE_MISSION_ID + 1,
+            mission_id=COOPERATIVE_TYPE_ID,
+            location_id=NEAR_LOCATION_ID,
+            reward_detail=REWARD_DETAIL,
+        )
+    )
+    db_session.commit()
+    _add_completed_roles(db_session, 3)
+    _complete(db_session)
+
+    body = _get(client)
+
+    assert body["nextLocation"]["id"] == NEAR_LOCATION_ID
+    assert body["nextLocation"]["mission"] == {
+        "id": COOPERATIVE_MISSION_ID + 1,
+        "missionType": "COOPERATIVE",
     }
 
 
 def test_completedLocation은_추천_장소가_아니라_완료한_미션의_장소다(
-    client: TestClient,
-    db_session: Session,
-    status_data: None,
-    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient, db_session: Session, status_data: None
 ) -> None:
-    # 추천 장소를 미션 장소와 다른 곳으로 고정해 두 필드가 섞이지 않는지 확인한다.
-    db_session.add(
-        Location(
-            id=OTHER_LOCATION_ID,
-            content_id=126280,
-            location_title=OTHER_LOCATION_TITLE,
-            location_address="제주특별자치도 제주시 한림읍 협재리",
-            location_category="해수욕장",
-            radius=400,
-            mx=OTHER_LOCATION_MX,
-            my=OTHER_LOCATION_MY,
-        )
-    )
-    db_session.commit()
-    monkeypatch.setattr(
-        next_location, "_pick_location", lambda db: db.get(Location, OTHER_LOCATION_ID)
+    # 미션 장소 말고 장소가 하나 더 있으면 그 장소가 추천되므로 두 필드가 섞이지 않는지 확인한다.
+    _add_location(
+        db_session, OTHER_LOCATION_ID, OTHER_LOCATION_TITLE, OTHER_LOCATION_MX, OTHER_LOCATION_MY
     )
     _add_completed_roles(db_session, 3)
     _complete(db_session)
@@ -651,16 +720,11 @@ def test_완료_역할이_없으면_보상_항목이_모두_null이다(
 
 
 def test_추천할_장소가_없으면_nextLocation은_null이다(
-    client: TestClient,
-    db_session: Session,
-    status_data: None,
-    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient, db_session: Session, status_data: None
 ) -> None:
     _add_completed_roles(db_session, 3)
     _complete(db_session)
-    # 미션이 참조하는 장소는 FK(RESTRICT) 때문에 지울 수 없어서, 추천할 장소가 하나도
-    # 없는 상황만 따로 만든다.
-    monkeypatch.setattr(next_location, "_pick_location", lambda db: None)
+    # 장소가 미션 장소 하나뿐이면, 미션 장소는 추천에서 제외되므로 추천할 장소가 없다.
 
     body = _get(client)
 

@@ -267,7 +267,9 @@ def save_treasure_mission_progress(
         progress.current_step = COMPLETED_STEP
         progress.mission_status = MissionStatus.COMPLETED.value
         progress.completed_at = now_kst()
-        recommended_location = _recommend_next_location(db, latitude, longitude)
+        recommended_location = _recommend_next_location(
+            db, latitude, longitude, treasure_mission.location_id
+        )
     else:
         progress.current_step = FINDING_STEP
         recommended_location = None
@@ -308,7 +310,9 @@ def stop_treasure_mission(
     progress.mission_status = MissionStatus.COMPLETED.value
     progress.current_step = COMPLETED_STEP
     progress.completed_at = now_kst()
-    recommended_location = _recommend_next_location(db, latitude, longitude)
+    recommended_location = _recommend_next_location(
+        db, latitude, longitude, treasure_mission.location_id
+    )
 
     db.commit()
     db.refresh(progress)
@@ -370,14 +374,16 @@ def _validate_treasure_index(progress: TreasureMissionProgress, treasure_index: 
 
 
 def _recommend_next_location(
-    db: Session, latitude: float, longitude: float
+    db: Session, latitude: float, longitude: float, completed_location_id: int
 ) -> NextLocationResponse:
-    """완료 응답에 넣을 다음 장소를 추천한다.
+    """완료 응답에 넣을 다음 장소를 추천한다. (방금 보물찾기를 한 장소는 제외)
 
     완료 응답의 `nextLocation` 은 반드시 객체여야 하므로, 추천할 장소 데이터가 하나도 없으면
     정상 완료로 처리하지 않고 예외를 발생시킨다. (공통 처리기가 500 으로 응답)
     """
-    recommended = next_location.recommend_next_location(db, latitude, longitude)
+    recommended = next_location.recommend_next_location(
+        db, latitude, longitude, exclude_location_id=completed_location_id
+    )
     if recommended is None:
         raise RuntimeError("추천할 수 있는 장소 데이터가 없어 미션 완료 응답을 만들 수 없습니다.")
     return recommended

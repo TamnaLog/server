@@ -294,6 +294,38 @@ def test_완료하면_다음_장소를_거리와_함께_추천한다(
     assert recommended["mission"] is None
 
 
+def test_장소가_여러_곳이면_사용자_위치에서_가장_가까운_장소를_추천한다(
+    client: TestClient, db_session: Session, progress_data: None
+) -> None:
+    # 사용자 위치(제주시청 부근) 바로 옆에 장소를 하나 더 둔다. (한담해안산책로보다 가깝다)
+    near_location_id = LOCATION_ID + 1
+    db_session.add(
+        Location(
+            id=near_location_id,
+            content_id=126508,
+            location_title="제주 관덕정",
+            location_address="제주특별자치도 제주시 관덕로 19",
+            location_category="문화재",
+            radius=200,
+            mx=USER_LONGITUDE + 0.001,
+            my=USER_LATITUDE + 0.001,
+        )
+    )
+    _add_progress(db_session, current_quiz_index=QUIZ_TOTAL_COUNT)
+    db_session.commit()
+
+    response = client.patch(
+        _endpoint(PROGRESS_ID),
+        params=_params(),
+        json={"quizIndex": QUIZ_TOTAL_COUNT, "isCorrect": False},
+    )
+
+    assert response.status_code == 200
+    recommended = response.json()["nextLocation"]
+    assert recommended["id"] == near_location_id
+    assert recommended["locationTitle"] == "제주 관덕정"
+
+
 def test_다음_장소에_연결된_미션이_있으면_유형과_세부_미션_id를_반환한다(
     client: TestClient, db_session: Session, progress_data: None
 ) -> None:

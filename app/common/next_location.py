@@ -3,15 +3,18 @@
 미션을 끝낸 뒤 "다음엔 여기로 가보세요"를 내려주는 규칙은 미션 유형과 무관하게 같으므로
 공용 모듈에 한 번만 두고 각 도메인에서 import해서 쓴다.
 
-추천 기준이 확정되기 전까지는 `LOCATION` 에 있는 장소 중 하나를 무작위로 고른다.
-장소에 여러 세부 미션이 연결돼 있으면 그중 하나도 무작위로 고른다.
-추후 기준이 확정되면 이 모듈 내부 로직만 교체하면 된다.
-(app/culture_mission/docs/BUSINESS_RULES.md - 6. 다음 장소 추천 / 7. 다음 장소의 미션 정보)
+추천 기준
+- 기준 좌표에서 직선거리가 가장 가까운 `LOCATION` 하나를 고른다.
+- 방금 미션을 진행한 장소는 제외한다. (그 자리에 있는 사용자에게 같은 장소를 다시 추천하지 않는다)
+- 거리가 같으면 `LOCATION.id` 가 작은 장소를 고른다.
+- 장소에 연결된 세부 미션이 있으면 그중 하나를 함께 내려주고, 없으면 `mission` 은 `null` 이다.
+  여러 개가 연결돼 있으면 그중 하나를 무작위로 고른다.
 
 문화 미션은 장소를 갖지 않으므로 다음 장소에 연결될 수 있는 미션 유형은 협동/보물 찾기뿐이다.
 """
 
 import random
+from math import cos, radians
 
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
@@ -63,13 +66,17 @@ class NextLocationResponse(NextLocationSummaryResponse):
 
 
 def recommend_next_location(
-    db: Session, latitude: float, longitude: float
+    db: Session,
+    latitude: float,
+    longitude: float,
+    exclude_location_id: int | None = None,
 ) -> NextLocationResponse | None:
-    """다음에 갈 장소를 추천한다. (현재는 랜덤)
+    """사용자 위치에서 가장 가까운 장소를 다음 장소로 추천한다.
 
+    `exclude_location_id` 에는 방금 미션을 진행한 장소를 넘긴다. (장소가 없는 문화 미션은 `None`)
     추천할 장소가 하나도 없으면 `None` 을 반환한다.
     """
-    location = _pick_location(db)
+    location = _pick_location(db, latitude, longitude, exclude_location_id)
     if location is None:
         return None
 
@@ -84,12 +91,15 @@ def recommend_next_location(
     )
 
 
-def recommend_next_location_summary(db: Session) -> NextLocationSummaryResponse | None:
-    """사용자 좌표 없이 다음에 갈 장소를 추천한다. (거리 제외, 현재는 랜덤)
+def recommend_next_location_summary(
+    db: Session, base_location: Location
+) -> NextLocationSummaryResponse | None:
+    """사용자 좌표 없이 다음에 갈 장소를 추천한다. (거리 제외)
 
-    추천 기준은 좌표가 있는 경우와 같다. 거리만 계산하지 않는다.
+    사용자 좌표 대신 방금 미션을 진행한 장소(`base_location`)를 기준 좌표로 삼고,
+    그 장소를 제외한 가장 가까운 장소를 고른다. 추천 기준은 좌표가 있는 경우와 같다.
     """
-    location = _pick_location(db)
+    location = _pick_location(db, base_location.my, base_location.mx, base_location.id)
     if location is None:
         return None
 
@@ -101,13 +111,23 @@ def recommend_next_location_summary(db: Session) -> NextLocationSummaryResponse 
     )
 
 
-def _pick_location(db: Session) -> Location | None:
-    """추천할 장소를 고른다. (현재는 랜덤)"""
-    # TODO: 추천 기준 확정 시 사용자 위치/취향 기반 추천 로직으로 교체
-    locations = list(db.scalars(select(Location)).all())
-    if not locations:
-        return None
-    return random.choice(locations)
+def _pick_location(
+    db: Session, latitude: float, longitude: float, exclude_location_id: int | None
+) -> Location | None:
+    """기준 좌표에서 가장 가까운 장소를 고른다. 거리가 같으면 id 가 작은 장소.
+
+    정렬은 DB 에서 하되, 하버사인 대신 경도 차이에 cos(위도)를 곱한 평면 거리의 제곱을 쓴다.
+    제주 안의 거리에서는 하버사인과 순서가 사실상 같고, MySQL/SQLite 모두 사칙연산만으로 계산된다.
+    """
+    lng_scale = cos(radians(latitude))
+    squared_distance = (Location.my - latitude) * (Location.my - latitude) + (
+        (Location.mx - longitude) * lng_scale
+    ) * ((Location.mx - longitude) * lng_scale)
+
+    statement = select(Location).order_by(squared_distance, Location.id).limit(1)
+    if exclude_location_id is not None:
+        statement = statement.where(Location.id != exclude_location_id)
+    return db.scalars(statement).first()
 
 
 def _pick_mission(db: Session, location_id: int) -> NextLocationMissionResponse | None:
@@ -115,7 +135,6 @@ def _pick_mission(db: Session, location_id: int) -> NextLocationMissionResponse 
 
     id 는 공통 `MISSION.id` 가 아니라 유형별 세부 미션 테이블의 id다.
     """
-    # TODO: 추천 기준 확정 시 미션 선택 로직도 함께 교체
     cooperative_ids = db.scalars(
         select(CooperativeMission.id).where(CooperativeMission.location_id == location_id)
     ).all()

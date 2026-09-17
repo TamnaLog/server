@@ -742,7 +742,9 @@ def _to_completed_status(
         cooperative_mission=cooperative_mission,
         completed_role_count=reward_granter.count_completed_roles(db, progress.id),
     )
-    response.next_location = next_location.recommend_next_location(db, latitude, longitude)
+    response.next_location = next_location.recommend_next_location(
+        db, latitude, longitude, exclude_location_id=cooperative_mission.location_id
+    )
     return response
 
 
@@ -1187,11 +1189,13 @@ def leave_cooperative_mission(
         db.rollback()
         raise
 
+    # 나가기는 사용자 좌표를 받지 않으므로 미션 장소를 기준으로 가장 가까운 다른 장소를 추천한다.
+    cooperative_mission = _get_cooperative_mission(db, progress.cooperative_mission_id)
     return CooperativeMissionLeaveResponse(
         mission_progress_id=progress.id,
         # 나가기는 보상을 지급하지 않으므로 세 항목 모두 비운다.
         reward=GrantedRewardResponse(),
-        next_location=next_location.recommend_next_location_summary(db),
+        next_location=next_location.recommend_next_location_summary(db, cooperative_mission.location),
     )
 
 

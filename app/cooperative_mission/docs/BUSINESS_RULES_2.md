@@ -256,14 +256,16 @@ coupon_reward_granted = TRUE
 4단계 상태 조회에서는 `common`에 존재하는 다음 장소 추천 로직을 호출한다.
 
 - 현재 호출 사용자를 기준으로 추천 로직을 실행한다.
-- 참가자마다 서로 다른 장소가 추천될 수 있다.
+- Query의 사용자 위치에서 직선거리가 가장 가까운 `LOCATION`을 추천한다. 거리가 같으면 `LOCATION.id`가 작은 장소를 고른다.
+- 방금 완료한 협동 미션의 장소(`COOPERATIVE_MISSION.location_id`)는 추천에서 제외한다.
+- 참가자마다 위치가 다르므로 서로 다른 장소가 추천될 수 있다.
 - 이전 폴링에서 반환한 장소와 같은 장소를 유지할 의무는 없다.
 - 상태 조회 API는 별도의 다음 장소 추천 로직을 중복 구현하지 않는다.
 - 문화 미션, 보물찾기 미션 완료와 같이 거리를 포함하는 `recommend_next_location()`을 사용한다.
 - Query로 전달받은 사용자 위치에서 추천 장소까지의 직선거리를 `nextLocation.distanceMeter`에 미터 단위로 반환한다.
 - 추천 결과는 명세의 `nextLocation` 형식으로 변환하여 반환한다.
-- 추천할 장소가 없으면 `nextLocation: null`을 반환한다.
-- 추천 장소에 연결된 미션이 없으면 `nextLocation.mission: null`을 반환한다.
+- 추천할 장소가 없으면(미션 장소 외에 장소가 없으면) `nextLocation: null`을 반환한다.
+- 추천 장소에 연결된 협동/보물찾기 미션이 있으면 그중 하나를 `nextLocation.mission`에 담고, 없으면 `nextLocation.mission: null`을 반환한다.
 
 1~3단계에서는 추천 로직을 실행하지 않고 `nextLocation: null`을 반환한다.
 
@@ -479,8 +481,9 @@ LIMIT 1
 
 - 나가기 서비스에 별도의 추천 로직을 중복 구현하지 않는다.
 - 현재 API는 사용자 위도·경도를 받지 않으므로 거리 없는 `recommend_next_location_summary()`를 사용한다.
-- 추천할 장소가 없으면 `nextLocation: null`을 반환한다.
-- 추천 장소에 연결된 미션이 없으면 `nextLocation.mission: null`을 반환한다.
+- 사용자 위치 대신 나간 협동 미션의 장소 좌표를 기준으로, 그 장소를 제외하고 가장 가까운 `LOCATION`을 추천한다. 거리가 같으면 `LOCATION.id`가 작은 장소를 고른다.
+- 추천할 장소가 없으면(미션 장소 외에 장소가 없으면) `nextLocation: null`을 반환한다.
+- 추천 장소에 연결된 협동/보물찾기 미션이 있으면 그중 하나를 `nextLocation.mission`에 담고, 없으면 `nextLocation.mission: null`을 반환한다.
 
 ## 11. 처리 순서와 트랜잭션
 

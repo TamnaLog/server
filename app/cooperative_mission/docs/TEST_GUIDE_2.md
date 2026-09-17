@@ -74,11 +74,13 @@
 - 여러 번 폴링해도 포인트·획득 기록이 늘지 않고 같은 보상 정보를 반환한다.
 - `nextLocation.distanceMeter` 는 Query 좌표와 추천 장소 좌표로 계산한 직선거리(m)와 같다.
   (공통 `distance.calculate_distance_meter()` 결과와 비교한다)
-- 추천할 장소가 하나도 없으면 `nextLocation` 만 `null` 이고 보상 정산은 정상 처리된다.
-  (미션이 참조하는 장소는 FK 때문에 지울 수 없어서 추천 로직만 "고를 장소 없음"으로 바꿔 확인한다)
+- `nextLocation` 은 **미션 장소를 제외하고** 사용자 위치에서 가장 가까운 장소다.
+  사용자가 미션 장소에 서 있어도 그 장소는 다시 추천하지 않고, 더 가까운 후보가 뽑히는지 본다.
+- 추천 장소에 연결된 세부 미션이 있으면 `nextLocation.mission` 에 유형과 id 가 담기고, 없으면 `null` 이다.
+- 미션 장소 말고 장소가 없으면 `nextLocation` 만 `null` 이고 보상 정산은 정상 처리된다.
 - `completedLocation` 은 **완료한 협동 미션의 장소**(`COOPERATIVE_MISSION.location_id`)다.
   프론트가 이어서 여는 방명록 작성 화면에 쓰는 값이라 추천 장소와 섞이면 안 된다.
-  그래서 추천 장소를 미션 장소와 **다른 곳으로 고정**해 두 필드가 각각 제 값인지 확인한다.
+  미션 장소는 추천에서 빠지므로 두 필드가 각각 제 값인지 확인한다.
 
 ### 4. 404
 
@@ -302,7 +304,8 @@ Blob 호출은 실제 Azure 로 나가지 않도록 `uploads` / `deletes` 픽스
 - `reward`는 `{arCharacter: null, point: null, coupon: null}` 이고,
   실제로도 `USER.point`가 늘지 않고 `ACQUIRED_AR_CHARACTER`가 생기지 않으며
   진행도의 보상 지급 여부도 그대로다.
-- `nextLocation`은 공통 추천 로직 결과다. 추천할 장소가 없으면 `null`.
+- `nextLocation`은 공통 추천 로직 결과로, 나간 미션의 장소를 제외하고 **그 장소에서 가장 가까운 장소**다.
+  사용자 좌표를 받지 않으므로 거리(`distanceMeter`)는 없다. 미션 장소 말고 장소가 없으면 `null`.
 
 #### 2. 일반 팀원 / 대기 참가자 나가기
 

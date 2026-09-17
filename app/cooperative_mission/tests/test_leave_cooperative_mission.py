@@ -304,26 +304,59 @@ def test_보상은_지급하지_않고_세_항목을_모두_null로_반환한다
     assert progress.coupon_reward_granted is False
 
 
-def test_다음_장소를_추천해_함께_반환한다(
-    client: TestClient, leave_data: None
+def _add_location(
+    db_session: Session, location_id: int, title: str, mx: float, my: float
 ) -> None:
+    """추천 후보가 될 장소를 추가한다."""
+    db_session.add(
+        Location(
+            id=location_id,
+            content_id=200000 + location_id,
+            location_title=title,
+            location_address="제주특별자치도 제주시",
+            location_category="관광지",
+            radius=400,
+            mx=mx,
+            my=my,
+        )
+    )
+    db_session.commit()
+
+
+def test_다음_장소를_추천해_함께_반환한다(
+    client: TestClient, db_session: Session, leave_data: None
+) -> None:
+    _add_location(db_session, 2, "협재 해수욕장", mx=126.2396, my=33.3937)
+
     response = client.delete(_endpoint(), headers=auth_headers(MEMBER_USER_ID))
 
     assert response.status_code == 200
-    next_location_response = response.json()["nextLocation"]
-    assert next_location_response is not None
-    # 목업에 장소가 하나뿐이라 그 장소가 추천된다.
-    assert next_location_response["id"] == LOCATION_ID
-    assert next_location_response["locationTitle"] == "종화네 과수원"
+    # 나가기 응답은 사용자 좌표가 없어 거리 없이 내려준다.
+    assert response.json()["nextLocation"] == {
+        "id": 2,
+        "locationTitle": "협재 해수욕장",
+        "locationImageUrl": None,
+        "mission": None,
+    }
 
 
-def test_추천할_장소가_없으면_nextLocation이_null이다(
+def test_다음_장소는_미션_장소를_제외하고_미션_장소에서_가장_가까운_장소다(
     client: TestClient, db_session: Session, leave_data: None
 ) -> None:
-    # 추천은 LOCATION 중 하나를 고르므로 장소가 하나도 없어야 null 이 된다.
-    db_session.execute(Location.__table__.delete())
-    db_session.commit()
+    # 미션 장소(종화네 과수원)에서 목관아(약 8km)가 협재(약 31km)보다 가깝다.
+    _add_location(db_session, 2, "협재 해수욕장", mx=126.2396, my=33.3937)
+    _add_location(db_session, 3, "제주 목관아", mx=126.5220, my=33.5130)
 
+    response = client.delete(_endpoint(), headers=auth_headers(MEMBER_USER_ID))
+
+    assert response.status_code == 200
+    assert response.json()["nextLocation"]["id"] == 3
+
+
+def test_미션_장소_말고_추천할_장소가_없으면_nextLocation이_null이다(
+    client: TestClient, leave_data: None
+) -> None:
+    # 목업 장소는 미션 장소 하나뿐이고, 미션 장소는 추천에서 제외된다.
     response = client.delete(_endpoint(), headers=auth_headers(MEMBER_USER_ID))
 
     assert response.status_code == 200

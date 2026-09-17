@@ -39,6 +39,12 @@ LOCATION_LAT = 33.3663
 LOCATION_LNG = 126.3577
 COOPERATIVE_MISSION_ID = 41
 
+# 다음 장소로 추천될 장소. (중단한 보물찾기의 장소는 추천에서 제외된다)
+NEXT_LOCATION_ID = 9
+NEXT_LOCATION_TITLE = "금오름"
+NEXT_LOCATION_LAT = 33.3544
+NEXT_LOCATION_LNG = 126.3059
+
 USER_LATITUDE = 33.3663
 USER_LONGITUDE = 126.3582
 
@@ -106,6 +112,16 @@ def progress_data(db_session: Session) -> None:
                 radius=300,
                 mx=LOCATION_LNG,
                 my=LOCATION_LAT,
+            ),
+            Location(
+                id=NEXT_LOCATION_ID,
+                content_id=2686932,
+                location_title=NEXT_LOCATION_TITLE,
+                location_address="제주특별자치도 제주시 한림읍 금악리 산 1-1",
+                location_category="오름",
+                radius=300,
+                mx=NEXT_LOCATION_LNG,
+                my=NEXT_LOCATION_LAT,
             ),
             User(
                 id=CURRENT_USER_ID,
@@ -217,21 +233,20 @@ def test_중단하면_명세의_필드를_모두_반환한다(
 
     body = _stop(client)
 
-    saved_location = db_session.get(Location, LOCATION_ID)
-    assert saved_location is not None
     assert body == {
         "missionProgressStatus": "COMPLETED",
         "treasureCount": ITEM_TOTAL_COUNT,
         "foundTreasureIndexes": [1, 2],
+        # 중단한 보물찾기의 장소는 제외하고 남은 장소 중 가장 가까운 곳을 추천한다.
         "nextLocation": {
-            "id": LOCATION_ID,
-            "locationTitle": LOCATION_TITLE,
+            "id": NEXT_LOCATION_ID,
+            "locationTitle": NEXT_LOCATION_TITLE,
             "locationImageUrl": LOCATION_IMAGE_URL,
             "distanceMeter": distance.calculate_distance_meter(
-                USER_LATITUDE, USER_LONGITUDE, saved_location.my, saved_location.mx
+                USER_LATITUDE, USER_LONGITUDE, NEXT_LOCATION_LAT, NEXT_LOCATION_LNG
             ),
-            # 이 장소에 연결된 세부 미션은 지금 중단한 보물찾기 미션뿐이다.
-            "mission": {"id": TREASURE_MISSION_ID, "missionType": "TREASURE"},
+            # 추천 장소에 연결된 세부 미션이 없으면 null 이다.
+            "mission": None,
         },
     }
     # 보상은 보물을 찾을 때 이미 지급하므로 중단 응답에는 넣지 않는다.
@@ -308,20 +323,45 @@ def test_다음_장소에_연결된_미션이_있으면_유형과_세부_미션_
         CooperativeMission(
             id=COOPERATIVE_MISSION_ID,
             mission_id=COOPERATIVE_TYPE_ID,
-            location_id=LOCATION_ID,
+            location_id=NEXT_LOCATION_ID,
             reward_detail={},
         )
     )
     db_session.commit()
     _add_progress(db_session, found_item_idx=[1])
 
-    mission = _stop(client)["nextLocation"]["mission"]
+    body = _stop(client)
 
-    # 연결된 미션이 여러 개면 그중 하나가 무작위로 선정된다.
-    assert (mission["missionType"], mission["id"]) in {
-        ("COOPERATIVE", COOPERATIVE_MISSION_ID),
-        ("TREASURE", TREASURE_MISSION_ID),
+    assert body["nextLocation"]["id"] == NEXT_LOCATION_ID
+    assert body["nextLocation"]["mission"] == {
+        "id": COOPERATIVE_MISSION_ID,
+        "missionType": "COOPERATIVE",
     }
+
+
+def test_중단한_보물찾기의_장소는_제외하고_가장_가까운_장소를_추천한다(
+    client: TestClient, db_session: Session, progress_data: None
+) -> None:
+    # 사용자는 보물찾기 장소 바로 옆에 있어 그 장소가 가장 가깝지만 추천되지 않는다.
+    # 남은 두 장소 중 더 가까운 금오름(NEXT_LOCATION)이 추천돼야 한다.
+    db_session.add(
+        Location(
+            id=1,
+            content_id=2686933,
+            location_title="성산일출봉",
+            location_address="제주특별자치도 서귀포시 성산읍 성산리 1",
+            location_category="오름",
+            radius=300,
+            mx=126.9425,
+            my=33.4580,
+        )
+    )
+    db_session.commit()
+    _add_progress(db_session, found_item_idx=[1])
+
+    body = _stop(client)
+
+    assert body["nextLocation"]["id"] == NEXT_LOCATION_ID
 
 
 def test_장소_이미지를_조회하지_못하면_locationImageUrl은_null이다(
@@ -344,7 +384,8 @@ def test_추천할_장소가_없으면_중단_응답을_만들지_않고_500으�
     client: TestClient, db_session: Session, progress_data: None
 ) -> None:
     _add_progress(db_session, found_item_idx=[1])
-    db_session.query(Location).delete()
+    # 중단한 보물찾기의 장소는 추천에서 제외되므로, 그 장소만 남으면 추천할 장소가 없다.
+    db_session.query(Location).filter(Location.id != LOCATION_ID).delete()
     db_session.commit()
 
     response = client.patch(_endpoint(PROGRESS_ID), params=_params())
