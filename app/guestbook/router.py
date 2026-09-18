@@ -119,9 +119,6 @@ def get_guestbooks(
         status.HTTP_404_NOT_FOUND: _error_response(
             "방명록을 찾을 수 없거나 삭제된 방명록", service.GUESTBOOK_NOT_FOUND
         ),
-        status.HTTP_409_CONFLICT: _error_response(
-            "현재 사용자가 작성한 방명록", service.OWN_GUESTBOOK_LIKE_NOT_ALLOWED
-        ),
     },
 )
 def set_guestbook_like(

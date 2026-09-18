@@ -25,7 +25,7 @@ from conftest import CURRENT_USER_ID, access_token_hash, auth_headers
 
 LOCATION_ID = 39
 
-# 나(=CURRENT_USER_ID) 말고 다른 사람들. 본인 방명록에는 좋아요를 누를 수 없다.
+# 나(=CURRENT_USER_ID) 말고 다른 사람들.
 AUTHOR_USER_ID = 2
 THIRD_USER_ID = 3
 
@@ -33,7 +33,7 @@ THIRD_USER_ID = 3
 GENERAL_ID = 101
 ROAD_ID = 201
 
-# 내가 쓴 방명록 (409 대상)
+# 내가 쓴 방명록
 MY_GENERAL_ID = 102
 MY_ROAD_ID = 202
 
@@ -548,28 +548,37 @@ def test_대상_방명록이_없으면_404다(
 
 
 @pytest.mark.parametrize("is_liked", [True, False])
-def test_본인_방명록이면_409다(
+def test_본인_방명록도_좋아요_상태를_변경할_수_있다(
     client: TestClient, db_session: Session, like_data: None, is_liked: bool
 ) -> None:
     response = _put(client, MY_GENERAL_ID, is_liked=is_liked)
 
-    # isLiked 값과 관계없이 막는다.
-    assert response.status_code == 409
-    assert response.json() == {"code": "OWN_GUESTBOOK_LIKE_NOT_ALLOWED"}
-    assert _likes(db_session) == []
+    assert response.status_code == 200
+    assert response.json() == {
+        "guestbookId": MY_GENERAL_ID,
+        "guestbookType": "GENERAL",
+        "isLiked": is_liked,
+        "likeCount": int(is_liked),
+    }
+    assert len(_likes(db_session)) == int(is_liked)
 
 
-def test_본인_길바닥_방명록도_409다(
+def test_본인_길바닥_방명록도_좋아요를_남길_수_있다(
     client: TestClient, db_session: Session, like_data: None
 ) -> None:
     response = _put(client, MY_ROAD_ID, guestbook_type="ROAD")
 
-    assert response.status_code == 409
-    assert response.json() == {"code": "OWN_GUESTBOOK_LIKE_NOT_ALLOWED"}
-    assert _road_likes(db_session) == []
+    assert response.status_code == 200
+    assert response.json() == {
+        "guestbookId": MY_ROAD_ID,
+        "guestbookType": "ROAD",
+        "isLiked": True,
+        "likeCount": 1,
+    }
+    assert len(_road_likes(db_session)) == 1
 
 
-def test_삭제된_본인_방명록은_409가_아니라_404다(
+def test_삭제된_본인_방명록은_404다(
     client: TestClient, db_session: Session, like_data: None
 ) -> None:
     _add_general(db_session, guestbook_id=112, user_id=CURRENT_USER_ID, deleted_at=CANCELED_AT)

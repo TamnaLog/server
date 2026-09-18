@@ -56,7 +56,6 @@ LOCATION_NOT_FOUND = "LOCATION_NOT_FOUND"
 LOCATION_NOT_VISITED = "LOCATION_NOT_VISITED"
 MISSION_NOT_FOUND = "MISSION_NOT_FOUND"
 GUESTBOOK_NOT_FOUND = "GUESTBOOK_NOT_FOUND"
-OWN_GUESTBOOK_LIKE_NOT_ALLOWED = "OWN_GUESTBOOK_LIKE_NOT_ALLOWED"
 
 # Blob 저장 경로. 유형과 생성된 방명록 id 로 나눈다.
 GUESTBOOK_BLOB_PREFIX = "guestbook"
@@ -711,12 +710,8 @@ def set_guestbook_like(
     상태 변경과 개수 집계는 한 트랜잭션에서 하고, 중간에 실패하면 전부 롤백한다.
     """
     table = _LIKE_TABLES[request.guestbook_type]
-    author_id = _get_like_target_author_id(db, table, guestbook_id)
-    if author_id == current_user_id:
-        raise ConflictError(
-            OWN_GUESTBOOK_LIKE_NOT_ALLOWED,
-            detail=f"사용자 {current_user_id} 는 자신의 방명록에 좋아요를 누를 수 없습니다.",
-        )
+    # 본인이 작성한 방명록에도 좋아요를 남길 수 있도록 허용한다.
+    _get_like_target_author_id(db, table, guestbook_id)
 
     _apply_like(db, table, guestbook_id, current_user_id, request.is_liked)
     # 변경을 flush 한 뒤에 세야 방금 바꾼 상태가 개수에 반영된다.
