@@ -1,8 +1,11 @@
 """제주시청 주변 심사용 방명록 데이터를 생성한다.
 
-장소 방명록 15건은 LOCATION 테이블에서 제주시청과 가까운 순서로 고른다.
+일반 방명록 20~34번이 가리키는 각 장소에 방명록을 2~4건씩 추가한다.
+각 장소의 추가 방명록 중 무작위로 고른 1건에만 이미지를 넣는다.
+TourAPI에 사용할 수 있는 이미지가 전혀 없는 장소는 사진 없이 계속 진행한다.
 길바닥 방명록 15건은 제주시청 반경 안에 좌표를 분산해 생성한다.
-일부 방명록에는 TourAPI detailImage2 원본 이미지를 내려받아 Azure Blob의
+일반 방명록 사진과 일부 길바닥 방명록 사진은 TourAPI detailImage2 원본 이미지를
+우선 사용하고, 없으면 detailCommon2 대표 이미지를 내려받아 Azure Blob의
 ``guestbooke_test/`` 경로에 올린 URL을 저장한다.
 
 기본 실행은 .env의 공통/TourAPI/Blob 설정과 .env.azure.database의 DB 설정을
@@ -12,7 +15,8 @@
     python scripts/seed_jeju_cityhall_guestbooks.py --user-ids 1,2,3
     python scripts/seed_jeju_cityhall_guestbooks.py --local --user-ids 1
 
-같은 문구의 활성 방명록이 이미 있으면 중복 생성하지 않는다. DB 저장이 실패하면
+추가되는 모든 방명록은 글이 필수이고 오디오는 저장하지 않는다. 같은 문구의 활성
+방명록이 이미 있으면 중복 생성하지 않는다. DB 저장이 실패하면
 이번 실행에서 업로드한 Blob도 삭제한다.
 """
 
@@ -24,6 +28,7 @@ import math
 import mimetypes
 import os
 import random
+import sys
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
@@ -41,7 +46,10 @@ AZURE_ENV_FILE = PROJECT_ROOT / ".env.azure.database"
 # 제주시청 본관(제주시 광양9길 10) 부근. 필요하면 CLI 옵션으로 덮어쓸 수 있다.
 JEJU_CITY_HALL_LATITUDE = 33.49957
 JEJU_CITY_HALL_LONGITUDE = 126.53120
-GENERAL_COUNT = 15
+TARGET_GUESTBOOK_START_ID = 20
+TARGET_GUESTBOOK_END_ID = 34
+GENERAL_MIN_PER_LOCATION = 2
+GENERAL_MAX_PER_LOCATION = 4
 ROAD_COUNT = 15
 MAX_AUTHORS = 10
 TOUR_API_TIMEOUT_SECONDS = 15.0
@@ -72,11 +80,13 @@ SHOPPING_WRITINGS = (
     "제주다운 소품이 많아 구경하는 재미가 있었다. 부담 없이 선물 고르기 좋은 곳이다.",
     "진열이 깔끔하고 제품 설명도 친절했다. 여행을 기억할 작은 기념품을 골랐다.",
     "흔한 기념품보다 개성 있는 물건이 많았다. 천천히 둘러보다 마음에 드는 걸 찾았다.",
+    "작은 물건마다 제주 분위기가 담겨 있었다. 오래 간직할 선물을 고르기 좋았다.",
 )
 CULTURE_WRITINGS = (
     "전시를 따라 천천히 걷다 보니 제주의 이야기가 더 가깝게 느껴졌다. 조용히 머물기 좋았다.",
     "공간은 아담하지만 볼거리가 알찼다. 설명을 읽으며 둘러보니 시간이 금방 지나갔다.",
     "제주의 분위기를 차분하게 느낄 수 있었다. 비 오는 날 다시 찾아와도 좋을 것 같다.",
+    "설명을 하나씩 읽으며 둘러보니 몰랐던 제주 이야기를 많이 알게 되었다.",
 )
 ATTRACTION_WRITINGS = (
     "도심 가까이에 이런 풍경이 있다는 게 반가웠다. 천천히 걸으며 쉬어 가기 좋았다.",
@@ -138,6 +148,19 @@ class ImageUpload:
     blob_name: str
 
 
+@dataclass(frozen=True)
+class GeneralGuestbookPlan:
+    location: Location
+    writing: str
+    user_id: int
+    has_image: bool
+    weather: str | None
+    temperature: float | None
+    color: str | None
+    visited_at: date
+    saved_at: datetime
+
+
 def load_environment(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     if path.exists():
@@ -190,38 +213,59 @@ def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * radius_m * math.asin(math.sqrt(a))
 
 
-def nearest_locations(
-    connection: pymysql.Connection, latitude: float, longitude: float
+def target_locations(
+    connection: pymysql.Connection,
+    latitude: float,
+    longitude: float,
+    start_id: int,
+    end_id: int,
 ) -> list[Location]:
-    # 전체 LOCATION을 읽어 Python에서 Haversine 거리로 정렬한다. 제주 LOCATION 규모에서는
-    # 충분히 작고, MySQL 버전별 공간 함수 차이도 피할 수 있다.
     with connection.cursor() as cursor:
         cursor.execute(
             """
-            SELECT `id`, `content_id`, `location_title`, `location_category`, `mx`, `my`
-            FROM `LOCATION`
-            """
+            SELECT g.`id`, l.`id`, l.`content_id`, l.`location_title`,
+                   l.`location_category`, l.`mx`, l.`my`
+            FROM `GUESTBOOK` AS g
+            INNER JOIN `LOCATION` AS l ON l.`id` = g.`location_id`
+            WHERE g.`id` BETWEEN %s AND %s
+            ORDER BY g.`id`
+            """,
+            (start_id, end_id),
         )
         rows = cursor.fetchall()
 
-    locations = [
-        Location(
-            id=int(row[0]),
-            content_id=int(row[1]),
-            title=str(row[2]),
-            category=str(row[3]),
-            longitude=float(row[4]),
-            latitude=float(row[5]),
-            distance_m=haversine_m(latitude, longitude, float(row[5]), float(row[4])),
-        )
-        for row in rows
-    ]
-    locations.sort(key=lambda item: (item.distance_m, item.id))
-    if len(locations) < GENERAL_COUNT:
+    expected_count = end_id - start_id + 1
+    if len(rows) != expected_count:
+        found_ids = {int(row[0]) for row in rows}
+        missing_ids = [
+            guestbook_id
+            for guestbook_id in range(start_id, end_id + 1)
+            if guestbook_id not in found_ids
+        ]
         raise RuntimeError(
-            f"LOCATION이 {GENERAL_COUNT}개보다 적습니다. 먼저 scripts/insert_location.py를 실행하세요."
+            f"일반 방명록 {start_id}~{end_id}번 중 장소를 확인할 수 없는 id가 있습니다: "
+            f"{missing_ids}"
         )
-    return locations[:GENERAL_COUNT]
+
+    # 같은 장소를 가리키는 기준 방명록이 여러 개여도 장소별로 한 번만 생성한다.
+    locations_by_id: dict[int, Location] = {}
+    for row in rows:
+        location_id = int(row[1])
+        locations_by_id.setdefault(
+            location_id,
+            Location(
+                id=location_id,
+                content_id=int(row[2]),
+                title=str(row[3]),
+                category=str(row[4]),
+                longitude=float(row[5]),
+                latitude=float(row[6]),
+                distance_m=haversine_m(
+                    latitude, longitude, float(row[6]), float(row[5])
+                ),
+            ),
+        )
+    return list(locations_by_id.values())
 
 
 def resolve_user_ids(
@@ -246,18 +290,64 @@ def resolve_user_ids(
     return existing
 
 
-def writing_for(location: Location, index: int) -> str:
+def writing_pool_for(location: Location) -> tuple[str, ...]:
     category = location.category
     if "음식" in category:
-        pool = FOOD_WRITINGS
+        return FOOD_WRITINGS
     elif "쇼핑" in category:
-        pool = SHOPPING_WRITINGS
+        return SHOPPING_WRITINGS
     elif "문화" in category or "공연" in category or "전시" in category:
-        pool = CULTURE_WRITINGS
-    else:
-        pool = ATTRACTION_WRITINGS
-    review = pool[index % len(pool)]
-    return f"{location.title}, {review}"
+        return CULTURE_WRITINGS
+    return ATTRACTION_WRITINGS
+
+
+def additional_writing_for(location: Location, index: int) -> str:
+    contexts = (
+        "처음 천천히 둘러본 날의 기록이다.",
+        "여행 중 잠시 쉬어 간 날의 기록이다.",
+        "제주의 일상을 가까이 느낀 날의 기록이다.",
+        "다음 여행에도 기억하고 싶은 날의 기록이다.",
+    )
+    pool = writing_pool_for(location)
+    return f"{location.title}, {pool[index % len(pool)]} {contexts[index]}"
+
+
+def build_general_plans(
+    locations: list[Location],
+    user_ids: list[int],
+    rng: random.Random,
+    today: date,
+) -> list[GeneralGuestbookPlan]:
+    plans: list[GeneralGuestbookPlan] = []
+    for location in locations:
+        count = rng.randint(GENERAL_MIN_PER_LOCATION, GENERAL_MAX_PER_LOCATION)
+        image_index = rng.randrange(count)
+        for index in range(count):
+            weather = rng.choice((None, *WEATHERS))
+            temperature = (
+                temperature_for(weather, rng)
+                if weather is not None and rng.random() < 0.75
+                else None
+            )
+            days_ago = rng.randint(1, 20)
+            visited = today - timedelta(days=days_ago)
+            saved = datetime.combine(
+                visited, time(hour=rng.randint(9, 20), minute=rng.randint(0, 59))
+            )
+            plans.append(
+                GeneralGuestbookPlan(
+                    location=location,
+                    writing=additional_writing_for(location, index),
+                    user_id=rng.choice(user_ids),
+                    has_image=index == image_index,
+                    weather=weather,
+                    temperature=temperature,
+                    color=rng.choice((None, *COLORS)),
+                    visited_at=visited,
+                    saved_at=saved,
+                )
+            )
+    return plans
 
 
 def temperature_for(weather: str, rng: random.Random) -> float:
@@ -313,6 +403,49 @@ def fetch_detail_image_url(
     return None
 
 
+def fetch_representative_image_url(
+    client: httpx.Client, config: dict[str, str], content_id: int
+) -> str | None:
+    """상세 이미지가 없는 장소의 TourAPI 대표 이미지를 조회한다."""
+    response = client.get(
+        "/detailCommon2",
+        params={
+            "serviceKey": required(config, "KTO_SERVICE_KEY"),
+            "MobileOS": config.get("KTO_MOBILE_OS", "ETC"),
+            "MobileApp": config.get("KTO_MOBILE_APP", "jamkkanjeju"),
+            "_type": "json",
+            "contentId": str(content_id),
+        },
+    )
+    response.raise_for_status()
+    body = response.json().get("response", {}).get("body", {})
+    items = body.get("items") or {}
+    items = items.get("item") or []
+    if isinstance(items, dict):
+        items = [items]
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        for key in ("firstimage", "firstimage2"):
+            url = item.get(key)
+            if isinstance(url, str) and url.startswith(("http://", "https://")):
+                return url
+    return None
+
+
+def fetch_tour_image_url(
+    client: httpx.Client, config: dict[str, str], content_id: int
+) -> tuple[str | None, bool]:
+    """상세 이미지를 우선 조회하고 없으면 대표 이미지를 반환한다.
+
+    두 번째 반환값은 대표 이미지로 대체했는지 여부다.
+    """
+    detail_url = fetch_detail_image_url(client, config, content_id)
+    if detail_url:
+        return detail_url, False
+    return fetch_representative_image_url(client, config, content_id), True
+
+
 def download_image(client: httpx.Client, url: str) -> tuple[bytes, str, str]:
     with client.stream("GET", url, follow_redirects=True) as response:
         response.raise_for_status()
@@ -355,18 +488,27 @@ def upload_image(
     return ImageUpload(url=blob.url, blob_name=blob_name)
 
 
-def existing_writings(connection: pymysql.Connection) -> set[str]:
+def existing_writings(
+    connection: pymysql.Connection,
+) -> tuple[set[tuple[int, str]], set[str]]:
     with connection.cursor() as cursor:
         cursor.execute(
             """
-            SELECT `content_writing` FROM `GUESTBOOK`
-            WHERE `deleted_at` IS NULL AND `content_writing` IS NOT NULL
-            UNION
-            SELECT `content_writing` FROM `ROAD_GUESTBOOK`
+            SELECT `location_id`, `content_writing`
+            FROM `GUESTBOOK`
             WHERE `deleted_at` IS NULL AND `content_writing` IS NOT NULL
             """
         )
-        return {str(row[0]) for row in cursor.fetchall()}
+        general = {(int(row[0]), str(row[1])) for row in cursor.fetchall()}
+        cursor.execute(
+            """
+            SELECT `content_writing`
+            FROM `ROAD_GUESTBOOK`
+            WHERE `deleted_at` IS NULL AND `content_writing` IS NOT NULL
+            """
+        )
+        road = {str(row[0]) for row in cursor.fetchall()}
+    return general, road
 
 
 def insert_general(
@@ -376,9 +518,9 @@ def insert_general(
     user_id: int,
     writing: str,
     image_url: str | None,
-    weather: str,
-    temperature: float,
-    color: str,
+    weather: str | None,
+    temperature: float | None,
+    color: str | None,
     visited_at: date,
     saved_at: datetime,
 ) -> None:
@@ -458,7 +600,9 @@ def parse_user_ids(raw: str | None) -> list[int] | None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="제주시청 주변 심사용 방명록 30건 생성")
+    parser = argparse.ArgumentParser(
+        description="일반 방명록 20~34번의 장소와 제주시청 주변에 심사용 방명록 생성"
+    )
     parser.add_argument("--local", action="store_true", help=".env의 로컬 DB 사용")
     parser.add_argument("--dry-run", action="store_true", help="DB/Blob 변경 없이 대상만 출력")
     parser.add_argument("--seed", type=int, default=20260917, help="랜덤 시드")
@@ -469,6 +613,10 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+
     args = parse_args()
     if not -90 <= args.latitude <= 90 or not -180 <= args.longitude <= 180:
         raise ValueError("위도/경도 범위가 올바르지 않습니다.")
@@ -487,18 +635,44 @@ def main() -> None:
     connection = connect_database(config)
     uploaded: list[ImageUpload] = []
     try:
-        locations = nearest_locations(connection, args.latitude, args.longitude)
+        locations = target_locations(
+            connection,
+            args.latitude,
+            args.longitude,
+            TARGET_GUESTBOOK_START_ID,
+            TARGET_GUESTBOOK_END_ID,
+        )
         user_ids = resolve_user_ids(connection, parse_user_ids(args.user_ids))
-        existing = existing_writings(connection)
+        existing_general, existing_road = existing_writings(connection)
+        rng = random.Random(args.seed)
+        today = date.today()
+        general_plans = build_general_plans(locations, user_ids, rng, today)
         print(f"기준 좌표: {args.latitude:.6f}, {args.longitude:.6f}")
         print(f"작성자 USER id: {user_ids}")
         for index, location in enumerate(locations, start=1):
+            location_plans = [
+                plan for plan in general_plans if plan.location.id == location.id
+            ]
+            image_number = next(
+                plan_index
+                for plan_index, plan in enumerate(location_plans, start=1)
+                if plan.has_image
+            )
             print(
                 f"  {index:02d}. {location.title} / {location.category} / "
-                f"{location.distance_m:.0f}m / contentId={location.content_id}"
+                f"{location.distance_m:.0f}m / contentId={location.content_id} / "
+                f"추가 {len(location_plans)}건(사진 {image_number}번)"
             )
 
         if args.dry_run:
+            pending_count = sum(
+                (plan.location.id, plan.writing) not in existing_general
+                for plan in general_plans
+            )
+            print(
+                f"추가 예정: 장소 방명록 {pending_count}건 / "
+                f"전체 계획 {len(general_plans)}건"
+            )
             print("dry-run 완료: DB와 Blob은 변경하지 않았습니다.")
             return
 
@@ -512,8 +686,6 @@ def main() -> None:
         blob_service = BlobServiceClient.from_connection_string(connection_string)
         container = blob_service.get_container_client(container_name)
 
-        rng = random.Random(args.seed)
-        today = date.today()
         general_inserted = 0
         road_inserted = 0
 
@@ -522,38 +694,58 @@ def main() -> None:
             timeout=TOUR_API_TIMEOUT_SECONDS,
             headers={"User-Agent": "jamkkanjeju-guestbook-seeder/1.0"},
         ) as tour_client, httpx.Client(timeout=TOUR_API_TIMEOUT_SECONDS) as image_client:
-            # 장소형은 짝수 인덱스(8건)에만 이미지를 시도한다.
+            # 장소별 계획 중 has_image인 1건에 사용할 이미지만 업로드한다.
+            # TourAPI에 이미지가 없는 장소는 전체 실행을 막지 않고 사진 없이 진행한다.
             general_image_urls: dict[int, str] = {}
-            for index, location in enumerate(locations):
-                if index % 2 != 0 or writing_for(location, index) in existing:
+            for plan in general_plans:
+                if (
+                    not plan.has_image
+                    or (plan.location.id, plan.writing) in existing_general
+                ):
                     continue
                 try:
-                    source_url = fetch_detail_image_url(
-                        tour_client, config, location.content_id
+                    source_url, used_representative = fetch_tour_image_url(
+                        tour_client, config, plan.location.content_id
                     )
-                    if source_url:
-                        data, content_type, suffix = download_image(image_client, source_url)
-                        upload = upload_image(
-                            container,
-                            data=data,
-                            content_type=content_type,
-                            suffix=suffix,
-                            content_id=location.content_id,
-                            kind="general",
-                        )
-                        uploaded.append(upload)
-                        general_image_urls[location.id] = upload.url
                 except (httpx.HTTPError, ValueError) as error:
-                    print(f"이미지 건너뜀({location.title}): {error}")
+                    print(f"장소 이미지 건너뜀({plan.location.title}): {error}")
+                    continue
+                if not source_url:
+                    print(
+                        f"장소 이미지 없음, 사진 없이 진행: {plan.location.title} "
+                        f"(contentId={plan.location.content_id})"
+                    )
+                    continue
+                if used_representative:
+                    print(
+                        f"상세 이미지 없음, 대표 이미지 사용: {plan.location.title}"
+                    )
+                try:
+                    data, content_type, suffix = download_image(
+                        image_client, source_url
+                    )
+                except (httpx.HTTPError, ValueError) as error:
+                    print(f"장소 이미지 건너뜀({plan.location.title}): {error}")
+                    continue
+                upload = upload_image(
+                    container,
+                    data=data,
+                    content_type=content_type,
+                    suffix=suffix,
+                    content_id=plan.location.content_id,
+                    kind="general",
+                )
+                uploaded.append(upload)
+                general_image_urls[plan.location.id] = upload.url
 
             # 길바닥형은 가까운 장소의 상세 이미지를 5건만 재사용하지 않고 별도로 업로드한다.
             road_image_urls: dict[int, str] = {}
             for road_index in (1, 4, 7, 10, 13):
-                if ROAD_WRITINGS[road_index] in existing:
+                if ROAD_WRITINGS[road_index] in existing_road:
                     continue
-                location = locations[road_index]
+                location = locations[road_index % len(locations)]
                 try:
-                    source_url = fetch_detail_image_url(
+                    source_url, _ = fetch_tour_image_url(
                         tour_client, config, location.content_id
                     )
                     if source_url:
@@ -571,34 +763,31 @@ def main() -> None:
                 except (httpx.HTTPError, ValueError) as error:
                     print(f"길바닥 이미지 건너뜀({location.title} 근처): {error}")
 
-        for index, location in enumerate(locations):
-            writing = writing_for(location, index)
-            if writing in existing:
-                print(f"중복 장소 방명록 건너뜀: {location.title}")
+        for plan in general_plans:
+            if (plan.location.id, plan.writing) in existing_general:
+                print(f"중복 장소 방명록 건너뜀: {plan.location.title}")
                 continue
-            weather = rng.choice(WEATHERS)
-            days_ago = rng.randint(1, 20)
-            visited = today - timedelta(days=days_ago)
-            saved = datetime.combine(
-                visited, time(hour=rng.randint(9, 20), minute=rng.randint(0, 59))
-            )
             insert_general(
                 connection,
-                location=location,
-                user_id=user_ids[index % len(user_ids)],
-                writing=writing,
-                image_url=general_image_urls.get(location.id),
-                weather=weather,
-                temperature=temperature_for(weather, rng),
-                color=rng.choice(COLORS),
-                visited_at=visited,
-                saved_at=saved,
+                location=plan.location,
+                user_id=plan.user_id,
+                writing=plan.writing,
+                image_url=(
+                    general_image_urls.get(plan.location.id)
+                    if plan.has_image
+                    else None
+                ),
+                weather=plan.weather,
+                temperature=plan.temperature,
+                color=plan.color,
+                visited_at=plan.visited_at,
+                saved_at=plan.saved_at,
             )
             general_inserted += 1
 
         for index in range(ROAD_COUNT):
             writing = ROAD_WRITINGS[index]
-            if writing in existing:
+            if writing in existing_road:
                 print(f"중복 길바닥 방명록 건너뜀: {ROAD_ALIASES[index]}")
                 continue
             weather = rng.choice(WEATHERS)
@@ -612,7 +801,7 @@ def main() -> None:
             )
             insert_road(
                 connection,
-                user_id=user_ids[(index + GENERAL_COUNT) % len(user_ids)],
+                user_id=user_ids[(index + len(general_plans)) % len(user_ids)],
                 alias=ROAD_ALIASES[index],
                 latitude=latitude,
                 longitude=longitude,
